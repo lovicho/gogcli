@@ -57,7 +57,7 @@ type AuthCmd struct {
 
 func parseAuthServices(servicesCSV string) ([]googleauth.Service, error) {
 	trimmed := strings.ToLower(strings.TrimSpace(servicesCSV))
-	if trimmed == "" || trimmed == "user" || trimmed == literalAll {
+	if trimmed == "" || trimmed == "user" || trimmed == "all-user" || trimmed == literalAll {
 		return googleauth.UserServices(), nil
 	}
 
@@ -69,8 +69,9 @@ func parseAuthServices(servicesCSV string) ([]googleauth.Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		if svc == googleauth.ServiceKeep {
-			return nil, usage("Keep auth is Workspace-only and requires a service account. Use: gog auth service-account set <email> --key <service-account.json>")
+		switch svc {
+		case googleauth.ServiceAdmin, googleauth.ServiceGroups, googleauth.ServiceKeep:
+			return nil, usage(fmt.Sprintf("%s auth is Workspace/service-account-only. Use: gog auth service-account set <email> --key <service-account.json>", svc))
 		}
 		if _, ok := seen[svc]; ok {
 			continue

@@ -175,7 +175,7 @@ Flag aliases:
 - `gog auth credentials list`
 - `gog auth credentials remove [<client>|all]`
 - `gog --client <name> auth credentials <credentials.json|->`
-- `gog auth add <email> [--services user|all|gmail,calendar,chat,classroom,drive,driveactivity,drivelabels,docs,slides,contacts,tasks,sheets,people,forms,photos,appscript,ads,groups,keep,admin] [--readonly] [--drive-scope full|readonly|file] [--gmail-scope full|readonly] [--extra-scopes CSV] [--manual] [--remote] [--step 1|2] [--auth-url URL] [--listen-addr HOST[:PORT]] [--redirect-host HOST] [--timeout DURATION] [--force-consent]`
+- `gog auth add <email> [--services user|all-user|all|gmail,calendar,chat,classroom,drive,driveactivity,drivelabels,docs,slides,contacts,tasks,sheets,people,forms,sites,meet,photos,appscript,analytics,searchconsole,ads,youtube] [--readonly] [--drive-scope full|readonly|file] [--gmail-scope full|readonly] [--extra-scopes CSV] [--manual] [--remote] [--step 1|2] [--auth-url URL] [--listen-addr HOST[:PORT]] [--redirect-host HOST] [--timeout DURATION] [--force-consent]`
 - `gog auth services [--markdown]`
 - `gog auth manage [--services ...] [--listen-addr HOST[:PORT]] [--redirect-host HOST]`
 - `gog auth keep <email> --key <service-account.json>` (Google Keep; Workspace only)

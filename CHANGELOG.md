@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Auth: keep fresh OAuth saves working even when old file-keyring token entries are unreadable, and clarify that `--services all` means all user OAuth services while Workspace-only services use service accounts.
 - Gmail: reject off-palette `gmail labels style` colors locally instead of forwarding an opaque Gmail API error.
 - Drive: make `drive share --dry-run` stop before permission creation for user and domain shares, including `--notify`.
 - Forms: make `forms create --description` apply the description with a follow-up batch update, and preserve zero-valued indexes in `forms move-question`.

@@ -18,7 +18,10 @@ func MigrateStoredSubjectIdentity(store secrets.Store, client string, identity I
 
 	tokens, err := store.ListTokens()
 	if err != nil {
-		return "", fmt.Errorf("list tokens for subject identity migration: %w", err)
+		// Subject migration is best-effort compatibility cleanup. A stale or
+		// corrupted token must not make a freshly completed OAuth flow fail
+		// before the new refresh token is saved.
+		return "", nil
 	}
 
 	for _, tok := range tokens {

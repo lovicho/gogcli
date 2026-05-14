@@ -138,6 +138,54 @@ func (s *setTokenErrorStore) SetToken(string, string, secrets.Token) error {
 	return s.err
 }
 
+type listTokenErrorStore struct {
+	*memSecretsStore
+	err error
+}
+
+func (s *listTokenErrorStore) ListTokens() ([]secrets.Token, error) {
+	return nil, s.err
+}
+
+func TestAuthAddCmd_ListTokenFailureDoesNotBlockFreshTokenSave(t *testing.T) {
+	origAuth := authorizeGoogle
+	origOpen := openSecretsStore
+	origKeychain := ensureKeychainAccess
+	origFetch := fetchAuthorizedIdentity
+	t.Cleanup(func() {
+		authorizeGoogle = origAuth
+		openSecretsStore = origOpen
+		ensureKeychainAccess = origKeychain
+		fetchAuthorizedIdentity = origFetch
+	})
+
+	ensureKeychainAccess = func() error { return nil }
+	authorizeGoogle = func(context.Context, googleauth.AuthorizeOptions) (string, error) {
+		return "rt", nil
+	}
+	fetchAuthorizedIdentity = func(context.Context, string, string, []string, time.Duration) (googleauth.Identity, error) {
+		return googleauth.Identity{Subject: "sub-123", Email: "user@example.com"}, nil
+	}
+
+	store := &listTokenErrorStore{
+		memSecretsStore: newMemSecretsStore(),
+		err:             errors.New("read encoded file keyring item: aes.KeyUnwrap(): integrity check failed"),
+	}
+	openSecretsStore = func() (secrets.Store, error) { return store, nil }
+
+	if err := Execute([]string{"auth", "add", "user@example.com", "--services", "gmail", "--manual"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	tok, err := store.GetToken(config.DefaultClientName, "user@example.com")
+	if err != nil {
+		t.Fatalf("GetToken: %v", err)
+	}
+	if tok.RefreshToken != "rt" || tok.Subject != "sub-123" {
+		t.Fatalf("unexpected saved token: %#v", tok)
+	}
+}
+
 func TestAuthAddCmd_StoreFailureReportsOAuthCompleted(t *testing.T) {
 	origAuth := authorizeGoogle
 	origOpen := openSecretsStore
@@ -240,7 +288,7 @@ func TestAuthAddCmd_KeepRejected(t *testing.T) {
 	if !errors.As(err, &ee) || ee.Code != 2 {
 		t.Fatalf("expected exit code 2, got %T %#v", err, err)
 	}
-	if !strings.Contains(err.Error(), "Keep auth") {
+	if !strings.Contains(err.Error(), "keep auth") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if authorizeCalled {
