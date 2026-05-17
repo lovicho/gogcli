@@ -2,6 +2,10 @@
 
 ## 0.17.1 - Unreleased
 
+### Fixed
+
+- CLI: harden backup writes, config/credentials atomic saves, keyring write verification, line input buffering, disabled-API hints, JSON transform number handling, and untrusted-content wrapping after ClawPatch review.
+
 ## 0.17.0 - 2026-05-15
 
 ### Added

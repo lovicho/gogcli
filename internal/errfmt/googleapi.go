@@ -36,17 +36,25 @@ var googleAPIHints = []googleAPIHint{
 	{API: "tasks.googleapis.com", DisplayName: "Tasks API", Service: "tasks"},
 }
 
-var apiNamePattern = regexp.MustCompile(`(?i)\b([a-z][a-z0-9-]*\.googleapis\.com)\b`)
+var (
+	apiNamePattern      = regexp.MustCompile(`(?i)\b([a-z][a-z0-9-]*\.googleapis\.com)\b`)
+	apiEnableURLPattern = regexp.MustCompile(`https://console\.(?:developers|cloud)\.google\.com/apis/api/([a-z][a-z0-9-]*\.googleapis\.com)/overview(?:\?[^\s<>"']+)?`)
+)
 
 func formatGoogleAPIError(gerr *ggoogleapi.Error) string {
 	reason := googleAPIErrorReason(gerr)
 	if googleAPIIsDisabled(gerr, reason) {
 		if hint, ok := googleAPIHintForError(gerr); ok {
+			tail := fmt.Sprintf("Then retry the command. If you enabled it on a different OAuth client, re-authenticate with: gog auth add <account> --services %s", hint.Service)
+			if isServiceAccountOnlyAuthService(hint.Service) {
+				tail = "Then retry the command with a Workspace service account configured: gog auth service-account set <account> --key <service-account.json>"
+			}
+
 			return fmt.Sprintf(
-				"%s is not enabled for this OAuth project.\nEnable it at: %s\nThen retry the command. If you enabled it on a different OAuth client, re-authenticate with: gog auth add <account> --services %s",
+				"%s is not enabled for this OAuth project.\nEnable it at: %s\n%s",
 				hint.DisplayName,
-				googleAPIEnableURL(hint.API),
-				hint.Service,
+				googleAPIEnableURLForError(gerr, hint.API),
+				tail,
 			)
 		}
 	}
@@ -117,4 +125,24 @@ func googleAPIHintForAPI(api string) (googleAPIHint, bool) {
 
 func googleAPIEnableURL(api string) string {
 	return "https://console.developers.google.com/apis/api/" + api + "/overview"
+}
+
+func googleAPIEnableURLForError(gerr *ggoogleapi.Error, api string) string {
+	messages := []string{}
+	if gerr != nil {
+		messages = append(messages, gerr.Message)
+		for _, item := range gerr.Errors {
+			messages = append(messages, item.Message)
+		}
+	}
+
+	for _, message := range messages {
+		for _, match := range apiEnableURLPattern.FindAllStringSubmatch(message, -1) {
+			if len(match) == 2 && strings.EqualFold(match[1], api) {
+				return strings.TrimRight(match[0], ".,)")
+			}
+		}
+	}
+
+	return googleAPIEnableURL(api)
 }

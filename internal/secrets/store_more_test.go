@@ -3,6 +3,7 @@ package secrets
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -65,6 +66,69 @@ func TestKeyringStore_ListDeleteDefault(t *testing.T) {
 	emptyStore := &KeyringStore{ring: keyring.NewArrayKeyring(nil)}
 	if def, err := emptyStore.GetDefaultAccount(client); err != nil || def != "" {
 		t.Fatalf("expected empty default account, got %q err=%v", def, err)
+	}
+}
+
+func TestKeyringStore_CustomClientDefaultDoesNotUseLegacyKey(t *testing.T) {
+	ring := keyring.NewArrayKeyring(nil)
+	store := &KeyringStore{ring: ring}
+
+	if err := ring.Set(keyringItem(defaultAccountKey, []byte("default@example.com"))); err != nil {
+		t.Fatalf("seed legacy default: %v", err)
+	}
+
+	if got, err := store.GetDefaultAccount("work"); err != nil {
+		t.Fatalf("GetDefaultAccount(work): %v", err)
+	} else if got != "" {
+		t.Fatalf("custom client should not read legacy default, got %q", got)
+	}
+
+	if err := store.SetDefaultAccount("work", "work@example.com"); err != nil {
+		t.Fatalf("SetDefaultAccount(work): %v", err)
+	}
+
+	if got, err := store.GetDefaultAccount("work"); err != nil {
+		t.Fatalf("GetDefaultAccount(work): %v", err)
+	} else if got != "work@example.com" {
+		t.Fatalf("custom default = %q", got)
+	}
+
+	if got, err := store.GetDefaultAccount(config.DefaultClientName); err != nil {
+		t.Fatalf("GetDefaultAccount(default): %v", err)
+	} else if got != "default@example.com" {
+		t.Fatalf("legacy default was overwritten: %q", got)
+	}
+
+	if err := store.DeleteDefaultAccount("work"); err != nil {
+		t.Fatalf("DeleteDefaultAccount(work): %v", err)
+	}
+
+	if got, err := store.GetDefaultAccount(config.DefaultClientName); err != nil {
+		t.Fatalf("GetDefaultAccount(default): %v", err)
+	} else if got != "default@example.com" {
+		t.Fatalf("legacy default was deleted: %q", got)
+	}
+}
+
+func TestKeyringStore_DefaultClientPrefersScopedLegacyKey(t *testing.T) {
+	ring := keyring.NewArrayKeyring(nil)
+	store := &KeyringStore{ring: ring}
+
+	if err := ring.Set(keyringItem(defaultAccountKeyForClient(config.DefaultClientName), []byte("personal@example.com"))); err != nil {
+		t.Fatalf("seed scoped default: %v", err)
+	}
+
+	if err := ring.Set(keyringItem(defaultAccountKey, []byte("work@example.com"))); err != nil {
+		t.Fatalf("seed legacy default: %v", err)
+	}
+
+	got, err := store.GetDefaultAccount(config.DefaultClientName)
+	if err != nil {
+		t.Fatalf("GetDefaultAccount(default): %v", err)
+	}
+
+	if got != "personal@example.com" {
+		t.Fatalf("default client should prefer scoped legacy key, got %q", got)
 	}
 }
 
@@ -310,10 +374,7 @@ func TestKeyringStoreWritePathsSetLabel(t *testing.T) {
 		t.Fatalf("SetDefaultAccount: %v", err)
 	}
 
-	for _, k := range []string{
-		defaultAccountKeyForClient(client),
-		defaultAccountKey,
-	} {
+	for _, k := range []string{defaultAccountKeyForClient(client), defaultAccountKey} {
 		it, err := ring.Get(k)
 		if err != nil {
 			t.Fatalf("Get(%q): %v", k, err)
@@ -417,6 +478,72 @@ func TestSetTokenVerifyCatchesReadBackError(t *testing.T) {
 	}
 }
 
+type legacyMigrationSilentDropKeyring struct {
+	*keyring.ArrayKeyring
+	primaryKey string
+	setPrimary bool
+}
+
+func (l *legacyMigrationSilentDropKeyring) Set(item keyring.Item) error {
+	if item.Key == l.primaryKey {
+		l.setPrimary = true
+		return nil
+	}
+
+	if err := l.ArrayKeyring.Set(item); err != nil {
+		return fmt.Errorf("array set: %w", err)
+	}
+
+	return nil
+}
+
+func (l *legacyMigrationSilentDropKeyring) Get(key string) (keyring.Item, error) {
+	if key == l.primaryKey {
+		if !l.setPrimary {
+			return keyring.Item{}, keyring.ErrKeyNotFound
+		}
+
+		return keyring.Item{Key: key, Data: nil}, nil
+	}
+
+	item, err := l.ArrayKeyring.Get(key)
+	if err != nil {
+		return keyring.Item{}, fmt.Errorf("array get: %w", err)
+	}
+
+	return item, nil
+}
+
+func TestGetTokenLegacyMigrationVerifiesWrite(t *testing.T) {
+	email := "a@b.com"
+	client := config.DefaultClientName
+	primaryKey := tokenKey(client, email)
+	ring := &legacyMigrationSilentDropKeyring{
+		ArrayKeyring: keyring.NewArrayKeyring(nil),
+		primaryKey:   primaryKey,
+	}
+	store := &KeyringStore{ring: ring}
+
+	payload, err := json.Marshal(storedToken{RefreshToken: "rt", Email: email, CreatedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatalf("marshal token: %v", err)
+	}
+
+	err = ring.ArrayKeyring.Set(keyringItem(legacyTokenKey(email), payload))
+	if err != nil {
+		t.Fatalf("seed legacy token: %v", err)
+	}
+
+	_, err = store.GetToken(client, email)
+	if err == nil {
+		t.Fatal("expected verified migration write to fail")
+	}
+
+	if !errors.Is(err, errTokenVerifyFailed) {
+		t.Fatalf("expected errTokenVerifyFailed, got: %v", err)
+	}
+}
+
 func TestSetSecretSetsLabel(t *testing.T) {
 	ring := keyring.NewArrayKeyring(nil)
 	origOpen := openKeyringFunc
@@ -437,5 +564,22 @@ func TestSetSecretSetsLabel(t *testing.T) {
 
 	if it.Label != config.AppName {
 		t.Fatalf("expected label %q, got %q", config.AppName, it.Label)
+	}
+}
+
+func TestSetSecretVerifyCatchesEmptyWrite(t *testing.T) {
+	origOpen := openKeyringFunc
+
+	t.Cleanup(func() { openKeyringFunc = origOpen })
+
+	openKeyringFunc = func() (keyring.Keyring, error) { return &silentDropKeyring{}, nil }
+
+	err := SetSecret("test/secret", []byte("value"))
+	if err == nil {
+		t.Fatal("expected error when keyring silently drops data")
+	}
+
+	if !errors.Is(err, errTokenVerifyFailed) {
+		t.Fatalf("expected errTokenVerifyFailed, got: %v", err)
 	}
 }

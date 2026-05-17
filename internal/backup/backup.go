@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -145,7 +146,16 @@ func PushSnapshot(ctx context.Context, snapshot Snapshot, opts Options) (Result,
 	if err := writeBackupReadme(cfg.Repo); err != nil {
 		return Result{}, err
 	}
-	oldManifest, _ := readManifest(cfg.Repo)
+	if err := rejectSymlinkPath(cfg.Repo, filepath.Join(cfg.Repo, "manifest.json")); err != nil {
+		return Result{}, err
+	}
+	oldManifest, err := readManifest(cfg.Repo)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Result{}, fmt.Errorf("read existing backup manifest: %w", err)
+	}
+	if err == nil && oldManifest.Format != formatVersion {
+		return Result{}, fmt.Errorf("unsupported backup format %d", oldManifest.Format)
+	}
 	manifest, err := writeSnapshot(ctx, cfg, snapshot, oldManifest)
 	if err != nil {
 		return Result{}, err
@@ -309,7 +319,20 @@ func writeCheckpoint(ctx context.Context, cfg Config, snapshot Snapshot, checkpo
 	}
 	dir := path.Join("checkpoints", checkpoint.Service, checkpoint.Account, checkpoint.RunID)
 	manifestRel := path.Join(dir, "manifest.json")
-	old, _ := readCheckpointManifest(cfg.Repo, manifestRel)
+	manifestPath, err := resolveCheckpointManifestPath(cfg.Repo, manifestRel)
+	if err != nil {
+		return CheckpointManifest{}, err
+	}
+	if err := rejectSymlinkPath(cfg.Repo, manifestPath); err != nil {
+		return CheckpointManifest{}, err
+	}
+	old, err := readCheckpointManifest(cfg.Repo, manifestRel)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return CheckpointManifest{}, fmt.Errorf("read existing checkpoint manifest: %w", err)
+	}
+	if err == nil && old.Format != formatVersion {
+		return CheckpointManifest{}, fmt.Errorf("unsupported backup checkpoint format %d", old.Format)
+	}
 	recipients := normalizedStrings(cfg.Recipients)
 	reuseEncrypted := sameStrings(old.Recipients, recipients)
 	replace := map[string]struct{}{}
@@ -494,6 +517,9 @@ func writeShard(cfg Config, old Manifest, shard PlainShard, reuseEncrypted bool)
 		if err != nil {
 			return ShardEntry{}, err
 		}
+		if err := rejectSymlinkPath(cfg.Repo, path); err != nil {
+			return ShardEntry{}, err
+		}
 		info, err := os.Stat(path)
 		if err != nil {
 			return ShardEntry{}, fmt.Errorf("reuse encrypted backup shard %s: %w", entry.Path, err)
@@ -513,12 +539,21 @@ func writeShard(cfg Config, old Manifest, shard PlainShard, reuseEncrypted bool)
 		return ShardEntry{}, err
 	}
 	if oldEntry, ok := old.entry(shard.Path); reuseEncrypted && ok && oldEntry.SHA256 == hash {
+		if err := rejectSymlinkPath(cfg.Repo, path); err != nil {
+			return ShardEntry{}, err
+		}
 		if info, err := os.Stat(path); err == nil {
 			oldEntry.Bytes = info.Size()
 			return oldEntry, nil
 		}
 	}
+	if err := rejectSymlinkPath(cfg.Repo, path); err != nil {
+		return ShardEntry{}, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return ShardEntry{}, err
+	}
+	if err := rejectSymlinkPath(cfg.Repo, path); err != nil {
 		return ShardEntry{}, err
 	}
 	bytesWritten, err := encryptShardToFile(shardPlaintextReader(shard), path, cfg.Recipients)
@@ -681,7 +716,13 @@ func writeCheckpointManifest(repo, rel string, manifest CheckpointManifest) erro
 	if err != nil {
 		return err
 	}
+	if err := rejectSymlinkPath(repo, full); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+		return err
+	}
+	if err := rejectSymlinkPath(repo, full); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
@@ -710,12 +751,53 @@ func resolveCheckpointManifestPath(repo, rel string) (string, error) {
 }
 
 func writeManifest(repo string, manifest Manifest) error {
+	path := filepath.Join(repo, "manifest.json")
+	if err := rejectSymlinkPath(repo, path); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(repo, "manifest.json"), data, 0o600)
+	return os.WriteFile(path, data, 0o600)
+}
+
+func rejectSymlinkPath(root, full string) error {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	fullAbs, err := filepath.Abs(full)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(rootAbs, fullAbs)
+	if err != nil {
+		return err
+	}
+	if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return fmt.Errorf("backup path escapes backup root: %s", full)
+	}
+
+	cur := rootAbs
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		cur = filepath.Join(cur, part)
+		info, err := os.Lstat(cur)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("backup path contains symlink: %s", cur)
+		}
+	}
+	return nil
 }
 
 func (m Manifest) entry(path string) (ShardEntry, bool) {

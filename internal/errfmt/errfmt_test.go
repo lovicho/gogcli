@@ -115,8 +115,43 @@ func TestFormat_GoogleAPIError_AccessNotConfiguredHint(t *testing.T) {
 		t.Fatalf("unexpected: %q", got)
 	}
 
+	if !strings.Contains(got, "overview?project=123") {
+		t.Fatalf("expected project-scoped enable URL, got: %q", got)
+	}
+
 	if strings.Contains(got, "Google API error") {
 		t.Fatalf("expected user-facing enablement hint, got: %q", got)
+	}
+}
+
+func TestFormat_GoogleAPIError_ServiceAccountOnlyDisabledAPI(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		apiName string
+		service string
+	}{
+		{name: "admin", apiName: "admin.googleapis.com", service: "admin"},
+		{name: "keep", apiName: "keep.googleapis.com", service: "keep"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := &ggoogleapi.Error{
+				Code: 403,
+				Message: "API has not been used. Enable it by visiting " +
+					"https://console.developers.google.com/apis/api/" + tc.apiName + "/overview?project=123",
+				Errors: []ggoogleapi.ErrorItem{
+					{Reason: "accessNotConfigured"},
+				},
+			}
+
+			got := Format(err)
+			if !containsAll(got, "service-account set", "overview?project=123") {
+				t.Fatalf("unexpected: %q", got)
+			}
+
+			if strings.Contains(got, "--services "+tc.service) || strings.Contains(got, "gog auth add") {
+				t.Fatalf("must not suggest unsupported OAuth flow: %q", got)
+			}
+		})
 	}
 }
 

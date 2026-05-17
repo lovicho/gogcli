@@ -172,10 +172,6 @@ func wrapUntrustedGenericValue(v any, opts UntrustedWrapOptions, path []string, 
 		wrappedAny := false
 
 		for k, value := range vv {
-			if k == "externalContent" {
-				out[k] = value
-				continue
-			}
 			wrapped, wrappedChild := wrapUntrustedGenericValue(value, opts, append(path, k), k)
 			out[k] = wrapped
 			wrappedAny = wrappedAny || wrappedChild

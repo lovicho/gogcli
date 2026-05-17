@@ -70,14 +70,8 @@ func WriteClientCredentialsFor(client string, c ClientCredentials) error {
 
 	b = append(b, '\n')
 
-	tmp := path + ".tmp"
-
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	if err := writeFileAtomic(path, b, 0o600); err != nil {
 		return fmt.Errorf("write credentials: %w", err)
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("commit credentials: %w", err)
 	}
 
 	return nil

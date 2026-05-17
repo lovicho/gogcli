@@ -74,6 +74,16 @@ func acquireConfigLock() (func(), error) {
 }
 
 func WriteConfig(cfg File) error {
+	unlock, err := acquireConfigLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	return writeConfigFile(cfg)
+}
+
+func writeConfigFile(cfg File) error {
 	_, err := EnsureDir()
 	if err != nil {
 		return fmt.Errorf("ensure config dir: %w", err)
@@ -91,14 +101,8 @@ func WriteConfig(cfg File) error {
 
 	b = append(b, '\n')
 
-	tmp := path + ".tmp"
-
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	if err := writeFileAtomic(path, b, 0o600); err != nil {
 		return fmt.Errorf("write config: %w", err)
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("commit config: %w", err)
 	}
 
 	return nil
@@ -120,7 +124,46 @@ func UpdateConfig(update func(*File) error) error {
 		return err
 	}
 
-	return WriteConfig(cfg)
+	return writeConfigFile(cfg)
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	committed := false
+
+	defer func() {
+		if !committed {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temp file: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("rename temp file: %w", err)
+	}
+
+	committed = true
+
+	return nil
 }
 
 func ConfigExists() (bool, error) {

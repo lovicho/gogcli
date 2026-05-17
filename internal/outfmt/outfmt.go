@@ -122,7 +122,10 @@ func applyJSONTransform(v any, t JSONTransform) (any, error) {
 	}
 
 	var anyV any
-	if err := json.Unmarshal(b, &anyV); err != nil {
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.UseNumber()
+
+	if err := dec.Decode(&anyV); err != nil {
 		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 
@@ -175,14 +178,7 @@ func unwrapPrimary(v any) any {
 		return m[candidates[0]]
 	}
 
-	// If we have any array/slice-like candidates, prefer those.
-	for _, k := range candidates {
-		if _, ok := m[k].([]any); ok {
-			return m[k]
-		}
-	}
-
-	// Fall back to known result keys.
+	// Prefer known result arrays before any generic array candidate.
 	known := []string{
 		"files",
 		"threads",
@@ -211,6 +207,21 @@ func unwrapPrimary(v any) any {
 		"spaces",
 		"request",
 	}
+	for _, k := range known {
+		if val, ok := m[k]; ok {
+			if _, isArray := val.([]any); isArray {
+				return val
+			}
+		}
+	}
+
+	// If we have any array/slice-like candidates, prefer those.
+	for _, k := range candidates {
+		if _, ok := m[k].([]any); ok {
+			return m[k]
+		}
+	}
+
 	for _, k := range known {
 		if val, ok := m[k]; ok {
 			return val

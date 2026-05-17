@@ -8,8 +8,14 @@ import (
 
 func writeBackupReadme(repo string) error {
 	path := filepath.Join(repo, "README.md")
-	if _, err := os.Stat(path); err == nil {
+	if err := rejectSymlinkPath(repo, path); err != nil {
+		return err
+	}
+
+	if _, err := os.Lstat(path); err == nil {
 		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat backup readme: %w", err)
 	}
 
 	const body = `# backup-gog

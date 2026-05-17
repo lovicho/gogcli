@@ -539,6 +539,116 @@ func TestPushPreservesUntouchedServices(t *testing.T) {
 	}
 }
 
+func TestPushSnapshotRejectsCorruptManifestWithoutPruning(t *testing.T) {
+	ctx, repo, config, _ := initTestBackup(t)
+	gmailPath := "data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age"
+	calendarPath := "data/calendar/acct/events/part-0001.jsonl.gz.age"
+	gmailShard := mustGmailMessageShard(t, gmailPath, []map[string]string{{"id": "m1", "raw": "body"}})
+	calendarShard, err := NewJSONLShard("calendar", "events", "acct", calendarPath, []map[string]string{{"id": "event1"}})
+	if err != nil {
+		t.Fatalf("NewJSONLShard calendar: %v", err)
+	}
+	pushSingleShard(t, ctx, config, gmailShard)
+
+	manifestPath := filepath.Join(repo, "manifest.json")
+	err = os.WriteFile(manifestPath, []byte("{"), 0o600)
+	if err != nil {
+		t.Fatalf("corrupt manifest: %v", err)
+	}
+
+	_, err = PushSnapshot(ctx, Snapshot{
+		Services: []string{"calendar"},
+		Accounts: []string{"acct"},
+		Counts:   map[string]int{"calendar.events": 1},
+		Shards:   []PlainShard{calendarShard},
+	}, Options{ConfigPath: config, Push: false})
+	if err == nil {
+		t.Fatal("expected corrupt manifest error")
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, filepath.FromSlash(gmailPath))); statErr != nil {
+		t.Fatalf("existing shard was pruned after corrupt manifest: %v", statErr)
+	}
+}
+
+func TestPushSnapshotRejectsUnsupportedManifestWithoutPruning(t *testing.T) {
+	ctx, repo, config, _ := initTestBackup(t)
+	gmailPath := "data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age"
+	calendarPath := "data/calendar/acct/events/part-0001.jsonl.gz.age"
+	gmailShard := mustGmailMessageShard(t, gmailPath, []map[string]string{{"id": "m1", "raw": "body"}})
+	calendarShard, err := NewJSONLShard("calendar", "events", "acct", calendarPath, []map[string]string{{"id": "event1"}})
+	if err != nil {
+		t.Fatalf("NewJSONLShard calendar: %v", err)
+	}
+	pushSingleShard(t, ctx, config, gmailShard)
+
+	manifest := readTestManifest(t, repo)
+	manifest.Format = formatVersion + 1
+	err = writeManifest(repo, manifest)
+	if err != nil {
+		t.Fatalf("write unsupported manifest: %v", err)
+	}
+
+	_, err = PushSnapshot(ctx, Snapshot{
+		Services: []string{"calendar"},
+		Accounts: []string{"acct"},
+		Counts:   map[string]int{"calendar.events": 1},
+		Shards:   []PlainShard{calendarShard},
+	}, Options{ConfigPath: config, Push: false})
+	if err == nil {
+		t.Fatal("expected unsupported manifest error")
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, filepath.FromSlash(gmailPath))); statErr != nil {
+		t.Fatalf("existing shard was pruned after unsupported manifest: %v", statErr)
+	}
+}
+
+func TestPushSnapshotRejectsSymlinkManifestBeforeMutatingShards(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	ctx, repo, config, _ := initTestBackup(t)
+	gmailPath := "data/gmail/acct/messages/2026/04/part-0001.jsonl.gz.age"
+	calendarPath := "data/calendar/acct/events/part-0001.jsonl.gz.age"
+	gmailShard := mustGmailMessageShard(t, gmailPath, []map[string]string{{"id": "m1", "raw": "body"}})
+	calendarShard, err := NewJSONLShard("calendar", "events", "acct", calendarPath, []map[string]string{{"id": "event1"}})
+	if err != nil {
+		t.Fatalf("NewJSONLShard calendar: %v", err)
+	}
+	pushSingleShard(t, ctx, config, gmailShard)
+
+	manifestPath := filepath.Join(repo, "manifest.json")
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	outsideManifest := filepath.Join(t.TempDir(), "manifest.json")
+	if writeErr := os.WriteFile(outsideManifest, manifestData, 0o600); writeErr != nil {
+		t.Fatalf("write outside manifest: %v", writeErr)
+	}
+	if removeErr := os.Remove(manifestPath); removeErr != nil {
+		t.Fatalf("remove manifest: %v", removeErr)
+	}
+	if symlinkErr := os.Symlink(outsideManifest, manifestPath); symlinkErr != nil {
+		t.Fatalf("symlink manifest: %v", symlinkErr)
+	}
+
+	_, err = PushSnapshot(ctx, Snapshot{
+		Services: []string{"calendar"},
+		Accounts: []string{"acct"},
+		Counts:   map[string]int{"calendar.events": 1},
+		Shards:   []PlainShard{calendarShard},
+	}, Options{ConfigPath: config, Push: false})
+	if err == nil {
+		t.Fatal("expected symlink manifest error")
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, filepath.FromSlash(gmailPath))); statErr != nil {
+		t.Fatalf("existing shard was pruned after symlink manifest: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, filepath.FromSlash(calendarPath))); !os.IsNotExist(statErr) {
+		t.Fatalf("new shard was written before symlink manifest rejection: %v", statErr)
+	}
+}
+
 func TestRejectsInvalidShardPaths(t *testing.T) {
 	_, _, config, _ := initTestBackup(t)
 	for _, rel := range []string{
@@ -558,6 +668,117 @@ func TestRejectsInvalidShardPaths(t *testing.T) {
 				t.Fatal("expected invalid shard path error")
 			}
 		})
+	}
+}
+
+func TestRejectsSymlinkedShardPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	ctx, repo, config, _ := initTestBackup(t)
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "data"), 0o700); err != nil {
+		t.Fatalf("mkdir data: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "data", "gmail")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	rel := "data/gmail/acct/messages/part-0001.jsonl.gz.age"
+	shard := mustGmailMessageShard(t, rel, []map[string]string{{"id": "m1", "raw": "body"}})
+	_, err := PushSnapshot(ctx, Snapshot{Shards: []PlainShard{shard}}, Options{
+		ConfigPath: config,
+		Push:       false,
+	})
+	if err == nil {
+		t.Fatal("expected symlink path error")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "acct")); !os.IsNotExist(statErr) {
+		t.Fatalf("outside symlink target was modified: %v", statErr)
+	}
+}
+
+func TestRejectsSymlinkedShardPathOnReuse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	ctx, repo, config, _ := initTestBackup(t)
+	rel := "data/gmail/acct/messages/part-0001.jsonl.gz.age"
+	shard := mustGmailMessageShard(t, rel, []map[string]string{{"id": "m1", "raw": "body"}})
+	pushSingleShard(t, ctx, config, shard)
+
+	shardPath := filepath.Join(repo, filepath.FromSlash(rel))
+	outside := filepath.Join(t.TempDir(), "part-0001.jsonl.gz.age")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatalf("write outside shard: %v", err)
+	}
+	if err := os.Remove(shardPath); err != nil {
+		t.Fatalf("remove shard: %v", err)
+	}
+	if err := os.Symlink(outside, shardPath); err != nil {
+		t.Fatalf("symlink shard: %v", err)
+	}
+
+	_, err := PushSnapshot(ctx, Snapshot{
+		Services: []string{"gmail"},
+		Accounts: []string{"acct"},
+		Counts:   map[string]int{"gmail.messages": 1},
+		Shards:   []PlainShard{shard},
+	}, Options{ConfigPath: config, Push: false})
+	if err == nil {
+		t.Fatal("expected symlink reuse error")
+	}
+}
+
+func TestWriteManifestRejectsSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	repo := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(outside, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("seed outside manifest: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "manifest.json")); err != nil {
+		t.Fatalf("symlink manifest: %v", err)
+	}
+
+	err := writeManifest(repo, Manifest{Format: formatVersion, App: "gog", Encrypted: true})
+	if err == nil {
+		t.Fatal("expected symlink manifest error")
+	}
+	got, readErr := os.ReadFile(outside)
+	if readErr != nil {
+		t.Fatalf("read outside manifest: %v", readErr)
+	}
+	if string(got) != "keep" {
+		t.Fatalf("outside manifest was overwritten: %q", got)
+	}
+}
+
+func TestWriteBackupReadmeRejectsSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	repo := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "README.md")
+	if err := os.WriteFile(outside, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("seed outside readme: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(repo, "README.md")); err != nil {
+		t.Fatalf("symlink readme: %v", err)
+	}
+
+	err := writeBackupReadme(repo)
+	if err == nil {
+		t.Fatal("expected symlink readme error")
+	}
+	got, readErr := os.ReadFile(outside)
+	if readErr != nil {
+		t.Fatalf("read outside readme: %v", readErr)
+	}
+	if string(got) != "keep" {
+		t.Fatalf("outside readme was overwritten: %q", got)
 	}
 }
 

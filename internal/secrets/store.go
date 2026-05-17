@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -326,7 +327,7 @@ func SetSecret(key string, value []byte) error {
 		return err
 	}
 
-	if err := ring.Set(keyringItem(key, value)); err != nil {
+	if err := verifiedSet(ring, key, value, "secret"); err != nil {
 		return wrapKeychainError(fmt.Errorf("store secret: %w", err))
 	}
 
@@ -409,30 +410,18 @@ func (s *KeyringStore) SetToken(client string, email string, tok Token) error {
 	}
 
 	primaryKey := tokenKey(normalizedClient, email)
-	if err := s.ring.Set(keyringItem(primaryKey, payload)); err != nil {
+	if err := verifiedSet(s.ring, primaryKey, payload, "token"); err != nil {
 		return wrapKeychainError(fmt.Errorf("store token: %w", err))
 	}
 
-	// Verify the token was actually persisted. On macOS, the Keychain can
-	// silently write 0 bytes when it is locked in a headless/server environment
-	// even though Set returns no error. Read back to catch this.
-	if item, readErr := s.ring.Get(primaryKey); readErr != nil {
-		return fmt.Errorf("%w: could not read back token after write: %w\n\n"+
-			"Workaround: switch to file-based keyring with: gog auth keyring file", errTokenVerifyFailed, readErr)
-	} else if len(item.Data) == 0 {
-		return fmt.Errorf("%w\n\n"+
-			"This usually happens when the macOS Keychain is locked in a headless environment.\n"+
-			"Workaround: switch to file-based keyring with: gog auth keyring file", errTokenVerifyFailed)
-	}
-
 	if normalizedClient == config.DefaultClientName {
-		if err := s.ring.Set(keyringItem(legacyTokenKey(email), payload)); err != nil {
+		if err := verifiedSet(s.ring, legacyTokenKey(email), payload, "legacy token"); err != nil {
 			return wrapKeychainError(fmt.Errorf("store legacy token: %w", err))
 		}
 	}
 
 	if tok.Subject != "" {
-		if err := s.ring.Set(keyringItem(subjectTokenKey(normalizedClient, tok.Subject), payload)); err != nil {
+		if err := verifiedSet(s.ring, subjectTokenKey(normalizedClient, tok.Subject), payload, "subject token"); err != nil {
 			return wrapKeychainError(fmt.Errorf("store subject token: %w", err))
 		}
 	}
@@ -462,7 +451,7 @@ func (s *KeyringStore) GetToken(client string, email string) (Token, error) {
 		if normalizedClient == config.DefaultClientName {
 			if legacyItem, legacyErr := s.ring.Get(legacyTokenKey(email)); legacyErr == nil {
 				item = legacyItem
-				if migrateErr := s.ring.Set(keyringItem(tokenKey(normalizedClient, email), legacyItem.Data)); migrateErr != nil {
+				if migrateErr := verifiedSet(s.ring, tokenKey(normalizedClient, email), legacyItem.Data, "migrated token"); migrateErr != nil {
 					return Token{}, wrapKeychainError(fmt.Errorf("migrate token: %w", migrateErr))
 				}
 			} else {
@@ -736,12 +725,22 @@ func (s *KeyringStore) GetDefaultAccount(client string) (string, error) {
 		return "", err
 	}
 
-	if normalizedClient != "" {
+	if normalizedClient == config.DefaultClientName {
 		if it, getErr := s.ring.Get(defaultAccountKeyForClient(normalizedClient)); getErr == nil {
 			return string(it.Data), nil
 		} else if !errors.Is(getErr, keyring.ErrKeyNotFound) {
 			return "", fmt.Errorf("read default account: %w", getErr)
 		}
+	}
+
+	if normalizedClient != config.DefaultClientName {
+		if it, getErr := s.ring.Get(defaultAccountKeyForClient(normalizedClient)); getErr == nil {
+			return string(it.Data), nil
+		} else if !errors.Is(getErr, keyring.ErrKeyNotFound) {
+			return "", fmt.Errorf("read default account: %w", getErr)
+		}
+
+		return "", nil
 	}
 
 	it, err := s.ring.Get(defaultAccountKey)
@@ -767,13 +766,19 @@ func (s *KeyringStore) SetDefaultAccount(client string, email string) error {
 		return err
 	}
 
-	if normalizedClient != "" {
-		if err := s.ring.Set(keyringItem(defaultAccountKeyForClient(normalizedClient), []byte(email))); err != nil {
+	if normalizedClient != config.DefaultClientName {
+		if err := verifiedSet(s.ring, defaultAccountKeyForClient(normalizedClient), []byte(email), "default account"); err != nil {
 			return fmt.Errorf("store default account: %w", err)
 		}
+
+		return nil
 	}
 
-	if err := s.ring.Set(keyringItem(defaultAccountKey, []byte(email))); err != nil {
+	if err := verifiedSet(s.ring, defaultAccountKeyForClient(normalizedClient), []byte(email), "default account"); err != nil {
+		return fmt.Errorf("store default account: %w", err)
+	}
+
+	if err := verifiedSet(s.ring, defaultAccountKey, []byte(email), "legacy default account"); err != nil {
 		return fmt.Errorf("store default account: %w", err)
 	}
 
@@ -786,14 +791,45 @@ func (s *KeyringStore) DeleteDefaultAccount(client string) error {
 		return err
 	}
 
-	if normalizedClient != "" {
+	if normalizedClient != config.DefaultClientName {
 		if err := s.ring.Remove(defaultAccountKeyForClient(normalizedClient)); err != nil && !errors.Is(err, keyring.ErrKeyNotFound) {
 			return fmt.Errorf("delete default account: %w", err)
 		}
+
+		return nil
+	}
+
+	if err := s.ring.Remove(defaultAccountKeyForClient(normalizedClient)); err != nil && !errors.Is(err, keyring.ErrKeyNotFound) {
+		return fmt.Errorf("delete default account: %w", err)
 	}
 
 	if err := s.ring.Remove(defaultAccountKey); err != nil && !errors.Is(err, keyring.ErrKeyNotFound) {
 		return fmt.Errorf("delete default account: %w", err)
+	}
+
+	return nil
+}
+
+func verifiedSet(ring keyring.Keyring, key string, data []byte, label string) error {
+	if err := ring.Set(keyringItem(key, data)); err != nil {
+		return fmt.Errorf("set %s: %w", label, err)
+	}
+
+	item, err := ring.Get(key)
+	if err != nil {
+		return fmt.Errorf("%w: could not read back %s after write: %w\n\n"+
+			"Workaround: switch to file-based keyring with: gog auth keyring file", errTokenVerifyFailed, label, err)
+	}
+
+	if !bytes.Equal(item.Data, data) {
+		if len(item.Data) == 0 {
+			return fmt.Errorf("%w\n\n"+
+				"This usually happens when the macOS Keychain is locked in a headless environment.\n"+
+				"Workaround: switch to file-based keyring with: gog auth keyring file", errTokenVerifyFailed)
+		}
+
+		return fmt.Errorf("%w: read-back mismatch for %s\n\n"+
+			"Workaround: switch to file-based keyring with: gog auth keyring file", errTokenVerifyFailed, label)
 	}
 
 	return nil
