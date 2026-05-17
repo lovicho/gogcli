@@ -291,6 +291,7 @@ func TestEnsureReplayableBodyMore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureReplayableBody: %v", err)
 	}
+
 	if !replayable {
 		t.Fatalf("expected replayable body")
 	}
@@ -331,9 +332,11 @@ func TestEnsureReplayableBodySkipsLargeKnownLength(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureReplayableBody: %v", err)
 	}
+
 	if replayable {
 		t.Fatalf("expected non-replayable body")
 	}
+
 	if req.GetBody != nil {
 		t.Fatalf("expected GetBody to remain nil")
 	}
@@ -342,6 +345,7 @@ func TestEnsureReplayableBodySkipsLargeKnownLength(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
+
 	if string(body) != "hello" {
 		t.Fatalf("body was consumed: %q", body)
 	}
@@ -358,6 +362,7 @@ func TestEnsureReplayableBodySkipsUnknownLength(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureReplayableBody: %v", err)
 	}
+
 	if replayable {
 		t.Fatalf("expected non-replayable body")
 	}
@@ -366,6 +371,7 @@ func TestEnsureReplayableBodySkipsUnknownLength(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
+
 	if string(body) != "hello" {
 		t.Fatalf("body was consumed: %q", body)
 	}
@@ -430,6 +436,7 @@ func TestRetryTransportRoundTripDoesNotRetryLargeNonReplayableBody(t *testing.T)
 		if err != nil {
 			return nil, fmt.Errorf("read body: %w", err)
 		}
+
 		if string(body) != "payload" {
 			t.Errorf("unexpected body: %q", body)
 			return nil, errUnexpectedRequestBody
@@ -460,6 +467,7 @@ func TestRetryTransportRoundTripDoesNotRetryLargeNonReplayableBody(t *testing.T)
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected 429, got %d", resp.StatusCode)
 	}
+
 	if calls != 1 {
 		t.Fatalf("expected one call, got %d", calls)
 	}

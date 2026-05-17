@@ -413,6 +413,7 @@ func TestEnsureReplayableBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureReplayableBody: %v", err)
 	}
+
 	if !replayable {
 		t.Fatalf("expected replayable body")
 	}

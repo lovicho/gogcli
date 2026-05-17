@@ -210,6 +210,7 @@ func ensureReplayableBody(req *http.Request) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("read request body: %w", err)
 	}
+
 	if int64(len(bodyBytes)) > maxBufferedReplayBodyBytes {
 		return false, fmt.Errorf("%w: %d bytes exceeds %d bytes", errRequestBodyTooLarge, len(bodyBytes), maxBufferedReplayBodyBytes)
 	}
