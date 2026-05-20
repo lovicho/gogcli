@@ -31,9 +31,9 @@ Human hints and progress should stay on stderr; stdout is for data.
 
 - Do not print access tokens, refresh tokens, OAuth client secrets, or keyring
   passwords.
-- Do not store `GOG_KEYRING_PASSWORD` in a shell profile or plaintext project
-  file. If the file keyring cannot unlock non-interactively, stop and ask for a
-  safer setup.
+- On Peter's Macs, `GOG_KEYRING_PASSWORD` is intentionally exported from
+  `~/.profile`; use a login shell such as `zsh -lc` so `gog` can unlock the
+  file keyring non-interactively. Do not print the value.
 - In headless/service agents, verify the service environment, not just the login
   shell. `GOG_KEYRING_BACKEND=file`, `GOG_KEYRING_PASSWORD`, and `HOME` must be
   present in the process that launches `gog`.
@@ -82,6 +82,17 @@ openclaw agent --agent main --message \
 
 If this fails with `keyring.password` while the same `gog auth doctor` works in
 the shell, fix the service or agent environment before reauthenticating.
+
+Remote Mac OAuth pattern:
+
+1. Start the OAuth flow in remote tmux on the target Mac, for example
+   `gog auth add user@example.com --services gmail --force-consent --timeout 15m`.
+2. Open the printed OAuth URL on that same Mac's Chrome with `open -a "Google Chrome"`.
+3. Drive the Google page on the target Mac with AppleScript/DOM clicks; do not
+   move the OAuth browser to the local Mac unless Peter explicitly asks.
+4. If tmux asks for the file-keyring passphrase, source it from the remote
+   login environment via `zsh -lc` and paste it into tmux without printing it.
+5. Verify through `zsh -lc 'gog auth list --check --json --no-input'`.
 
 ## Common Reads
 
