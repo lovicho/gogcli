@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Docs: make generated command references ignore local keyring config so `make ci` stays clean across developer machines.
 - CLI: harden backup writes, config/credentials atomic saves, keyring write verification, line input buffering, disabled-API hints, JSON transform number handling, and untrusted-content wrapping after ClawPatch review.
 - CLI: bound retry request replay buffering, recover failed async backup pushes, ignore global git commit signing in backup snapshots, and protect account manager OAuth redirects with CSRF checks.
 - Release: update the Homebrew handoff to publish through `openclaw/tap`.

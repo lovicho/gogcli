@@ -15,8 +15,18 @@ if [ ! -x "$BIN" ]; then
 fi
 
 schema_file="$(mktemp "${TMPDIR:-/tmp}/gog-schema-XXXXXX.json")"
-trap 'rm -f "$schema_file"' EXIT
-"$BIN" schema --json >"$schema_file"
+schema_config_home="$(mktemp -d "${TMPDIR:-/tmp}/gog-schema-config-XXXXXX")"
+cleanup() {
+  rm -f "$schema_file"
+  rm -rf "$schema_config_home"
+}
+trap cleanup EXIT
+
+env \
+  -u GOG_KEYRING_BACKEND \
+  -u GOG_KEYRING_PASSWORD \
+  XDG_CONFIG_HOME="$schema_config_home" \
+  "$BIN" schema --json >"$schema_file"
 
 "$PY" - "$schema_file" "$OUT" "$DOCS_DIR" <<'PY'
 import json
