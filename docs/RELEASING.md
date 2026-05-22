@@ -16,14 +16,14 @@ scripts/verify-release.sh X.Y.Z
 
 Assumptions:
 - Repo: `openclaw/gogcli`
-- Tap repo: `../homebrew-tap` (tap: `steipete/tap`)
+- Tap repo: `../openclaw-homebrew-tap` (tap: `openclaw/tap`)
 - Homebrew formula name: `gogcli` (installs the `gog` binary)
 
 ## 0) Prereqs
 - Clean working tree on `main`.
 - Go toolchain installed (Go version comes from `go.mod`).
 - `make` works locally.
-- Access to the tap repo (e.g. `steipete/homebrew-tap`).
+- Access to the tap repo (e.g. `openclaw/homebrew-tap`).
 - For signed macOS release binaries (required):
   GitHub Actions secrets must be set, or the release workflow fails before
   producing Darwin artifacts:
@@ -79,7 +79,7 @@ gh workflow run release.yml -f tag=vX.Y.Z
 ```
 
 ## 5) Update (or add) the Homebrew formula
-In the tap repo (assumed sibling at `../homebrew-tap`), create/update `Formula/gogcli.rb`.
+In the tap repo (assumed sibling at `../openclaw-homebrew-tap`), create/update `Formula/gogcli.rb`.
 
 Recommended formula shape (download GitHub release assets; preserves macOS code signature):
 - `version "X.Y.Z"`
@@ -104,7 +104,7 @@ shasum -a 256 /tmp/gogcli.tar.gz
 
 Commit + push in the tap repo:
 ```sh
-cd ../homebrew-tap
+cd ../openclaw-homebrew-tap
 git add Formula/gogcli.rb
 git commit -m "gogcli vX.Y.Z"
 git push origin main
@@ -114,10 +114,10 @@ git push origin main
 ```sh
 brew update
 brew uninstall gogcli || true
-brew untap steipete/tap || true
-brew tap steipete/tap
-brew install steipete/tap/gogcli
-brew test steipete/tap/gogcli
+brew untap openclaw/tap || true
+brew tap openclaw/tap
+brew install openclaw/tap/gogcli
+brew test openclaw/tap/gogcli
 
 gog --help
 ```

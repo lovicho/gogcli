@@ -6,15 +6,15 @@ release builds use the tag, while local builds use `git describe`.
 ## Homebrew (macOS, Linux)
 
 ```bash
-brew install gogcli
+brew install openclaw/tap/gogcli
 gog --version
 ```
 
-The Homebrew formula lives in `steipete/homebrew-tap` and installs the `gog`
+The Homebrew formula lives in `openclaw/homebrew-tap` and installs the `gog`
 binary. Release verification should run:
 
 ```bash
-brew test steipete/tap/gogcli
+brew test openclaw/tap/gogcli
 gog --version
 ```
 
@@ -138,7 +138,7 @@ keyring health, refresh-token validity, and Workspace-specific failure modes.
 
 ## Updating
 
-- **Homebrew:** `brew upgrade gogcli`.
+- **Homebrew:** `brew upgrade openclaw/tap/gogcli`.
 - **Docker:** pull a new tag (`ghcr.io/openclaw/gogcli:vX.Y.Z`).
 - **GitHub release archives:** download the new tarball/ZIP and replace the
   binary.

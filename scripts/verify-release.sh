@@ -60,7 +60,8 @@ fi
 
 make ci
 
-formula_path="../homebrew-tap/Formula/gogcli.rb"
+tap_name="openclaw/tap"
+formula_path="../openclaw-homebrew-tap/Formula/gogcli.rb"
 if [[ ! -f "$formula_path" ]]; then
   echo "missing formula at $formula_path" >&2
   exit 2
@@ -161,8 +162,8 @@ verify_darwin_asset_signature "gogcli_${version}_darwin_amd64.tar.gz"
 verify_darwin_asset_signature "gogcli_${version}_darwin_arm64.tar.gz"
 
 brew update >/dev/null
-brew upgrade gogcli || brew install steipete/tap/gogcli
-brew test steipete/tap/gogcli
+brew upgrade "$tap_name/gogcli" || brew install "$tap_name/gogcli"
+brew test "$tap_name/gogcli"
 gog --version
 
 rm -rf "$tmp_assets_dir"

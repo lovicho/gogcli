@@ -55,7 +55,7 @@
     <!-- install pill -->
     <rect x="0" y="0" width="320" height="48" rx="11" fill="#0f172a"/>
     <text x="20" y="32" fill="#64748b" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="500">$</text>
-    <text x="42" y="32" fill="#e6edf3" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="18" font-weight="600">brew install gogcli</text>
+    <text x="42" y="31" fill="#e6edf3" font-family="JetBrains Mono, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600">brew install openclaw/tap/gogcli</text>
 
     <!-- URL pill -->
     <rect x="340" y="0" width="180" height="48" rx="11" fill="#ffffff" stroke="#cbd5e1"/>

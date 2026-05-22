@@ -16,7 +16,7 @@ const productName = "gog";
 const productTagline = "Google Workspace in your terminal";
 const productDescription =
   "A single Go CLI for Gmail, Calendar, Drive, Docs, Sheets, Slides, Forms, Apps Script, Contacts, Tasks, and Workspace admin — built for terminals, scripts, CI, and coding agents.";
-const brewInstall = "brew install gogcli";
+const brewInstall = "brew install openclaw/tap/gogcli";
 
 const sections = [
   ["Start", ["index.md", "install.md", "quickstart.md", "auth-clients.md", "workspace-admin.md", "safety-profiles.md"]],

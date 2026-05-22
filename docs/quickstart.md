@@ -12,7 +12,7 @@ profiles, read [Auth Clients](auth-clients.md) after this.
 ## 1. Install
 
 ```bash
-brew install gogcli
+brew install openclaw/tap/gogcli
 gog --version
 ```
 

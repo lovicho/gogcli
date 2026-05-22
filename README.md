@@ -32,7 +32,7 @@ ZIPs, source builds, and headless/container keyring setup.
 ### Homebrew
 
 ```bash
-brew install gogcli
+brew install openclaw/tap/gogcli
 gog --version
 ```
 
