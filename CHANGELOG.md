@@ -2,6 +2,10 @@
 
 ## 0.19.1 - Unreleased
 
+### Fixed
+
+- Docs: update the bundled `gog` agent skill to preserve broad user OAuth scopes during reauth and rely on command guards for scoped execution.
+
 ## 0.19.0 - 2026-05-22
 
 ### Added
@@ -14,7 +18,6 @@
 
 ### Fixed
 
-- Docs: update the bundled `gog` agent skill to preserve broad user OAuth scopes during reauth and rely on command guards for scoped execution.
 - People: fall back to token identity when `gog me` / `gog whoami` hit a disabled People API on the OAuth client project. (#460, #461)
 - Docs: drop all-whitespace Markdown table header rows during Docs markdown writes, and rewrite same-document `#heading-slug` links to native Google Docs heading links after Drive markdown import. (#632, #633) — thanks @sebsnyk.
 - Gmail: include attachment metadata in `gmail messages search --include-body --json` results. (#620)
