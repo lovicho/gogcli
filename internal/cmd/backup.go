@@ -89,8 +89,23 @@ type BackupInitCmd struct {
 	backupFlags
 }
 
-func (c *BackupInitCmd) Run(ctx context.Context) error {
-	cfg, recipient, err := backup.Init(ctx, c.options())
+func (c *BackupInitCmd) Run(ctx context.Context, flags *RootFlags) error {
+	opts := c.options()
+	if flags != nil && flags.DryRun {
+		cfg, err := backup.ResolveOptions(opts)
+		if err != nil {
+			return err
+		}
+		return dryRunExit(ctx, flags, "backup.init", map[string]any{
+			"repo":       cfg.Repo,
+			"remote":     cfg.Remote,
+			"identity":   cfg.Identity,
+			"recipients": cfg.Recipients,
+			"push":       opts.Push,
+		})
+	}
+
+	cfg, recipient, err := backup.Init(ctx, opts)
 	if err != nil {
 		return err
 	}

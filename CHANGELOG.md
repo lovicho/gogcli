@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Backup: make `backup init --dry-run` return a dry-run payload without writing config, creating a repo, or touching the configured remote.
+
 ## 0.20.0 - 2026-05-30
 
 ### Fixed
