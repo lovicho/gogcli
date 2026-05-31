@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"google.golang.org/api/calendar/v3"
@@ -77,7 +76,7 @@ func validateAutoDeclineMode(s string) (string, error) {
 	case "new":
 		return "declineOnlyNewConflictingInvitations", nil
 	default:
-		return "", fmt.Errorf("invalid auto-decline mode: %q (must be none, all, or new)", s)
+		return "", usagef("invalid auto-decline mode: %q (must be none, all, or new)", s)
 	}
 }
 
@@ -89,6 +88,6 @@ func validateChatStatus(s string) (string, error) {
 	case "donotdisturb", "dnd":
 		return "doNotDisturb", nil
 	default:
-		return "", fmt.Errorf("invalid chat status: %q (must be available or doNotDisturb)", s)
+		return "", usagef("invalid chat status: %q (must be available or doNotDisturb)", s)
 	}
 }

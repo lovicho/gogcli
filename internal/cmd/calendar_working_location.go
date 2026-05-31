@@ -107,14 +107,14 @@ func buildWorkingLocationProperties(input workingLocationInput) (*calendar.Event
 		}
 	case "custom":
 		if strings.TrimSpace(input.CustomLabel) == "" {
-			return nil, fmt.Errorf("--custom-label is required for type=custom")
+			return nil, usage("--custom-label is required for type=custom")
 		}
 		props.Type = "customLocation"
 		props.CustomLocation = &calendar.EventWorkingLocationPropertiesCustomLocation{
 			Label: strings.TrimSpace(input.CustomLabel),
 		}
 	default:
-		return nil, fmt.Errorf("invalid location type: %q (must be home, office, or custom)", locType)
+		return nil, usagef("invalid location type: %q (must be home, office, or custom)", locType)
 	}
 
 	return props, nil

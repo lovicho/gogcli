@@ -47,6 +47,8 @@ func TestWorkingLocationProperties(t *testing.T) {
 	cmd = &CalendarWorkingLocationCmd{Type: "custom"}
 	if _, err = cmd.buildWorkingLocationProperties(); err == nil {
 		t.Fatalf("expected error for missing custom label")
+	} else if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
 	}
 }
 
@@ -140,5 +142,29 @@ func TestCalendarWorkingLocation_RunJSON(t *testing.T) {
 	}
 	if props.OfficeLocation.Label != "HQ" || props.OfficeLocation.BuildingId != "b1" || props.OfficeLocation.FloorId != "f1" || props.OfficeLocation.DeskId != "d1" {
 		t.Fatalf("unexpected office props: %#v", props.OfficeLocation)
+	}
+}
+
+func TestCalendarWorkingLocation_InvalidFlagsAreUsageErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "custom missing label",
+			args: []string{"--json", "calendar", "working-location", "primary", "--from", "2026-06-15", "--to", "2026-06-15", "--type", "custom", "--dry-run"},
+		},
+		{
+			name: "invalid type",
+			args: []string{"--json", "calendar", "working-location", "primary", "--from", "2026-06-15", "--to", "2026-06-15", "--type", "mars", "--dry-run"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Execute(tt.args)
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+			}
+		})
 	}
 }
