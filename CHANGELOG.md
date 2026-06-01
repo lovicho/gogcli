@@ -67,6 +67,7 @@
 - Keep: return usage exit code 2 for invalid attachment names instead of reporting them as generic runtime failures.
 - Keep: return usage exit code 2 for empty search queries instead of reporting them as generic runtime failures.
 - People: return an empty JSON array, not null, for `people relations --json` when a profile has no relation entries.
+- Search Console: validate sitemap feed URLs before submit/delete dry-runs instead of accepting invalid sitemap requests.
 - Tasks: return usage exit code 2 for invalid recurrence flags instead of reporting them as generic runtime failures.
 - Tasks: validate add/update due dates before dry-run and return usage exit code 2 for invalid task date values.
 - CLI: stop advertising `ads` as an API command service in root help; it remains available as an auth-only OAuth scope.
