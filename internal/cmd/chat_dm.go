@@ -29,6 +29,9 @@ func (c *ChatDMSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if email == "" {
 		return usage("required: email")
 	}
+	if err := validatePlainEmail("email", email); err != nil {
+		return err
+	}
 
 	text := strings.TrimSpace(c.Text)
 	if text == "" {
@@ -110,6 +113,9 @@ func (c *ChatDMSpaceCmd) Run(ctx context.Context, flags *RootFlags) error {
 	email := strings.TrimSpace(c.Email)
 	if email == "" {
 		return usage("required: email")
+	}
+	if err := validatePlainEmail("email", email); err != nil {
+		return err
 	}
 
 	if err := dryRunExit(ctx, flags, "chat.dm.space", map[string]any{

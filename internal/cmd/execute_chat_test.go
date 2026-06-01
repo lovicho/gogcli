@@ -488,3 +488,29 @@ func TestExecute_ChatDMSend_JSON(t *testing.T) {
 		t.Fatalf("unexpected out=%q", out)
 	}
 }
+
+func TestExecute_ChatDM_InvalidEmailFailsBeforeDryRun(t *testing.T) {
+	origNew := newChatService
+	t.Cleanup(func() { newChatService = origNew })
+	newChatService = func(context.Context, string) (*chat.Service, error) {
+		t.Fatalf("expected validation to fail before creating chat service")
+		return nil, errUnexpectedChatServiceCall
+	}
+
+	testCases := [][]string{
+		{"--account", "a@b.com", "--dry-run", "chat", "dm", "send", "nope", "--text", "ping"},
+		{"--account", "a@b.com", "--dry-run", "chat", "dm", "space", "nope"},
+		{"--account", "a@b.com", "--dry-run", "chat", "dm", "send", "Tester <x@example.com>", "--text", "ping"},
+	}
+	for _, args := range testCases {
+		t.Run(strings.Join(args[4:], "_"), func(t *testing.T) {
+			_ = captureStderr(t, func() {
+				err := Execute(args)
+				var exitErr *ExitError
+				if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid email") {
+					t.Fatalf("unexpected err: %v", err)
+				}
+			})
+		})
+	}
+}
