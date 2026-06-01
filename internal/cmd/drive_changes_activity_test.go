@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -50,6 +51,29 @@ func TestDriveChangesList(t *testing.T) {
 
 	if err := (&DriveChangesListCmd{Token: "123", Max: 10, IncludeRemoved: true}).Run(newCmdOutputContext(t, io.Discard, io.Discard), &RootFlags{Account: "a@example.com"}); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestDriveChangesListInvalidMaxFailsBeforeService(t *testing.T) {
+	origNew := newDriveService
+	t.Cleanup(func() { newDriveService = origNew })
+	newDriveService = func(context.Context, string) (*drive.Service, error) {
+		t.Fatalf("expected max validation to fail before creating drive service")
+		return nil, errUnexpectedDriveServiceCall
+	}
+
+	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
+	flags := &RootFlags{Account: "a@example.com"}
+
+	for _, args := range [][]string{{"--token", "123", "--max", "0"}, {"--token", "123", "--max=-1"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			cmd := &DriveChangesListCmd{}
+			err := runKong(t, cmd, args, ctx, flags)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
+		})
 	}
 }
 

@@ -64,16 +64,20 @@ type DriveChangesListCmd struct {
 
 func (c *DriveChangesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	_, svc, err := requireDriveService(ctx, flags)
-	if err != nil {
-		return err
-	}
 	token := strings.TrimSpace(c.Page)
 	if token == "" {
 		token = strings.TrimSpace(c.Token)
 	}
 	if token == "" {
 		return usage("missing --token")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+
+	_, svc, err := requireDriveService(ctx, flags)
+	if err != nil {
+		return err
 	}
 
 	fetch := func(pageToken string) ([]*drive.Change, string, error) {
