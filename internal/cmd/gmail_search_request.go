@@ -23,6 +23,13 @@ func newGmailSearchRequestOptions(query string, maxResults int64, pageToken stri
 	}
 }
 
+func validateGmailMaxResults(maxResults int64) error {
+	if maxResults <= 0 {
+		return usage("--max must be > 0")
+	}
+	return nil
+}
+
 func applyGmailThreadListOptions(call *gmail.UsersThreadsListCall, opts gmailSearchRequestOptions) *gmail.UsersThreadsListCall {
 	call = call.Q(opts.query).MaxResults(opts.maxResults)
 	if len(opts.labelIDs) > 0 {

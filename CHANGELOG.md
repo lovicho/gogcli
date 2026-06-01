@@ -52,6 +52,7 @@
 - Gmail: return usage exit code 2 for invalid vacation responder and auto-forwarding settings flags instead of reporting them as generic runtime failures.
 - Gmail: return usage exit code 2 for invalid message formats and batch-modify label flags instead of reporting them as generic runtime failures.
 - Gmail: return usage exit code 2 for invalid compose header values before send and draft dry-runs instead of reporting dry-run success.
+- Gmail: return usage exit code 2 for non-positive list `--max` values instead of forwarding them to Gmail APIs.
 - Gmail: return usage exit code 2 when label rename, style, or delete commands reject immutable system labels.
 - Gmail: return usage exit code 2 when tracked send/setup options fail local validation.
 - Gmail: return usage exit code 2 when send-as commands receive an empty email argument.
