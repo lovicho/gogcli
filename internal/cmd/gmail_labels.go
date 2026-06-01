@@ -160,7 +160,7 @@ func (c *GmailLabelsRenameCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	if label.Type == "system" {
-		return fmt.Errorf("cannot rename system label %q", label.Name)
+		return usagef("cannot rename system label %q", label.Name)
 	}
 
 	if validateErr := ensureLabelNameAvailable(svc, newName); validateErr != nil {
@@ -237,7 +237,7 @@ func (c *GmailLabelsStyleCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if label.Type == "system" {
-		return fmt.Errorf("cannot style system label %q", label.Name)
+		return usagef("cannot style system label %q", label.Name)
 	}
 
 	patch := &gmail.Label{
@@ -458,7 +458,7 @@ func (c *GmailLabelsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 	// System labels cannot be deleted
 	if label.Type == "system" {
-		return fmt.Errorf("cannot delete system label %q", label.Name)
+		return usagef("cannot delete system label %q", label.Name)
 	}
 
 	if confirmErr := confirmDestructive(ctx, flags, fmt.Sprintf("delete label %q", label.Name)); confirmErr != nil {

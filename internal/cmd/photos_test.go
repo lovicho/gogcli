@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/steipete/gogcli/internal/googleapi"
@@ -66,5 +67,41 @@ func TestPhotosSearchBuildsReadOnlyRequest(t *testing.T) {
 	}
 	if parsed.MediaItemCount != 1 || len(parsed.MediaItems) != 1 || parsed.MediaItems[0].ID != "m1" {
 		t.Fatalf("unexpected output: %#v", parsed)
+	}
+}
+
+func TestPhotosValidationFailsBeforeClient(t *testing.T) {
+	orig := newPhotosClient
+	t.Cleanup(func() { newPhotosClient = orig })
+	newPhotosClient = func(context.Context, string) (*googleapi.PhotosClient, error) {
+		t.Fatalf("expected local validation to fail before creating Photos client")
+		return nil, context.Canceled
+	}
+
+	testCases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list zero max", args: []string{"--account", "a@b.com", "photos", "list", "--max", "0"}, want: "max must be > 0"},
+		{name: "list negative max", args: []string{"--account", "a@b.com", "photos", "list", "--max=-1"}, want: "max must be > 0"},
+		{name: "list max above api limit", args: []string{"--account", "a@b.com", "photos", "list", "--max", "101"}, want: "max must be <= 100"},
+		{name: "search zero max", args: []string{"--account", "a@b.com", "photos", "search", "--max", "0"}, want: "max must be > 0"},
+		{name: "search negative max", args: []string{"--account", "a@b.com", "photos", "search", "--max=-1"}, want: "max must be > 0"},
+		{name: "search max above api limit", args: []string{"--account", "a@b.com", "photos", "search", "--max", "101"}, want: "max must be <= 100"},
+		{name: "search bad from", args: []string{"--account", "a@b.com", "photos", "search", "--from", "nope"}, want: "--from must be YYYY-MM-DD"},
+		{name: "search bad to", args: []string{"--account", "a@b.com", "photos", "search", "--to", "nope"}, want: "--to must be YYYY-MM-DD"},
+		{name: "get empty id", args: []string{"--account", "a@b.com", "photos", "get", ""}, want: "empty mediaItemId"},
+		{name: "download empty id", args: []string{"--account", "a@b.com", "photos", "download", ""}, want: "empty mediaItemId"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_ = captureStderr(t, func() {
+				err := Execute(tc.args)
+				if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("unexpected err: %v", err)
+				}
+			})
+		})
 	}
 }

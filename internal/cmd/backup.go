@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -89,8 +88,26 @@ type BackupInitCmd struct {
 	backupFlags
 }
 
-func (c *BackupInitCmd) Run(ctx context.Context) error {
-	cfg, recipient, err := backup.Init(ctx, c.options())
+func (c *BackupInitCmd) Run(ctx context.Context, flags *RootFlags) error {
+	opts := c.options()
+	if c.NoPush && strings.TrimSpace(c.Remote) == "" {
+		opts.SuppressDefaultRemote = true
+	}
+	if flags != nil && flags.DryRun {
+		cfg, err := backup.ResolveOptions(opts)
+		if err != nil {
+			return err
+		}
+		return dryRunExit(ctx, flags, "backup.init", map[string]any{
+			"repo":       cfg.Repo,
+			"remote":     cfg.Remote,
+			"identity":   cfg.Identity,
+			"recipients": cfg.Recipients,
+			"push":       opts.Push,
+		})
+	}
+
+	cfg, recipient, err := backup.Init(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -136,6 +153,9 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	services := expandBackupServices(splitCSV(c.Services))
 	if len(services) == 0 {
 		return usage("at least one --services value is required")
+	}
+	if err := c.validate(); err != nil {
+		return err
 	}
 	backupOpts := c.options()
 	backupOpts.AsyncPush = c.GmailCheckpoints
@@ -258,7 +278,7 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 			}
 			snapshots = append(snapshots, snapshot)
 		default:
-			return fmt.Errorf("unsupported backup service %q (supported: all, admin, appscript, calendar, chat, classroom, contacts, drive, gmail, gmail-settings, groups, keep, tasks, workspace)", service)
+			return usagef("unsupported backup service %q (supported: all, admin, appscript, calendar, chat, classroom, contacts, drive, gmail, gmail-settings, groups, keep, tasks, workspace)", service)
 		}
 	}
 	result, err := backup.PushSnapshot(ctx, mergeBackupSnapshots(snapshots...), backupOpts)
@@ -266,6 +286,31 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	return writeBackupResult(ctx, result)
+}
+
+func (c *BackupPushCmd) validate() error {
+	if c.Max < 0 {
+		return usage("--max must be >= 0")
+	}
+	if c.ShardMaxRows <= 0 {
+		return usage("--shard-max-rows must be > 0")
+	}
+	if c.DriveContentMaxBytes < 0 {
+		return usage("--drive-content-max-bytes must be >= 0")
+	}
+	if c.DriveContentTimeout <= 0 {
+		return usage("--drive-content-timeout must be > 0")
+	}
+	if c.WorkspaceMaxFiles < 0 {
+		return usage("--workspace-max-files must be >= 0")
+	}
+	if c.GmailCheckpointRows < 0 {
+		return usage("--gmail-checkpoint-rows must be >= 0")
+	}
+	if c.GmailCheckpointEvery < 0 {
+		return usage("--gmail-checkpoint-interval must be >= 0")
+	}
+	return nil
 }
 
 func (c *BackupPushCmd) buildOptionalSnapshot(flags *RootFlags, service string, build func() (backup.Snapshot, error)) (backup.Snapshot, error) {
@@ -294,6 +339,9 @@ type BackupGmailPushCmd struct {
 }
 
 func (c *BackupGmailPushCmd) Run(ctx context.Context, flags *RootFlags) error {
+	if err := c.validate(); err != nil {
+		return err
+	}
 	backupOpts := c.options()
 	backupOpts.AsyncPush = c.Checkpoints
 	backupOpts.Progress = func(format string, args ...any) { gmailBackupProgressf(ctx, format, args...) }
@@ -317,6 +365,22 @@ func (c *BackupGmailPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	return writeBackupResult(ctx, result)
+}
+
+func (c *BackupGmailPushCmd) validate() error {
+	if c.Max < 0 {
+		return usage("--max must be >= 0")
+	}
+	if c.ShardMaxRows <= 0 {
+		return usage("--shard-max-rows must be > 0")
+	}
+	if c.CheckpointRows < 0 {
+		return usage("--checkpoint-rows must be >= 0")
+	}
+	if c.CheckpointEvery < 0 {
+		return usage("--checkpoint-interval must be >= 0")
+	}
+	return nil
 }
 
 type BackupStatusCmd struct {

@@ -27,6 +27,9 @@ type ChatSpacesListCmd struct {
 
 func (c *ChatSpacesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -120,17 +123,20 @@ type ChatSpacesFindCmd struct {
 
 func (c *ChatSpacesFindCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	displayName := strings.TrimSpace(c.DisplayName)
+	if displayName == "" {
+		return usage("required: displayName")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
 	}
 	if err = requireWorkspaceAccount(account); err != nil {
 		return err
-	}
-
-	displayName := strings.TrimSpace(c.DisplayName)
-	if displayName == "" {
-		return usage("required: displayName")
 	}
 
 	svc, err := newChatService(ctx, account)
@@ -230,7 +236,10 @@ func (c *ChatSpacesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	memberUsers := make([]string, 0, len(members))
 	memberships := make([]*chat.Membership, 0, len(members))
 	for _, member := range members {
-		user := normalizeUser(member)
+		user, err := normalizeChatMemberUser(member)
+		if err != nil {
+			return err
+		}
 		if user == "" {
 			continue
 		}

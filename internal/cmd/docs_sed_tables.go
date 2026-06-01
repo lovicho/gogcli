@@ -280,7 +280,7 @@ func (c *DocsSedCmd) runTableOp(ctx context.Context, u *ui.UI, account, id strin
 	}
 
 	if len(tables) == 0 {
-		return fmt.Errorf("document has no tables")
+		return usage("document has no tables")
 	}
 
 	// Resolve which tables to target
@@ -295,7 +295,7 @@ func (c *DocsSedCmd) runTableOp(ctx context.Context, u *ui.UI, account, id strin
 			resolved = len(tables) + resolved + 1
 		}
 		if resolved < 1 || resolved > len(tables) {
-			return fmt.Errorf("table %d out of range (document has %d tables)", tIdx, len(tables))
+			return usagef("table %d out of range (document has %d tables)", tIdx, len(tables))
 		}
 		targets = []tableInfo{tables[resolved-1]}
 	}
@@ -332,7 +332,7 @@ func (c *DocsSedCmd) runTableOp(ctx context.Context, u *ui.UI, account, id strin
 	}
 
 	// Future: handle pin=N, other table-level operations
-	return fmt.Errorf("unsupported table operation: %q (expected empty replacement for delete)", replacement)
+	return usagef("unsupported table operation: %q (expected empty replacement for delete)", replacement)
 }
 
 type tableWithIndex struct {
@@ -379,7 +379,7 @@ func findTableCell(doc *docs.Document, ref *tableCellRef) (*docs.TableCell, erro
 	tables := collectAllTables(doc)
 
 	if len(tables) == 0 {
-		return nil, fmt.Errorf("document has no tables")
+		return nil, usage("document has no tables")
 	}
 
 	// Resolve table index
@@ -388,19 +388,19 @@ func findTableCell(doc *docs.Document, ref *tableCellRef) (*docs.TableCell, erro
 		ti = len(tables) + ti + 1 // -1 → last
 	}
 	if ti < 1 || ti > len(tables) {
-		return nil, fmt.Errorf("table %d out of range (document has %d tables)", ref.tableIndex, len(tables))
+		return nil, usagef("table %d out of range (document has %d tables)", ref.tableIndex, len(tables))
 	}
 	table := tables[ti-1]
 
 	// Resolve row
 	if ref.row < 1 || ref.row > len(table.TableRows) {
-		return nil, fmt.Errorf("row %d out of range (table has %d rows)", ref.row, len(table.TableRows))
+		return nil, usagef("row %d out of range (table has %d rows)", ref.row, len(table.TableRows))
 	}
 	row := table.TableRows[ref.row-1]
 
 	// Resolve col
 	if ref.col < 1 || ref.col > len(row.TableCells) {
-		return nil, fmt.Errorf("col %d out of range (row has %d columns)", ref.col, len(row.TableCells))
+		return nil, usagef("col %d out of range (row has %d columns)", ref.col, len(row.TableCells))
 	}
 	return row.TableCells[ref.col-1], nil
 }

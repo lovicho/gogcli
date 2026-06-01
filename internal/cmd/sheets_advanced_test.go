@@ -58,6 +58,29 @@ func TestSheetsConditionalAddBuildsRule(t *testing.T) {
 	}
 }
 
+func TestSheetsConditionalAdd_InvalidFormatFieldIsUsage(t *testing.T) {
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	flags := &RootFlags{Account: "a@b.com", DryRun: true}
+
+	err := runKong(t, &SheetsConditionalAddCmd{}, []string{
+		"s1", "Sheet1!A1",
+		"--type", "text-eq",
+		"--expr", "x",
+		"--format-json", `{"textFormat":{"bold":true}}`,
+		"--format-fields", "userEnteredFormat.nope",
+	}, ctx, flags)
+	if err == nil {
+		t.Fatal("expected invalid format field error")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+	}
+}
+
 func TestSheetsConditionalClearAllDeletesReverseAndRequiresForce(t *testing.T) {
 	ctx, flags, requests, _, cleanup := newSheetsAdvancedTestContext(t, sheetsAdvancedTestState{
 		ConditionalRules: 2,
@@ -140,6 +163,35 @@ func TestSheetsBandingSetListAndClear(t *testing.T) {
 	}
 	if (*requests)[1].Requests[0].DeleteBanding.BandedRangeId != 777 {
 		t.Fatalf("delete banding id = %d", (*requests)[1].Requests[0].DeleteBanding.BandedRangeId)
+	}
+}
+
+func TestSheetsBandingSet_InvalidPropertiesJSONIsUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "row",
+			args: []string{"s1", "Sheet1!A1:C5", "--row-properties-json", "nope"},
+			want: "invalid --row-properties-json",
+		},
+		{
+			name: "column",
+			args: []string{"s1", "Sheet1!A1:C5", "--column-properties-json", "nope"},
+			want: "invalid --column-properties-json",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runKong(t, &SheetsBandingSetCmd{}, tc.args, context.Background(), &RootFlags{DryRun: true})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q error, got %v", tc.want, err)
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+			}
+		})
 	}
 }
 

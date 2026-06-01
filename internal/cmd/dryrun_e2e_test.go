@@ -17,6 +17,10 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 	if err := os.WriteFile(tokenPath, []byte(`{"email":"user@example.com","refresh_token":"redacted"}`), 0o600); err != nil {
 		t.Fatalf("write dry-run token: %v", err)
 	}
+	serviceAccountPath := filepath.Join(t.TempDir(), "service-account.json")
+	if err := os.WriteFile(serviceAccountPath, []byte(`{"type":"service_account","client_email":"svc@example.com","client_id":"123"}`), 0o600); err != nil {
+		t.Fatalf("write dry-run service account: %v", err)
+	}
 	markdownPath := filepath.Join(t.TempDir(), "slides.md")
 	if err := os.WriteFile(markdownPath, []byte("## Slide\nBody"), 0o600); err != nil {
 		t.Fatalf("write dry-run markdown: %v", err)
@@ -51,6 +55,11 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			name: "docs clear",
 			args: []string{"docs", "clear", "doc123"},
 			op:   "docs.clear",
+		},
+		{
+			name: "docs copy",
+			args: []string{"docs", "copy", "doc123", "SmokeDoc"},
+			op:   "docs.copy",
 		},
 		{
 			name: "docs write replace",
@@ -116,6 +125,11 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			name: "drive mkdir",
 			args: []string{"drive", "mkdir", "SmokeFolder", "--parent", "root"},
 			op:   "drive.mkdir",
+		},
+		{
+			name: "drive copy",
+			args: []string{"drive", "copy", "file123", "SmokeFile"},
+			op:   "drive.copy",
 		},
 		{
 			name: "drive delete",
@@ -198,9 +212,19 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			op:   "auth.tokens.import",
 		},
 		{
+			name: "auth service account set",
+			args: []string{"auth", "service-account", "set", "user@example.com", "--key", serviceAccountPath},
+			op:   "auth.service-account.set",
+		},
+		{
 			name: "auth service account unset",
 			args: []string{"auth", "service-account", "unset", "user@example.com"},
-			op:   "auth.service_account.unset",
+			op:   "auth.service-account.unset",
+		},
+		{
+			name: "auth keep",
+			args: []string{"auth", "keep", "user@example.com", "--key", serviceAccountPath},
+			op:   "auth.keep",
 		},
 		{
 			name: "admin groups members add",
@@ -253,9 +277,44 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			op:   "calendar.subscribe",
 		},
 		{
+			name: "calendar focus time",
+			args: []string{"calendar", "focus-time", "primary", "--from", "2030-01-01T10:00:00Z", "--to", "2030-01-01T11:00:00Z"},
+			op:   "calendar.focus-time",
+		},
+		{
+			name: "calendar out of office",
+			args: []string{"calendar", "out-of-office", "primary", "--from", "2030-01-01T10:00:00Z", "--to", "2030-01-01T11:00:00Z"},
+			op:   "calendar.out-of-office",
+		},
+		{
+			name: "calendar working location",
+			args: []string{"calendar", "working-location", "primary", "--from", "2030-01-01", "--to", "2030-01-02", "--type", "home"},
+			op:   "calendar.working-location",
+		},
+		{
+			name: "calendar propose time",
+			args: []string{"calendar", "propose-time", "primary", "event123", "--comment", "not this time"},
+			op:   "calendar.propose-time",
+		},
+		{
+			name: "calendar respond",
+			args: []string{"calendar", "respond", "primary", "event123", "--status", "accepted"},
+			op:   "calendar.respond",
+		},
+		{
+			name: "calendar move",
+			args: []string{"calendar", "move", "primary", "event123", "other@example.com"},
+			op:   "calendar.move",
+		},
+		{
 			name: "forms create",
 			args: []string{"forms", "create", "--title", "SmokeForm"},
 			op:   "forms.create",
+		},
+		{
+			name: "forms add question",
+			args: []string{"forms", "add-question", "form123", "--title", "Question", "--type", "text"},
+			op:   "forms.add-question",
 		},
 		{
 			name: "forms publish",
@@ -280,7 +339,7 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 		{
 			name: "forms move question",
 			args: []string{"forms", "move-question", "form123", "0", "1"},
-			op:   "forms.moveQuestion",
+			op:   "forms.move-question",
 		},
 		{
 			name: "gmail label rename",
@@ -418,6 +477,11 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			op:   "classroom.guardians.delete",
 		},
 		{
+			name: "classroom guardian invitations create",
+			args: []string{"classroom", "guardian-invitations", "create", "student@example.com", "--email", "guardian@example.com"},
+			op:   "classroom.guardian-invitations.create",
+		},
+		{
 			name: "contacts other delete",
 			args: []string{"contacts", "other", "delete", "otherContacts/c123"},
 			op:   "contacts.other.delete",
@@ -430,12 +494,17 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 		{
 			name: "meet end",
 			args: []string{"meet", "end", "abc-defg-hij"},
-			op:   "meet.spaces.end_active_conference",
+			op:   "meet.end",
 		},
 		{
 			name: "slides create",
 			args: []string{"slides", "create", "SmokeSlides"},
 			op:   "slides.create",
+		},
+		{
+			name: "slides copy",
+			args: []string{"slides", "copy", "pres123", "SmokeSlides"},
+			op:   "slides.copy",
 		},
 		{
 			name: "slides create from template",
@@ -498,6 +567,11 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			op:   "sheets.conditional-format.clear",
 		},
 		{
+			name: "sheets copy",
+			args: []string{"sheets", "copy", "sheet123", "SmokeSheet"},
+			op:   "sheets.copy",
+		},
+		{
 			name: "sheets table delete",
 			args: []string{"sheets", "table", "delete", "sheet123", "Tbl"},
 			op:   "sheets.table.delete",
@@ -515,17 +589,17 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 		{
 			name: "sheets named ranges add",
 			args: []string{"sheets", "named-ranges", "add", "sheet123", "MyRange", "Sheet1!A1:B2"},
-			op:   "sheets.named_ranges.add",
+			op:   "sheets.named-ranges.add",
 		},
 		{
 			name: "sheets named ranges update",
 			args: []string{"sheets", "named-ranges", "update", "sheet123", "range123", "--name", "NewRange"},
-			op:   "sheets.named_ranges.update",
+			op:   "sheets.named-ranges.update",
 		},
 		{
 			name: "sheets named ranges delete",
 			args: []string{"sheets", "named-ranges", "delete", "sheet123", "range123"},
-			op:   "sheets.named_ranges.delete",
+			op:   "sheets.named-ranges.delete",
 		},
 		{
 			name: "sheets delete tab",
@@ -535,7 +609,7 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 		{
 			name: "forms delete question",
 			args: []string{"forms", "delete-question", "form123", "0"},
-			op:   "forms.deleteQuestion",
+			op:   "forms.delete-question",
 		},
 	}
 

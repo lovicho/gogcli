@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -116,6 +117,9 @@ func (c *DocsCommentsAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if content == "" {
 		return usage("empty content")
 	}
+	if err := validateDocsCommentAnchor(anchor); err != nil {
+		return err
+	}
 
 	if err := dryRunExit(ctx, flags, "docs.comments.add", map[string]any{
 		"doc_id":  docID,
@@ -136,6 +140,16 @@ func (c *DocsCommentsAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	return writeDriveCommentMutation(ctx, u, created, true)
+}
+
+func validateDocsCommentAnchor(anchor string) error {
+	if strings.TrimSpace(anchor) == "" {
+		return nil
+	}
+	if !json.Valid([]byte(anchor)) {
+		return usage("invalid --anchor JSON")
+	}
+	return nil
 }
 
 // DocsCommentsReplyCmd replies to a comment on a Google Doc.

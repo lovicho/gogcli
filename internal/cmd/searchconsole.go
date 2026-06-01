@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -448,6 +449,9 @@ func (c *SearchConsoleSitemapsSubmitCmd) Run(ctx context.Context, flags *RootFla
 	if feedPath == "" {
 		return usage("empty feedpath")
 	}
+	if err := validateSearchConsoleSitemapURL(feedPath); err != nil {
+		return err
+	}
 
 	if err := dryRunExit(ctx, flags, "searchconsole.sitemaps.submit", map[string]any{
 		"site_url":  siteURL,
@@ -491,6 +495,9 @@ func (c *SearchConsoleSitemapsDeleteCmd) Run(ctx context.Context, flags *RootFla
 	if feedPath == "" {
 		return usage("empty feedpath")
 	}
+	if err := validateSearchConsoleSitemapURL(feedPath); err != nil {
+		return err
+	}
 
 	if err := dryRunAndConfirmDestructive(ctx, flags, "searchconsole.sitemaps.delete", map[string]any{
 		"site_url":  siteURL,
@@ -517,6 +524,19 @@ func (c *SearchConsoleSitemapsDeleteCmd) Run(ctx context.Context, flags *RootFla
 		kv("site_url", siteURL),
 		kv("feed_path", feedPath),
 	)
+}
+
+func validateSearchConsoleSitemapURL(raw string) error {
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed == nil || parsed.Host == "" {
+		return usagef("invalid feedpath %q (expected http(s) sitemap URL)", raw)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return nil
+	default:
+		return usagef("invalid feedpath %q (expected http(s) sitemap URL)", raw)
+	}
 }
 
 func buildSearchConsoleRequestFromSpec(spec string) (*searchconsoleapi.SearchAnalyticsQueryRequest, error) {

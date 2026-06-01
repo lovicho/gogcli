@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
+
+	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestCalendarOOOCmd_JSON(t *testing.T) {
@@ -47,13 +50,29 @@ func TestCalendarOOOCmd_JSON(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "calendar", "ooo", "--from", "2025-01-01", "--to", "2025-01-02"}); err != nil {
+			if err := Execute([]string{"--json", "--account", "a@b.com", "calendar", "ooo", "--from", "2025-01-01T09:00:00Z", "--to", "2025-01-01T17:00:00Z"}); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
 		})
 	})
 	if !strings.Contains(out, "event") {
 		t.Fatalf("unexpected output: %q", out)
+	}
+}
+
+func TestCalendarOOOCmdRejectsDateOnlyAndAllDay(t *testing.T) {
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	flags := &RootFlags{Account: "a@b.com"}
+
+	if err := (&CalendarOOOCmd{From: "2025-01-01", To: "2025-01-02"}).Run(ctx, flags); err == nil || !strings.Contains(err.Error(), "out-of-office requires RFC3339 datetime") {
+		t.Fatalf("expected date-only OOO validation error, got %v", err)
+	}
+	if err := (&CalendarOOOCmd{From: "2025-01-01T09:00:00Z", To: "2025-01-01T17:00:00Z", AllDay: true}).Run(ctx, flags); err == nil || !strings.Contains(err.Error(), "cannot be all-day") {
+		t.Fatalf("expected all-day OOO validation error, got %v", err)
 	}
 }
 

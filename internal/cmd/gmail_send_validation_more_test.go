@@ -30,11 +30,39 @@ func TestGmailSendCmd_ValidationErrors(t *testing.T) {
 		{To: "a@b.com", Body: "B"},
 		{To: "a@b.com", Subject: "S"},
 		{To: "a@b.com", Subject: "S", Body: "B", TrackSplit: true},
+		{To: "a@b.com", Subject: "S", Body: "B", Track: true},
 	}
 
 	for _, cmd := range cases {
-		if err := cmd.Run(ctx, flags); err == nil {
+		err := cmd.Run(ctx, flags)
+		if err == nil {
 			t.Fatalf("expected validation error")
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+		}
+	}
+}
+
+func TestGmailSendCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testing.T) {
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	flags := &RootFlags{Account: "a@b.com", DryRun: true}
+
+	for _, cmd := range []GmailSendCmd{
+		{To: "bad\ncc:evil@example.com", Subject: "S", Body: "B"},
+		{To: "a@example.com", ReplyTo: "bad\ncc:evil@example.com", Subject: "S", Body: "B"},
+		{To: "a@example.com", Subject: "S\nInjected: yes", Body: "B"},
+	} {
+		err := cmd.Run(ctx, flags)
+		if err == nil {
+			t.Fatal("expected invalid header error")
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
 		}
 	}
 }

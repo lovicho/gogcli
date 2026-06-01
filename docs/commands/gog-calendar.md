@@ -21,7 +21,7 @@ gog calendar (cal) <command> [flags]
 - [gog calendar appointments](gog-calendar-appointments.md) - Report Calendar appointment schedule API limitation
 - [gog calendar calendars](gog-calendar-calendars.md) - List calendars
 - [gog calendar colors](gog-calendar-colors.md) - Show calendar colors
-- [gog calendar conflicts](gog-calendar-conflicts.md) - Find conflicts
+- [gog calendar conflicts](gog-calendar-conflicts.md) - Find busy-time overlaps across calendars
 - [gog calendar create](gog-calendar-create.md) - Create an event
 - [gog calendar create-calendar](gog-calendar-create-calendar.md) - Create a new secondary calendar
 - [gog calendar delete](gog-calendar-delete.md) - Delete an event
@@ -47,7 +47,7 @@ gog calendar (cal) <command> [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/ads/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |

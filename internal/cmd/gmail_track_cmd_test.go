@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,6 +53,209 @@ func TestGmailTrackSetupAndStatus(t *testing.T) {
 	}
 	if !strings.Contains(statusOut, "tracking_key_version\t1") {
 		t.Fatalf("missing status key version: %q", statusOut)
+	}
+}
+
+func TestGmailTrackSetup_InvalidWorkerNameIsUsageError(t *testing.T) {
+	setupTrackingEnv(t)
+
+	err := Execute([]string{
+		"--account", "a@b.com",
+		"--no-input",
+		"gmail", "track", "setup",
+		"--worker-name", "!!!",
+		"--worker-url", "https://example.com",
+		"--dry-run",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid worker name") {
+		t.Fatalf("expected invalid worker name error, got: %v", err)
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+}
+
+func TestGmailTrackSetup_DryRunDoesNotCreateKeyring(t *testing.T) {
+	setupTrackingEnv(t)
+	home := t.TempDir()
+	t.Setenv("GOG_HOME", home)
+
+	out := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{
+				"--account", "a@b.com",
+				"--no-input",
+				"--json",
+				"--dry-run",
+				"gmail", "track", "setup",
+				"--worker-url", "https://example.com",
+			}); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+		})
+	})
+	if !strings.Contains(out, `"dry_run": true`) {
+		t.Fatalf("unexpected dry-run output: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, "data", "keyring")); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("dry-run should not create keyring dir, stat err=%v", err)
+	}
+}
+
+func TestGmailTrackSetup_DryRunDoesNotReadExistingKeyringSecrets(t *testing.T) {
+	setupTrackingEnv(t)
+
+	_ = captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{
+				"--account", "a@b.com",
+				"--no-input",
+				"--json",
+				"gmail", "track", "setup",
+				"--worker-url", "https://example.com",
+			}); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+		})
+	})
+
+	_ = captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{
+				"--account", "a@b.com",
+				"--no-input",
+				"--json",
+				"gmail", "track", "key", "rotate",
+				"--no-deploy",
+			}); err != nil {
+				t.Fatalf("rotate: %v", err)
+			}
+		})
+	})
+
+	t.Setenv("GOG_KEYRING_PASSWORD", "")
+	out := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{
+				"--account", "a@b.com",
+				"--no-input",
+				"--json",
+				"--dry-run",
+				"gmail", "track", "setup",
+				"--worker-url", "https://example.org",
+			}); err != nil {
+				t.Fatalf("dry-run setup: %v", err)
+			}
+		})
+	})
+	if strings.Contains(out, "TRACKING_KEY") || strings.Contains(out, "ADMIN_KEY") {
+		t.Fatalf("dry-run output should not contain secrets: %q", out)
+	}
+
+	var payload struct {
+		DryRun  bool `json:"dry_run"`
+		Request struct {
+			WorkerURL           string  `json:"worker_url"`
+			TrackingKeyVersion  float64 `json:"tracking_key_version"`
+			TrackingKeyVersions []int   `json:"tracking_key_versions"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("dry-run json: %v\n%s", err, out)
+	}
+	if !payload.DryRun || payload.Request.WorkerURL != "https://example.org" {
+		t.Fatalf("unexpected dry-run payload: %#v", payload)
+	}
+	if payload.Request.TrackingKeyVersion != 2 || len(payload.Request.TrackingKeyVersions) != 2 {
+		t.Fatalf("dry-run should report existing rotated versions: %#v", payload.Request)
+	}
+
+	explicitOut := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{
+				"--account", "a@b.com",
+				"--no-input",
+				"--json",
+				"--dry-run",
+				"gmail", "track", "setup",
+				"--worker-url", "https://example.net",
+				"--tracking-key", "replacement",
+			}); err != nil {
+				t.Fatalf("explicit dry-run setup: %v", err)
+			}
+		})
+	})
+	payload = struct {
+		DryRun  bool `json:"dry_run"`
+		Request struct {
+			WorkerURL           string  `json:"worker_url"`
+			TrackingKeyVersion  float64 `json:"tracking_key_version"`
+			TrackingKeyVersions []int   `json:"tracking_key_versions"`
+		} `json:"request"`
+	}{}
+	if err := json.Unmarshal([]byte(explicitOut), &payload); err != nil {
+		t.Fatalf("explicit dry-run json: %v\n%s", err, explicitOut)
+	}
+	if payload.Request.TrackingKeyVersion != 1 ||
+		len(payload.Request.TrackingKeyVersions) != 1 ||
+		payload.Request.TrackingKeyVersions[0] != 1 {
+		t.Fatalf("explicit replacement dry-run should report reset version 1: %#v", payload.Request)
+	}
+}
+
+func TestGmailTrackJSONOutputs(t *testing.T) {
+	setupTrackingEnv(t)
+
+	var setupErr string
+	setupOut := captureStdout(t, func() {
+		setupErr = captureStderr(t, func() {
+			if err := Execute([]string{"--account", "a@b.com", "--no-input", "--json", "gmail", "track", "setup", "--worker-url", "https://example.com"}); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+		})
+	})
+	if strings.Contains(setupErr, "TRACKING_KEY=") || strings.Contains(setupErr, "ADMIN_KEY=") {
+		t.Fatalf("json setup should not print manual secrets to stderr: %q", setupErr)
+	}
+	var setupPayload map[string]any
+	if err := json.Unmarshal([]byte(setupOut), &setupPayload); err != nil {
+		t.Fatalf("setup json: %v\n%s", err, setupOut)
+	}
+	if setupPayload["configured"] != true || setupPayload["workerUrl"] != "https://example.com" {
+		t.Fatalf("unexpected setup json: %#v", setupPayload)
+	}
+	if setupPayload["trackingKeySet"] != true || setupPayload["adminConfigured"] != true {
+		t.Fatalf("setup json should expose secret presence, not values: %#v", setupPayload)
+	}
+
+	statusOut := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{"--account", "a@b.com", "--json", "gmail", "track", "status"}); err != nil {
+				t.Fatalf("status: %v", err)
+			}
+		})
+	})
+	var statusPayload map[string]any
+	if err := json.Unmarshal([]byte(statusOut), &statusPayload); err != nil {
+		t.Fatalf("status json: %v\n%s", err, statusOut)
+	}
+	if statusPayload["configured"] != true || statusPayload["trackingKeyVersion"].(float64) != 1 {
+		t.Fatalf("unexpected status json: %#v", statusPayload)
+	}
+
+	rotateOut := captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := Execute([]string{"--account", "a@b.com", "--no-input", "--json", "gmail", "track", "key", "rotate", "--no-deploy"}); err != nil {
+				t.Fatalf("rotate: %v", err)
+			}
+		})
+	})
+	var rotatePayload map[string]any
+	if err := json.Unmarshal([]byte(rotateOut), &rotatePayload); err != nil {
+		t.Fatalf("rotate json: %v\n%s", err, rotateOut)
+	}
+	if rotatePayload["trackingKeyRotated"] != true || rotatePayload["trackingKeyVersion"].(float64) != 2 {
+		t.Fatalf("unexpected rotate json: %#v", rotatePayload)
 	}
 }
 

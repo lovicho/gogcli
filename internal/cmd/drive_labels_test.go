@@ -39,7 +39,7 @@ func TestDriveLabelsList_JSON(t *testing.T) {
 	newDriveLabelsService = func(context.Context, string) (*drivelabels.Service, error) { return svc, nil }
 
 	out := captureStdout(t, func() {
-		if err := (&DriveLabelsListCmd{PublishedOnly: true, View: "LABEL_VIEW_BASIC"}).Run(newCalendarJSONContext(t), &RootFlags{Account: "a@example.com"}); err != nil {
+		if err := (&DriveLabelsListCmd{Max: 50, PublishedOnly: true, View: "LABEL_VIEW_BASIC"}).Run(newCalendarJSONContext(t), &RootFlags{Account: "a@example.com"}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})
@@ -54,6 +54,29 @@ func TestDriveLabelsList_JSON(t *testing.T) {
 	}
 	if parsed.LabelCount != 1 || len(parsed.Labels) != 1 || parsed.Labels[0].Name != "labels/abc" {
 		t.Fatalf("unexpected output: %#v", parsed)
+	}
+}
+
+func TestDriveLabelsListInvalidMaxFailsBeforeService(t *testing.T) {
+	orig := newDriveLabelsService
+	t.Cleanup(func() { newDriveLabelsService = orig })
+	newDriveLabelsService = func(context.Context, string) (*drivelabels.Service, error) {
+		t.Fatalf("expected max validation to fail before creating drive labels service")
+		return nil, context.Canceled
+	}
+
+	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
+	flags := &RootFlags{Account: "a@example.com"}
+
+	for _, args := range [][]string{{"--max", "0"}, {"--max=-1"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			cmd := &DriveLabelsListCmd{}
+			err := runKong(t, cmd, args, ctx, flags)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
+		})
 	}
 }
 
@@ -91,6 +114,29 @@ func TestDriveLabelsFileList_JSON(t *testing.T) {
 	}
 }
 
+func TestDriveLabelsFileListInvalidMaxFailsBeforeService(t *testing.T) {
+	origNew := newDriveService
+	t.Cleanup(func() { newDriveService = origNew })
+	newDriveService = func(context.Context, string) (*drive.Service, error) {
+		t.Fatalf("expected max validation to fail before creating drive service")
+		return nil, errUnexpectedDriveServiceCall
+	}
+
+	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
+	flags := &RootFlags{Account: "a@example.com"}
+
+	for _, args := range [][]string{{"file1", "--max", "0"}, {"file1", "--max=-1"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			cmd := &DriveLabelsFileListCmd{}
+			err := runKong(t, cmd, args, ctx, flags)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
+		})
+	}
+}
+
 func TestDriveLabelsFileApply_BuildsModifyLabelsRequest(t *testing.T) {
 	svc, closeSvc := newDriveTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/files/file1/modifyLabels" {
@@ -123,6 +169,75 @@ func TestDriveLabelsFileApply_BuildsModifyLabelsRequest(t *testing.T) {
 		Unset:   []string{"old"},
 	}).Run(newCmdOutputContext(t, io.Discard, io.Discard), &RootFlags{Account: "a@example.com", Force: true}); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestDriveLabelsFileApply_InvalidIntegerIsUsageError(t *testing.T) {
+	err := (&DriveLabelsFileApplyCmd{
+		FileID:  "file1",
+		LabelID: "label1",
+		Integer: []string{"count=abc"},
+	}).Run(newCmdOutputContext(t, io.Discard, io.Discard), &RootFlags{Account: "a@example.com", DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "invalid integer label value") {
+		t.Fatalf("expected invalid integer error, got: %v", err)
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+}
+
+func TestDriveLabelsFileApply_InvalidFieldsJSONIsUsageError(t *testing.T) {
+	err := (&DriveLabelsFileApplyCmd{
+		FileID:     "file1",
+		LabelID:    "label1",
+		FieldsJSON: "nope",
+	}).Run(newCmdOutputContext(t, io.Discard, io.Discard), &RootFlags{Account: "a@example.com", DryRun: true})
+	if err == nil || !strings.Contains(err.Error(), "parse --fields-json") {
+		t.Fatalf("expected invalid fields-json error, got: %v", err)
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+}
+
+func TestDriveLabelsFileApply_RejectsMalformedFieldMods(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  DriveLabelsFileApplyCmd
+		want string
+	}{
+		{
+			name: "fractional json integer",
+			cmd:  DriveLabelsFileApplyCmd{FileID: "file1", LabelID: "label1", FieldsJSON: `{"count":1.5}`},
+			want: "invalid integer label value",
+		},
+		{
+			name: "trailing json token",
+			cmd:  DriveLabelsFileApplyCmd{FileID: "file1", LabelID: "label1", FieldsJSON: `{"count":1} true`},
+			want: "trailing JSON value",
+		},
+		{
+			name: "invalid date",
+			cmd:  DriveLabelsFileApplyCmd{FileID: "file1", LabelID: "label1", Date: []string{"due=not-a-date"}},
+			want: "invalid date label value",
+		},
+		{
+			name: "invalid user email",
+			cmd:  DriveLabelsFileApplyCmd{FileID: "file1", LabelID: "label1", User: []string{"owner=nope"}},
+			want: "invalid --user",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Run(newCmdOutputContext(t, io.Discard, io.Discard), &RootFlags{Account: "a@example.com", DryRun: true})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q error, got: %v", tt.want, err)
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+			}
+		})
 	}
 }
 

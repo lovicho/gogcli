@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/mail"
 	"os"
 	"strings"
 
@@ -147,6 +148,9 @@ func (c *DriveShareCmd) normalizeTarget() (driveShareTarget, error) {
 		if email == "" {
 			return driveShareTarget{}, usage("missing --email for --to=user")
 		}
+		if err := validateDriveShareEmail(email); err != nil {
+			return driveShareTarget{}, err
+		}
 		if domain != "" || c.Anyone {
 			return driveShareTarget{}, usage("--to=user cannot be combined with --anyone or --domain")
 		}
@@ -157,6 +161,9 @@ func (c *DriveShareCmd) normalizeTarget() (driveShareTarget, error) {
 		if domain == "" {
 			return driveShareTarget{}, usage("missing --domain for --to=domain")
 		}
+		if err := validateDriveShareDomain(domain); err != nil {
+			return driveShareTarget{}, err
+		}
 		if email != "" || c.Anyone {
 			return driveShareTarget{}, usage("--to=domain cannot be combined with --anyone or --email")
 		}
@@ -165,6 +172,40 @@ func (c *DriveShareCmd) normalizeTarget() (driveShareTarget, error) {
 	}
 
 	return driveShareTarget{to: to, email: email, domain: domain}, nil
+}
+
+func validateDriveShareEmail(email string) error {
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr == nil || addr.Address != email || addr.Name != "" {
+		return usagef("invalid --email %q", email)
+	}
+	return nil
+}
+
+func validateDriveShareDomain(domain string) error {
+	if !isValidDriveShareDomain(domain) {
+		return usagef("invalid --domain %q", domain)
+	}
+	return nil
+}
+
+func isValidDriveShareDomain(domain string) bool {
+	if domain == "" || len(domain) > 253 || strings.ContainsAny(domain, "/:@") || strings.HasSuffix(domain, ".") || !strings.Contains(domain, ".") {
+		return false
+	}
+	labels := strings.Split(domain, ".")
+	for _, label := range labels {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
 }
 
 func (target driveShareTarget) permission(role string, discoverable bool) *drive.Permission {
@@ -249,13 +290,16 @@ type DrivePermissionsCmd struct {
 
 func (c *DrivePermissionsCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	fileID := strings.TrimSpace(c.FileID)
 	if fileID == "" {
 		return usage("empty fileId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newDriveService(ctx, account)

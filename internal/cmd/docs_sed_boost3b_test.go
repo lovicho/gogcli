@@ -201,6 +201,28 @@ func TestRunTableCellReplace_WildcardCol(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestRunTableCellReplace_WildcardTableValidationIsUsage(t *testing.T) {
+	doc := buildDocWithTable("", 2, 2, [][]string{{"a", "b"}, {"c", "d"}}, "")
+	svc, cleanup := newSedTestServer(t, doc)
+	defer cleanup()
+	mockDocsService(t, svc)
+
+	cmd := &DocsSedCmd{}
+	u := sedTestUI()
+	expr := sedExpr{
+		cellRef:     &tableCellRef{tableIndex: 99, row: 0, col: 1},
+		replacement: "x",
+	}
+	err := cmd.runTableCellReplace(context.Background(), u, "", "test-doc-id", expr)
+	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
+
+	expr.cellRef = &tableCellRef{tableIndex: 1, row: 99, col: 0}
+	err = cmd.runTableCellReplace(context.Background(), u, "", "test-doc-id", expr)
+	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
+}
+
 // =============================================================================
 // runTableMerge — more paths (unmerge, split)
 // =============================================================================
@@ -219,6 +241,29 @@ func TestRunTableMerge_Unmerge(t *testing.T) {
 	}
 	err := cmd.runTableMerge(context.Background(), u, "", "test-doc-id", expr)
 	assert.NoError(t, err)
+}
+
+func TestRunTableMerge_InvalidCoordinatesAreUsage(t *testing.T) {
+	doc := buildDocWithTable("", 2, 2, [][]string{{"a", "b"}, {"c", "d"}}, "")
+	svc, cleanup := newSedTestServer(t, doc)
+	defer cleanup()
+	mockDocsService(t, svc)
+
+	cmd := &DocsSedCmd{}
+	u := sedTestUI()
+	expr := sedExpr{
+		cellRef:     &tableCellRef{tableIndex: 1, row: 99, col: 1},
+		replacement: "unmerge",
+	}
+	err := cmd.runTableMerge(context.Background(), u, "", "test-doc-id", expr)
+	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
+
+	expr.cellRef = &tableCellRef{tableIndex: 1, row: 1, col: 1, endRow: 2, endCol: 99}
+	expr.replacement = "merge"
+	err = cmd.runTableMerge(context.Background(), u, "", "test-doc-id", expr)
+	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 // =============================================================================

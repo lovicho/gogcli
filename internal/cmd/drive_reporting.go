@@ -25,19 +25,16 @@ type DriveTreeCmd struct {
 
 func (c *DriveTreeCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if err := validateDriveScanBounds(c.Depth, c.Max); err != nil {
+		return err
+	}
 
 	rootID := strings.TrimSpace(c.Parent)
 	if rootID == "" {
 		rootID = driveRootID
 	}
 	depth := c.Depth
-	if depth < 0 {
-		depth = 0
-	}
 	maxItems := c.Max
-	if maxItems < 0 {
-		maxItems = 0
-	}
 
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
@@ -100,19 +97,16 @@ type DriveInventoryCmd struct {
 
 func (c *DriveInventoryCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if err := validateDriveScanBounds(c.Depth, c.Max); err != nil {
+		return err
+	}
 
 	rootID := strings.TrimSpace(c.Parent)
 	if rootID == "" {
 		rootID = driveRootID
 	}
 	depth := c.Depth
-	if depth < 0 {
-		depth = 0
-	}
 	maxItems := c.Max
-	if maxItems < 0 {
-		maxItems = 0
-	}
 
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
@@ -182,19 +176,16 @@ type DriveDuCmd struct {
 
 func (c *DriveDuCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if err := validateDriveScanBounds(c.Depth, c.Max); err != nil {
+		return err
+	}
 
 	rootID := strings.TrimSpace(c.Parent)
 	if rootID == "" {
 		rootID = driveRootID
 	}
 	depth := c.Depth
-	if depth < 0 {
-		depth = 0
-	}
 	maxItems := c.Max
-	if maxItems < 0 {
-		maxItems = 0
-	}
 
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
@@ -260,6 +251,16 @@ type driveTreeItem struct {
 
 func (d driveTreeItem) IsFolder() bool {
 	return d.MimeType == driveMimeFolder
+}
+
+func validateDriveScanBounds(depth, maxItems int) error {
+	if depth < 0 {
+		return usage("--depth must be >= 0")
+	}
+	if maxItems < 0 {
+		return usage("--max must be >= 0")
+	}
+	return nil
 }
 
 type driveTreeOptions struct {

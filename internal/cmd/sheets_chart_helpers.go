@@ -230,7 +230,7 @@ func buildChartPosition(sheetID int64, anchor string, width, height int64) (*she
 	if anchor != "" {
 		parsed, err := parseA1Cell(anchor)
 		if err != nil {
-			return nil, fmt.Errorf("invalid --anchor %q: %w", anchor, err)
+			return nil, usagef("invalid --anchor %q: %v", anchor, err)
 		}
 		rowIndex = int64(parsed.row - 1)
 		colIndex = int64(parsed.col - 1)

@@ -29,7 +29,7 @@ type YouTubeActivitiesCmd struct {
 }
 
 type YouTubeActivitiesListCmd struct {
-	ChannelID string `name:"channel-id" help:"Channel ID (use with API key)"`
+	ChannelID string `name:"channel-id" help:"Channel ID"`
 	Mine      bool   `name:"mine" help:"Use authenticated user's channel (requires -a account)"`
 	Max       int64  `name:"max" aliases:"limit" help:"Max results" default:"25"`
 	Page      string `name:"page" help:"Page token"`
@@ -40,10 +40,11 @@ func (c *YouTubeActivitiesListCmd) Run(ctx context.Context, flags *RootFlags) er
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
-	if c.ChannelID == "" && !c.Mine {
+	channelID := strings.TrimSpace(c.ChannelID)
+	if channelID == "" && !c.Mine {
 		return usage("set --channel-id ID or --mine (--mine requires -a account)")
 	}
-	if c.ChannelID != "" && c.Mine {
+	if channelID != "" && c.Mine {
 		return usage("use either --channel-id or --mine, not both")
 	}
 
@@ -56,7 +57,7 @@ func (c *YouTubeActivitiesListCmd) Run(ctx context.Context, flags *RootFlags) er
 		}
 		svc, err = getYouTubeServiceForAccount(ctx, account)
 	} else {
-		svc, err = getYouTubeServiceWithAPIKey(ctx)
+		svc, err = getYouTubeReadService(ctx, flags)
 	}
 	if err != nil {
 		return err
@@ -65,8 +66,8 @@ func (c *YouTubeActivitiesListCmd) Run(ctx context.Context, flags *RootFlags) er
 	call := svc.Activities.List([]string{"snippet", "contentDetails"}).
 		MaxResults(c.Max).
 		PageToken(c.Page)
-	if c.ChannelID != "" {
-		call = call.ChannelId(c.ChannelID)
+	if channelID != "" {
+		call = call.ChannelId(channelID)
 	} else {
 		call = call.Mine(true)
 	}
@@ -77,7 +78,7 @@ func (c *YouTubeActivitiesListCmd) Run(ctx context.Context, flags *RootFlags) er
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"items":         resp.Items,
+			"items":         youtubeItemsOrEmpty(resp.Items),
 			"nextPageToken": resp.NextPageToken,
 		})
 	}
@@ -124,16 +125,19 @@ func (c *YouTubeVideosListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
-	if c.ID == "" && c.Chart == "" {
+	ids := splitCSV(c.ID)
+	chart := strings.TrimSpace(c.Chart)
+	region := strings.TrimSpace(c.Region)
+	if len(ids) == 0 && chart == "" {
 		return usage("set --id VIDEO_IDS or --chart mostPopular")
 	}
-	if c.ID != "" && c.Chart != "" {
+	if len(ids) > 0 && chart != "" {
 		return usage("use either --id or --chart, not both")
 	}
-	if c.Chart != "" && c.Chart != "mostPopular" {
+	if chart != "" && chart != "mostPopular" {
 		return usage("--chart must be mostPopular")
 	}
-	if c.Chart == "mostPopular" && c.Region == "" {
+	if chart == "mostPopular" && region == "" {
 		return usage("--chart mostPopular requires --region (e.g. US)")
 	}
 
@@ -145,10 +149,10 @@ func (c *YouTubeVideosListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	call := svc.Videos.List([]string{"snippet", "contentDetails", "statistics"}).
 		MaxResults(c.Max).
 		PageToken(c.Page)
-	if c.ID != "" {
-		call = call.Id(splitCSV(c.ID)...)
+	if len(ids) > 0 {
+		call = call.Id(ids...)
 	} else {
-		call = call.Chart(c.Chart).RegionCode(c.Region)
+		call = call.Chart(chart).RegionCode(region)
 	}
 	resp, err := call.Do()
 	if err != nil {
@@ -157,7 +161,7 @@ func (c *YouTubeVideosListCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"items":         resp.Items,
+			"items":         youtubeItemsOrEmpty(resp.Items),
 			"nextPageToken": resp.NextPageToken,
 		})
 	}
@@ -192,7 +196,7 @@ type YouTubePlaylistsCmd struct {
 }
 
 type YouTubePlaylistsListCmd struct {
-	ChannelID string `name:"channel-id" help:"Channel ID (use with API key)"`
+	ChannelID string `name:"channel-id" help:"Channel ID"`
 	Mine      bool   `name:"mine" help:"Use authenticated user (requires -a account)"`
 	Max       int64  `name:"max" aliases:"limit" help:"Max results" default:"25"`
 	Page      string `name:"page" help:"Page token"`
@@ -203,10 +207,11 @@ func (c *YouTubePlaylistsListCmd) Run(ctx context.Context, flags *RootFlags) err
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
-	if c.ChannelID == "" && !c.Mine {
+	channelID := strings.TrimSpace(c.ChannelID)
+	if channelID == "" && !c.Mine {
 		return usage("set --channel-id ID or --mine (--mine requires -a account)")
 	}
-	if c.ChannelID != "" && c.Mine {
+	if channelID != "" && c.Mine {
 		return usage("use either --channel-id or --mine, not both")
 	}
 
@@ -219,7 +224,7 @@ func (c *YouTubePlaylistsListCmd) Run(ctx context.Context, flags *RootFlags) err
 		}
 		svc, err = getYouTubeServiceForAccount(ctx, account)
 	} else {
-		svc, err = getYouTubeServiceWithAPIKey(ctx)
+		svc, err = getYouTubeReadService(ctx, flags)
 	}
 	if err != nil {
 		return err
@@ -228,8 +233,8 @@ func (c *YouTubePlaylistsListCmd) Run(ctx context.Context, flags *RootFlags) err
 	call := svc.Playlists.List([]string{"snippet", "contentDetails"}).
 		MaxResults(c.Max).
 		PageToken(c.Page)
-	if c.ChannelID != "" {
-		call = call.ChannelId(c.ChannelID)
+	if channelID != "" {
+		call = call.ChannelId(channelID)
 	} else {
 		call = call.Mine(true)
 	}
@@ -240,7 +245,7 @@ func (c *YouTubePlaylistsListCmd) Run(ctx context.Context, flags *RootFlags) err
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"items":         resp.Items,
+			"items":         youtubeItemsOrEmpty(resp.Items),
 			"nextPageToken": resp.NextPageToken,
 		})
 	}
@@ -286,10 +291,12 @@ func (c *YouTubeCommentsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
-	if c.VideoID == "" && c.ChannelID == "" {
+	videoID := strings.TrimSpace(c.VideoID)
+	channelID := strings.TrimSpace(c.ChannelID)
+	if videoID == "" && channelID == "" {
 		return usage("set --video-id ID or --channel-id ID")
 	}
-	if c.VideoID != "" && c.ChannelID != "" {
+	if videoID != "" && channelID != "" {
 		return usage("use either --video-id or --channel-id, not both")
 	}
 
@@ -301,10 +308,10 @@ func (c *YouTubeCommentsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 	call := svc.CommentThreads.List([]string{"snippet"}).
 		MaxResults(c.Max).
 		PageToken(c.Page)
-	if c.VideoID != "" {
-		call = call.VideoId(c.VideoID)
+	if videoID != "" {
+		call = call.VideoId(videoID)
 	} else {
-		call = call.ChannelId(c.ChannelID)
+		call = call.ChannelId(channelID)
 	}
 	resp, err := call.Do()
 	if err != nil {
@@ -313,7 +320,7 @@ func (c *YouTubeCommentsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"items":         resp.Items,
+			"items":         youtubeItemsOrEmpty(resp.Items),
 			"nextPageToken": resp.NextPageToken,
 		})
 	}
@@ -352,7 +359,7 @@ type YouTubeChannelsCmd struct {
 }
 
 type YouTubeChannelsListCmd struct {
-	ID   string `name:"id" help:"Comma-separated channel IDs (use with API key)"`
+	ID   string `name:"id" help:"Comma-separated channel IDs"`
 	Mine bool   `name:"mine" help:"Use authenticated user (requires -a account)"`
 	Max  int64  `name:"max" aliases:"limit" help:"Max results" default:"25"`
 	Page string `name:"page" help:"Page token"`
@@ -363,10 +370,11 @@ func (c *YouTubeChannelsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
-	if c.ID == "" && !c.Mine {
+	ids := splitCSV(c.ID)
+	if len(ids) == 0 && !c.Mine {
 		return usage("set --id CHANNEL_IDS or --mine (--mine requires -a account)")
 	}
-	if c.ID != "" && c.Mine {
+	if len(ids) > 0 && c.Mine {
 		return usage("use either --id or --mine, not both")
 	}
 
@@ -379,7 +387,7 @@ func (c *YouTubeChannelsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 		}
 		svc, err = getYouTubeServiceForAccount(ctx, account)
 	} else {
-		svc, err = getYouTubeServiceWithAPIKey(ctx)
+		svc, err = getYouTubeReadService(ctx, flags)
 	}
 	if err != nil {
 		return err
@@ -388,8 +396,8 @@ func (c *YouTubeChannelsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 	call := svc.Channels.List([]string{"snippet", "statistics", "contentDetails"}).
 		MaxResults(c.Max).
 		PageToken(c.Page)
-	if c.ID != "" {
-		call = call.Id(splitCSV(c.ID)...)
+	if len(ids) > 0 {
+		call = call.Id(ids...)
 	} else {
 		call = call.Mine(true)
 	}
@@ -400,7 +408,7 @@ func (c *YouTubeChannelsListCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"items":         resp.Items,
+			"items":         youtubeItemsOrEmpty(resp.Items),
 			"nextPageToken": resp.NextPageToken,
 		})
 	}
@@ -450,11 +458,15 @@ func (c *YouTubeSearchListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
-	if c.Query == "" {
+	query := strings.TrimSpace(c.Query)
+	if query == "" {
 		return usage("search query is required")
 	}
 
 	types := splitCSV(c.Type)
+	if len(types) == 0 {
+		return usage("--type must be video, channel, or playlist (comma-separated)")
+	}
 	for _, t := range types {
 		switch t {
 		case "video", "channel", "playlist":
@@ -469,22 +481,23 @@ func (c *YouTubeSearchListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	call := svc.Search.List([]string{"snippet"}).
-		Q(c.Query).
+		Q(query).
 		Type(types...).
 		Order(c.Order).
 		MaxResults(c.Max).
 		PageToken(c.Page)
-	if c.ChannelID != "" {
-		call = call.ChannelId(c.ChannelID)
+	if channelID := strings.TrimSpace(c.ChannelID); channelID != "" {
+		call = call.ChannelId(channelID)
 	}
 	resp, err := call.Do()
 	if err != nil {
 		return err
 	}
+	resp.Items = filterYouTubeSearchItemsByType(resp.Items, types)
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"items":         resp.Items,
+			"items":         youtubeItemsOrEmpty(resp.Items),
 			"nextPageToken": resp.NextPageToken,
 		})
 	}
@@ -530,6 +543,46 @@ func validateYouTubeMax(limit int64) error {
 		return usage("--max must be between 1 and 50")
 	}
 	return nil
+}
+
+func youtubeItemsOrEmpty[T any](items []*T) []*T {
+	if items == nil {
+		return []*T{}
+	}
+	return items
+}
+
+func filterYouTubeSearchItemsByType(items []*youtube.SearchResult, allowed []string) []*youtube.SearchResult {
+	if len(items) == 0 || len(allowed) == 0 {
+		return items
+	}
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, typ := range allowed {
+		allowedSet[typ] = true
+	}
+	filtered := items[:0]
+	for _, item := range items {
+		if allowedSet[youtubeSearchResultType(item)] {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func youtubeSearchResultType(item *youtube.SearchResult) string {
+	if item == nil || item.Id == nil {
+		return ""
+	}
+	switch {
+	case item.Id.VideoId != "":
+		return "video"
+	case item.Id.ChannelId != "":
+		return "channel"
+	case item.Id.PlaylistId != "":
+		return "playlist"
+	default:
+		return ""
+	}
 }
 
 func getYouTubeReadService(ctx context.Context, flags *RootFlags) (*youtube.Service, error) {

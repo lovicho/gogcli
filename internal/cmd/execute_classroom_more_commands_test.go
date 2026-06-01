@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -548,7 +549,55 @@ func TestExecute_ClassroomValidationErrors(t *testing.T) {
 		if err := Execute([]string{"--account", "a@b.com", "classroom", "submissions", "grade", "c1", "cw1", "s1", "--assigned", "bad"}); err == nil {
 			t.Fatalf("expected error for invalid grade value")
 		}
+		err := Execute([]string{"--account", "a@b.com", "classroom", "invitations", "list"})
+		if err == nil || !strings.Contains(err.Error(), "at least one of --course or --user is required") {
+			t.Fatalf("expected invitation filter error, got %v", err)
+		}
 	})
+}
+
+func TestExecute_ClassroomListInvalidMaxFailsBeforeService(t *testing.T) {
+	origNew := newClassroomService
+	t.Cleanup(func() { newClassroomService = origNew })
+	newClassroomService = func(context.Context, string) (*classroom.Service, error) {
+		t.Fatalf("expected max validation to fail before creating classroom service")
+		return nil, errors.New("unexpected classroom service call")
+	}
+
+	cases := [][]string{
+		{"--account", "a@b.com", "classroom", "courses", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "courses", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "students", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "students", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "teachers", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "teachers", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "roster", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "roster", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "coursework", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "coursework", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "materials", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "materials", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "announcements", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "announcements", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "topics", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "topics", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "submissions", "c1", "cw1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "submissions", "c1", "cw1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "invitations", "--course", "c1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "invitations", "--course", "c1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "guardians", "s1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "guardians", "s1", "--max=-1"},
+		{"--account", "a@b.com", "classroom", "guardian-invitations", "s1", "--max", "0"},
+		{"--account", "a@b.com", "classroom", "guardian-invitations", "s1", "--max=-1"},
+	}
+	for _, args := range cases {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			err := Execute(args)
+			if ExitCode(err) != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
+		})
+	}
 }
 
 func decodeJSONArrayLen(t *testing.T, output, key string) int {

@@ -35,10 +35,6 @@ type ClassroomSubmissionsListCmd struct {
 
 func (c *ClassroomSubmissionsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	courseID := strings.TrimSpace(c.CourseID)
 	courseworkID := strings.TrimSpace(c.CourseworkID)
 	if courseID == "" {
@@ -46,6 +42,13 @@ func (c *ClassroomSubmissionsListCmd) Run(ctx context.Context, flags *RootFlags)
 	}
 	if courseworkID == "" {
 		return usage("empty courseworkId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newClassroomService(ctx, account)
@@ -90,6 +93,7 @@ func (c *ClassroomSubmissionsListCmd) Run(ctx context.Context, flags *RootFlags)
 	if err != nil {
 		return err
 	}
+	submissions = nonNilClassroomItems(submissions)
 
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{

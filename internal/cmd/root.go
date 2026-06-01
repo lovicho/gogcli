@@ -30,7 +30,7 @@ const (
 type RootFlags struct {
 	Color               string `help:"Color output: auto|always|never" default:"${color}"`
 	Home                string `name:"home" help:"Override gogcli config/data/state/cache root (equivalent to GOG_HOME)"`
-	Account             string `help:"Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/ads/photos)" aliases:"acct" short:"a"`
+	Account             string `help:"Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos)" aliases:"acct" short:"a"`
 	Client              string `help:"OAuth client name (selects stored credentials + token bucket)" default:"${client}"`
 	AccessToken         string `help:"Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h)" env:"GOG_ACCESS_TOKEN"`
 	EnableCommands      string `help:"Comma-separated list of enabled command prefixes; dot paths allowed (restricts CLI)" default:"${enabled_commands}"`
@@ -248,29 +248,31 @@ func Execute(args []string) (err error) {
 }
 
 func rewriteDesirePathArgs(args []string) []string {
-	// `--fields` is already used by `calendar events` for the Calendar API `fields` parameter.
-	// Agents frequently guess `--fields` to mean "select output fields", so we squat it
-	// everywhere else by rewriting to the global `--select` flag.
+	// Some commands use `--fields` for API field masks. Agents also frequently
+	// guess `--fields` to mean "select output fields", so we squat it everywhere
+	// else by rewriting to the global `--select` flag.
 	//
 	// We avoid adding `--fields` as a real alias because Kong would treat it as a duplicate flag.
-	keepFields := isCalendarEventsCommand(args)
-
 	out := make([]string, 0, len(args))
 	for i, a := range args {
 		if a == "--" {
 			out = append(out, args[i:]...)
 			break
 		}
-		if keepFields {
-			out = append(out, a)
-			continue
-		}
 		if a == "--fields" {
-			out = append(out, "--select")
+			if commandHasLocalFieldsFlagBefore(args, i) {
+				out = append(out, a)
+			} else {
+				out = append(out, "--select")
+			}
 			continue
 		}
 		if strings.HasPrefix(a, "--fields=") {
-			out = append(out, "--select="+strings.TrimPrefix(a, "--fields="))
+			if commandHasLocalFieldsFlagBefore(args, i) {
+				out = append(out, a)
+			} else {
+				out = append(out, "--select="+strings.TrimPrefix(a, "--fields="))
+			}
 			continue
 		}
 		out = append(out, a)
@@ -303,12 +305,66 @@ func preScanHomeArg(args []string) (string, bool) {
 	return "", false
 }
 
-func isCalendarEventsCommand(args []string) bool {
-	cmdTokens := make([]string, 0, 2)
+func commandHasLocalFieldsFlagBefore(args []string, fieldsIndex int) bool {
+	if fieldsIndex < 0 || fieldsIndex > len(args) {
+		return false
+	}
+	return commandTokensHaveLocalFieldsFlag(commandTokens(args[:fieldsIndex], 5))
+}
+
+func commandTokensHaveLocalFieldsFlag(cmdTokens []string) bool {
+	if len(cmdTokens) == 0 {
+		return false
+	}
+	cmd0 := strings.TrimSpace(strings.ToLower(cmdTokens[0]))
+	if cmd0 == "ls" || cmd0 == strList {
+		return true
+	}
+	if len(cmdTokens) < 2 {
+		return false
+	}
+	cmd1 := strings.TrimSpace(strings.ToLower(cmdTokens[1]))
+	switch cmd0 {
+	case "calendar", "cal":
+		return cmd1 == "events" || cmd1 == "ls" || cmd1 == "list"
+	case backupServiceDrive, "drv":
+		if cmd1 == "ls" || cmd1 == strList || cmd1 == "get" || cmd1 == "raw" {
+			return true
+		}
+		return driveLabelsCommandHasLocalFieldsFlag(cmdTokens[1:])
+	case "sites", "site":
+		return cmd1 == "get" || cmd1 == "info" || cmd1 == "show"
+	default:
+		return false
+	}
+}
+
+func driveLabelsCommandHasLocalFieldsFlag(tokens []string) bool {
+	if len(tokens) < 2 {
+		return false
+	}
+	if tokens[0] != "labels" && tokens[0] != "label" {
+		return false
+	}
+	switch tokens[1] {
+	case "list", "ls", "get", "info", "show":
+		return true
+	case strFile:
+		if len(tokens) < 3 {
+			return false
+		}
+		return tokens[2] == strList || tokens[2] == "ls"
+	default:
+		return false
+	}
+}
+
+func commandTokens(args []string, maxTokens int) []string {
+	cmdTokens := make([]string, 0, maxTokens)
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
-			break
+			return cmdTokens
 		}
 		if strings.HasPrefix(a, "-") {
 			if globalFlagTakesValue(a) && i+1 < len(args) {
@@ -317,25 +373,16 @@ func isCalendarEventsCommand(args []string) bool {
 			continue
 		}
 		cmdTokens = append(cmdTokens, a)
-		if len(cmdTokens) >= 2 {
-			break
+		if len(cmdTokens) >= maxTokens {
+			return cmdTokens
 		}
 	}
-
-	if len(cmdTokens) < 2 {
-		return false
-	}
-	cmd0 := strings.TrimSpace(strings.ToLower(cmdTokens[0]))
-	cmd1 := strings.TrimSpace(strings.ToLower(cmdTokens[1]))
-	if cmd0 != "calendar" && cmd0 != "cal" {
-		return false
-	}
-	return cmd1 == "events" || cmd1 == "ls" || cmd1 == "list"
+	return cmdTokens
 }
 
 func globalFlagTakesValue(flag string) bool {
 	switch flag {
-	case "--color", "--account", "--acct", "--client", "--enable-commands", "--enable-commands-exact", "--disable-commands", "--select", "--pick", "--project", "--home", "-a":
+	case "--color", "--account", "--acct", "--client", "--access-token", "--enable-commands", "--enable-commands-exact", "--disable-commands", "--select", "--pick", "--project", "--home", "-a":
 		return true
 	default:
 		return false
@@ -412,7 +459,7 @@ func newParser(description string) (*kong.Kong, *CLI, error) {
 }
 
 func baseDescription() string {
-	return "Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Ads/Groups/Admin/Keep/YouTube/Maps/Photos"
+	return "Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Groups/Admin/Keep/YouTube/Maps/Photos"
 }
 
 func helpDescription() string {

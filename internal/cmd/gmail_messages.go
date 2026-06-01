@@ -42,6 +42,9 @@ func (c *GmailMessagesSearchCmd) Run(ctx context.Context, flags *RootFlags) erro
 		c.IncludeBody = true
 	}
 	u := ui.FromContext(ctx)
+	if err := validateGmailMaxResults(c.Max); err != nil {
+		return err
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err

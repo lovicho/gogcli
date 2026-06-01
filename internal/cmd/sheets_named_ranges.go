@@ -166,7 +166,7 @@ func (c *SheetsNamedRangesAddCmd) Run(ctx context.Context, flags *RootFlags) err
 		return err
 	}
 
-	if dryRunErr := dryRunExit(ctx, flags, "sheets.named_ranges.add", map[string]any{
+	if dryRunErr := dryRunExit(ctx, flags, "sheets.named-ranges.add", map[string]any{
 		"spreadsheet_id": spreadsheetID,
 		"name":           name,
 		"range":          rangeSpec,
@@ -260,7 +260,7 @@ func (c *SheetsNamedRangesUpdateCmd) Run(ctx context.Context, flags *RootFlags) 
 		}
 	}
 
-	if dryRunErr := dryRunExit(ctx, flags, "sheets.named_ranges.update", map[string]any{
+	if dryRunErr := dryRunExit(ctx, flags, "sheets.named-ranges.update", map[string]any{
 		"spreadsheet_id": spreadsheetID,
 		"name_or_id":     in,
 		"name":           newName,
@@ -366,7 +366,7 @@ func (c *SheetsNamedRangesDeleteCmd) Run(ctx context.Context, flags *RootFlags) 
 		return usage("empty nameOrId")
 	}
 
-	if dryRunErr := dryRunExit(ctx, flags, "sheets.named_ranges.delete", map[string]any{
+	if dryRunErr := dryRunExit(ctx, flags, "sheets.named-ranges.delete", map[string]any{
 		"spreadsheet_id": spreadsheetID,
 		"name_or_id":     in,
 	}); dryRunErr != nil {

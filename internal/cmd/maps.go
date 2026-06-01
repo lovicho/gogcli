@@ -3,7 +3,9 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/googleapi"
@@ -36,12 +38,16 @@ func (c *MapsDirectionsCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if strings.TrimSpace(c.Origin) == "" || strings.TrimSpace(c.Destination) == "" {
 		return usage("--origin and --destination are required")
 	}
+	mode, err := normalizeMapsMode(c.Mode)
+	if err != nil {
+		return err
+	}
 	client, err := newMapsClient()
 	if err != nil {
 		return err
 	}
 	resp, err := client.Directions(ctx, c.Origin, c.Destination, googleapi.MapsDirectionsOptions{
-		Mode:     strings.TrimSpace(c.Mode),
+		Mode:     mode,
 		Language: strings.TrimSpace(c.Language),
 		Region:   strings.TrimSpace(c.Region),
 	})
@@ -66,13 +72,21 @@ func (c *MapsDistanceCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if len(origins) == 0 || len(destinations) == 0 {
 		return usage("--origins and --destinations are required")
 	}
+	mode, err := normalizeMapsMode(c.Mode)
+	if err != nil {
+		return err
+	}
+	units, err := normalizeMapsUnits(c.Units)
+	if err != nil {
+		return err
+	}
 	client, err := newMapsClient()
 	if err != nil {
 		return err
 	}
 	resp, err := client.DistanceMatrix(ctx, origins, destinations, googleapi.MapsDistanceMatrixOptions{
-		Mode:     strings.TrimSpace(c.Mode),
-		Units:    strings.TrimSpace(c.Units),
+		Mode:     mode,
+		Units:    units,
 		Language: strings.TrimSpace(c.Language),
 		Region:   strings.TrimSpace(c.Region),
 	})
@@ -118,11 +132,15 @@ func (c *MapsReverseGeocodeCmd) Run(ctx context.Context, flags *RootFlags) error
 	if strings.TrimSpace(c.Lat) == "" || strings.TrimSpace(c.Lng) == "" {
 		return usage("--lat and --lng are required")
 	}
+	lat, lng, err := normalizeMapsLatLng(c.Lat, c.Lng)
+	if err != nil {
+		return err
+	}
 	client, err := newMapsClient()
 	if err != nil {
 		return err
 	}
-	resp, err := client.ReverseGeocode(ctx, strings.TrimSpace(c.Lat)+","+strings.TrimSpace(c.Lng), googleapi.MapsGeocodeOptions{
+	resp, err := client.ReverseGeocode(ctx, lat+","+lng, googleapi.MapsGeocodeOptions{
 		Language: strings.TrimSpace(c.Language),
 		Region:   strings.TrimSpace(c.Region),
 	})
@@ -198,6 +216,56 @@ func newMapsClient() (*googleapi.MapsClient, error) {
 		return nil, err
 	}
 	return googleapi.NewMapsClient(apiKey, googleapi.WithMapsBaseURL(os.Getenv("GOG_MAPS_BASE_URL"))), nil
+}
+
+func normalizeMapsMode(raw string) (string, error) {
+	v := strings.TrimSpace(strings.ToLower(raw))
+	switch v {
+	case "":
+		return "", nil
+	case "driving", "walking", "bicycling", "transit":
+		return v, nil
+	default:
+		return "", usagef("invalid --mode %q (expected driving, walking, bicycling, or transit)", raw)
+	}
+}
+
+func normalizeMapsUnits(raw string) (string, error) {
+	v := strings.TrimSpace(strings.ToLower(raw))
+	switch v {
+	case "":
+		return "", nil
+	case "metric", "imperial":
+		return v, nil
+	default:
+		return "", usagef("invalid --units %q (expected metric or imperial)", raw)
+	}
+}
+
+func normalizeMapsLatLng(rawLat string, rawLng string) (string, string, error) {
+	latRaw := strings.TrimSpace(rawLat)
+	lngRaw := strings.TrimSpace(rawLng)
+	lat, err := strconv.ParseFloat(latRaw, 64)
+	if err != nil {
+		return "", "", usagef("invalid --lat %q (expected decimal degrees)", rawLat)
+	}
+	lng, err := strconv.ParseFloat(lngRaw, 64)
+	if err != nil {
+		return "", "", usagef("invalid --lng %q (expected decimal degrees)", rawLng)
+	}
+	if math.IsNaN(lat) || math.IsInf(lat, 0) {
+		return "", "", usagef("invalid --lat %q (expected finite decimal degrees)", rawLat)
+	}
+	if math.IsNaN(lng) || math.IsInf(lng, 0) {
+		return "", "", usagef("invalid --lng %q (expected finite decimal degrees)", rawLng)
+	}
+	if lat < -90 || lat > 90 {
+		return "", "", usagef("invalid --lat %q (expected -90 through 90)", rawLat)
+	}
+	if lng < -180 || lng > 180 {
+		return "", "", usagef("invalid --lng %q (expected -180 through 180)", rawLng)
+	}
+	return latRaw, lngRaw, nil
 }
 
 func writeMapsPlace(ctx context.Context, place *googleapi.Place) error {

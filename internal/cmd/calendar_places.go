@@ -183,7 +183,7 @@ func placesAPIKey() (string, error) {
 	if key := strings.TrimSpace(config.GetValue(cfg, config.KeyPlacesAPIKey)); key != "" {
 		return key, nil
 	}
-	return "", usage("Places API key required for --location-search or --place-id. Set GOG_PLACES_API_KEY, GOOGLE_PLACES_API_KEY, or run 'gog config set places_api_key <key>'")
+	return "", usage("Google Maps/Places API key required. Set GOG_PLACES_API_KEY, GOOGLE_PLACES_API_KEY, or run 'gog config set places_api_key <key>'")
 }
 
 func formatCalendarPlaceLocation(place *calendarPlace) string {

@@ -39,6 +39,9 @@ type KeepListCmd struct {
 
 func (c *KeepListCmd) Run(ctx context.Context, flags *RootFlags, keep *KeepCmd) error {
 	u := ui.FromContext(ctx)
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 
 	svc, err := getKeepService(ctx, flags, keep)
 	if err != nil {
@@ -131,7 +134,10 @@ func (c *KeepSearchCmd) Run(ctx context.Context, flags *RootFlags, keep *KeepCmd
 	u := ui.FromContext(ctx)
 
 	if strings.TrimSpace(c.Query) == "" {
-		return fmt.Errorf("search query cannot be empty")
+		return usage("search query cannot be empty")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
 	}
 
 	svc, err := getKeepService(ctx, flags, keep)
@@ -246,7 +252,7 @@ func (c *KeepAttachmentCmd) Run(ctx context.Context, flags *RootFlags, keep *Kee
 
 	name := strings.TrimSpace(c.AttachmentName)
 	if !strings.Contains(name, "/attachments/") {
-		return fmt.Errorf("invalid attachment name format, expected: notes/<noteId>/attachments/<attachmentId>")
+		return usage("invalid attachment name format, expected: notes/<noteId>/attachments/<attachmentId>")
 	}
 
 	outPath := strings.TrimSpace(c.Out)

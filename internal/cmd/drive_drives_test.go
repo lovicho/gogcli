@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +15,8 @@ import (
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
+
+var errUnexpectedDriveServiceCall = errors.New("unexpected drive service call")
 
 func TestDriveDrivesCmd_TextAndJSON(t *testing.T) {
 	origNew := newDriveService
@@ -212,6 +215,33 @@ func TestDriveDrivesCmd_WithQuery(t *testing.T) {
 	}
 	if capturedPageToken != "tok" {
 		t.Fatalf("expected page token to be passed, got: %q", capturedPageToken)
+	}
+}
+
+func TestDriveDrivesCmd_InvalidMaxFailsBeforeService(t *testing.T) {
+	origNew := newDriveService
+	t.Cleanup(func() { newDriveService = origNew })
+	newDriveService = func(context.Context, string) (*drive.Service, error) {
+		t.Fatalf("expected max validation to fail before creating drive service")
+		return nil, errUnexpectedDriveServiceCall
+	}
+
+	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if err != nil {
+		t.Fatalf("ui.New: %v", err)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	flags := &RootFlags{Account: "test@example.com"}
+
+	for _, args := range [][]string{{"--max", "0"}, {"--max=-1"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			cmd := &DriveDrivesCmd{}
+			err := runKong(t, cmd, args, ctx, flags)
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
+		})
 	}
 }
 

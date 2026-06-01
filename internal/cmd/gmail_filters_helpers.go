@@ -38,6 +38,7 @@ var sleepBeforeGmailFilterRetry = func(ctx context.Context, d time.Duration) err
 }
 
 func writeGmailFiltersList(ctx context.Context, filters []*gmail.Filter) error {
+	filters = normalizeGmailFilters(filters)
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"filters": filters})
 	}
@@ -70,6 +71,13 @@ func writeGmailFiltersList(ctx context.Context, filters []*gmail.Filter) error {
 			sanitizeTab(query))
 	}
 	return tw.Flush()
+}
+
+func normalizeGmailFilters(filters []*gmail.Filter) []*gmail.Filter {
+	if filters == nil {
+		return []*gmail.Filter{}
+	}
+	return filters
 }
 
 func writeGmailFilter(ctx context.Context, filter *gmail.Filter) error {
@@ -146,6 +154,11 @@ func (c *GmailFiltersCreateCmd) validate() (string, error) {
 	}
 	if c.AddLabel == "" && c.RemoveLabel == "" && !c.Archive && !c.MarkRead && !c.Star && forwardTarget == "" && !c.Trash && !c.NeverSpam && !c.Important {
 		return "", errors.New("must specify at least one action flag (--add-label, --remove-label, --archive, --mark-read, --star, --forward, --trash, --never-spam, or --important)")
+	}
+	if forwardTarget != "" {
+		if err := validateGmailSettingsEmail("--forward", forwardTarget); err != nil {
+			return "", err
+		}
 	}
 	return forwardTarget, nil
 }

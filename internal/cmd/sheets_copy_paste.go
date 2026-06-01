@@ -103,6 +103,6 @@ func normalizePasteType(raw string) (string, error) {
 	case pasteNormal, "VALUES", "FORMAT", "NO_BORDERS", "FORMULA", "DATA_VALIDATION", "CONDITIONAL_FORMATTING":
 		return "PASTE_" + v, nil
 	default:
-		return "", fmt.Errorf("invalid --type %q (expected NORMAL, VALUES, FORMAT, FORMULA, NO_BORDERS, DATA_VALIDATION, or CONDITIONAL_FORMATTING)", raw)
+		return "", usagef("invalid --type %q (expected NORMAL, VALUES, FORMAT, FORMULA, NO_BORDERS, DATA_VALIDATION, or CONDITIONAL_FORMATTING)", raw)
 	}
 }

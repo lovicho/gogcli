@@ -59,6 +59,30 @@ func attachmentsFromPaths(paths []string) []mailAttachment {
 	return attachments
 }
 
+func validateComposeHeaderInputs(to, cc, bcc, replyTo, subject, from string) error {
+	for _, tc := range []struct {
+		flag   string
+		values []string
+	}{
+		{flag: "--to", values: splitCSV(to)},
+		{flag: "--cc", values: splitCSV(cc)},
+		{flag: "--bcc", values: splitCSV(bcc)},
+		{flag: "--reply-to", values: []string{replyTo}},
+		{flag: "--subject", values: []string{subject}},
+		{flag: "--from", values: []string{from}},
+	} {
+		for _, value := range tc.values {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			if err := validateHeaderValue(value); err != nil {
+				return usagef("invalid %s: %v", tc.flag, err)
+			}
+		}
+	}
+	return nil
+}
+
 func resolveComposeSender(ctx context.Context, svc *gmail.Service, account, from string) (composeFromResult, error) {
 	sendAsList, sendAsListErr := listSendAs(ctx, svc)
 	return resolveComposeFrom(ctx, svc, account, from, sendAsList, sendAsListErr)

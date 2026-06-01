@@ -29,13 +29,16 @@ type ClassroomGuardiansListCmd struct {
 
 func (c *ClassroomGuardiansListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	studentID := strings.TrimSpace(c.StudentID)
 	if studentID == "" {
 		return usage("empty studentId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newClassroomService(ctx, account)
@@ -62,6 +65,7 @@ func (c *ClassroomGuardiansListCmd) Run(ctx context.Context, flags *RootFlags) e
 	if err != nil {
 		return err
 	}
+	guardians = nonNilClassroomItems(guardians)
 
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
@@ -201,13 +205,16 @@ type ClassroomGuardianInvitesListCmd struct {
 
 func (c *ClassroomGuardianInvitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	studentID := strings.TrimSpace(c.StudentID)
 	if studentID == "" {
 		return usage("empty studentId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newClassroomService(ctx, account)
@@ -241,6 +248,7 @@ func (c *ClassroomGuardianInvitesListCmd) Run(ctx context.Context, flags *RootFl
 	if err != nil {
 		return err
 	}
+	invitations = nonNilClassroomItems(invitations)
 
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
@@ -339,7 +347,7 @@ func (c *ClassroomGuardianInvitesCreateCmd) Run(ctx context.Context, flags *Root
 	}
 
 	invite := &classroom.GuardianInvitation{InvitedEmailAddress: email}
-	if err := dryRunExit(ctx, flags, "classroom.guardian_invitations.create", map[string]any{
+	if err := dryRunExit(ctx, flags, "classroom.guardian-invitations.create", map[string]any{
 		"student_id": studentID,
 		"invitation": invite,
 	}); err != nil {

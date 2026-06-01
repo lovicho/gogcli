@@ -19,8 +19,8 @@ gog calendar (cal) out-of-office (ooo) --from=STRING --to=STRING [<calendarId>] 
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/ads/photos) |
-| `--all-day` | `bool` |  | Create as all-day event |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `--all-day` | `bool` |  | Unsupported for out-of-office events; Google Calendar API rejects all-day OOO |
 | `--auto-decline` | `string` | all | Auto-decline mode: none, all, new |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
@@ -30,7 +30,7 @@ gog calendar (cal) out-of-office (ooo) --from=STRING --to=STRING [<calendarId>] 
 | `--enable-commands` | `string` |  | Comma-separated list of enabled command prefixes; dot paths allowed (restricts CLI) |
 | `--enable-commands-exact` | `string` |  | Comma-separated list of exact enabled commands; dot paths allowed and parent commands do not enable children |
 | `-y`<br>`--force`<br>`--assume-yes`<br>`--yes` | `bool` |  | Skip confirmations for destructive commands |
-| `--from` | `string` |  | Start date or datetime (RFC3339 or YYYY-MM-DD) |
+| `--from` | `string` |  | Start datetime (RFC3339; date-only is not supported by Google Calendar API) |
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
@@ -40,7 +40,7 @@ gog calendar (cal) out-of-office (ooo) --from=STRING --to=STRING [<calendarId>] 
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `--summary` | `string` | Out of office | Out of office title |
-| `--to` | `string` |  | End date or datetime (RFC3339 or YYYY-MM-DD) |
+| `--to` | `string` |  | End datetime (RFC3339; date-only is not supported by Google Calendar API) |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--version` | `kong.VersionFlag` |  | Print version and exit |
 | `--wrap-untrusted` | `bool` | false | In JSON/raw output, wrap fetched text fields in external untrusted-content markers |

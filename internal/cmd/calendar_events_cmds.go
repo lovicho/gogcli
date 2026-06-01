@@ -36,6 +36,9 @@ type CalendarEventsCmd struct {
 }
 
 func (c *CalendarEventsCmd) Run(ctx context.Context, flags *RootFlags) error {
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -106,7 +109,7 @@ func normalizeCalendarEventsArgs(args []string) (string, error) {
 			trimmed = append(trimmed, arg)
 		}
 	}
-	if len(trimmed) > 0 && (trimmed[0] == "list" || trimmed[0] == "ls") {
+	if len(trimmed) > 0 && (trimmed[0] == strList || trimmed[0] == "ls") {
 		trimmed = trimmed[1:]
 	}
 	if len(trimmed) > 1 {

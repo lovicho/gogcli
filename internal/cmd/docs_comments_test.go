@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -392,6 +393,31 @@ func TestDocsCommentsAdd_JSON(t *testing.T) {
 	}
 	if parsed.Comment.Anchor != "{\"a\":1}" {
 		t.Fatalf("expected anchor, got %q", parsed.Comment.Anchor)
+	}
+}
+
+func TestDocsCommentsAdd_InvalidAnchorFailsBeforeDryRun(t *testing.T) {
+	origNew := newDriveService
+	t.Cleanup(func() { newDriveService = origNew })
+	newDriveService = func(context.Context, string) (*drive.Service, error) {
+		t.Fatalf("expected validation to fail before creating drive service")
+		return nil, errors.New("unexpected drive service call")
+	}
+
+	testCases := [][]string{
+		{"--account", "a@b.com", "--dry-run", "docs", "comments", "add", "doc1", "Nice work", "--anchor", "nope"},
+		{"--account", "a@b.com", "--dry-run", "docs", "comments", "add", "doc1", "Nice work", "--anchor", "{\"a\":1"},
+	}
+	for _, args := range testCases {
+		t.Run(strings.Join(args[4:], "_"), func(t *testing.T) {
+			_ = captureStderr(t, func() {
+				err := Execute(args)
+				var exitErr *ExitError
+				if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid --anchor JSON") {
+					t.Fatalf("unexpected err: %v", err)
+				}
+			})
+		})
 	}
 }
 

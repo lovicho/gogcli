@@ -29,13 +29,16 @@ type ClassroomStudentsListCmd struct {
 
 func (c *ClassroomStudentsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	courseID := strings.TrimSpace(c.CourseID)
 	if courseID == "" {
 		return usage("empty courseId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newClassroomService(ctx, account)
@@ -59,6 +62,7 @@ func (c *ClassroomStudentsListCmd) Run(ctx context.Context, flags *RootFlags) er
 	if err != nil {
 		return err
 	}
+	students = nonNilClassroomItems(students)
 
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
@@ -253,13 +257,16 @@ type ClassroomTeachersListCmd struct {
 
 func (c *ClassroomTeachersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	courseID := strings.TrimSpace(c.CourseID)
 	if courseID == "" {
 		return usage("empty courseId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newClassroomService(ctx, account)
@@ -283,6 +290,7 @@ func (c *ClassroomTeachersListCmd) Run(ctx context.Context, flags *RootFlags) er
 	if err != nil {
 		return err
 	}
+	teachers = nonNilClassroomItems(teachers)
 
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
@@ -463,13 +471,16 @@ type ClassroomRosterCmd struct {
 
 func (c *ClassroomRosterCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	courseID := strings.TrimSpace(c.CourseID)
 	if courseID == "" {
 		return usage("empty courseId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	includeStudents := c.Students || (!c.Students && !c.Teachers)
@@ -501,6 +512,7 @@ func (c *ClassroomRosterCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err != nil {
 			return err
 		}
+		students = nonNilClassroomItems(students)
 	}
 	if includeTeachers {
 		fetch := func(pageToken string) ([]*classroom.Teacher, string, error) {
@@ -518,6 +530,7 @@ func (c *ClassroomRosterCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err != nil {
 			return err
 		}
+		teachers = nonNilClassroomItems(teachers)
 	}
 
 	if outfmt.IsJSON(ctx) {

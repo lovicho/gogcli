@@ -72,3 +72,10 @@ func writeGmailEmailStatusCreateResult(ctx context.Context, jsonKey string, raw 
 	}
 	return nil
 }
+
+func normalizeGmailSettingsItems[T any](items []*T) []*T {
+	if items == nil {
+		return []*T{}
+	}
+	return items
+}

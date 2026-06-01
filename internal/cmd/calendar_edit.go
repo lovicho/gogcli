@@ -191,6 +191,15 @@ func (c *CalendarCreateCmd) defaultSummaryForEventType(eventType string) string 
 }
 
 func resolveCreateAllDay(from, to string, allDay bool, eventType string) (bool, error) {
+	if eventType == eventTypeOutOfOffice {
+		if allDay {
+			return false, usage("out-of-office events cannot be all-day; provide RFC3339 datetime --from/--to without --all-day")
+		}
+		if !strings.Contains(from, "T") || !strings.Contains(to, "T") {
+			return false, usage("out-of-office requires RFC3339 datetime --from/--to; date-only out-of-office events are not supported by Google Calendar API")
+		}
+		return false, nil
+	}
 	if eventType != eventTypeWorkingLocation {
 		return allDay, nil
 	}
@@ -607,6 +616,15 @@ func (c *CalendarUpdateCmd) applyTextFields(kctx *kong.Context, patch *calendar.
 }
 
 func resolveUpdateAllDay(value string, allDay bool, eventType string) (bool, error) {
+	if eventType == eventTypeOutOfOffice {
+		if allDay {
+			return false, usage("out-of-office events cannot be all-day; provide RFC3339 datetime --from/--to without --all-day")
+		}
+		if !strings.Contains(value, "T") {
+			return false, usage("out-of-office requires RFC3339 datetime --from/--to; date-only out-of-office events are not supported by Google Calendar API")
+		}
+		return false, nil
+	}
 	if eventType != eventTypeWorkingLocation {
 		return allDay, nil
 	}
@@ -1174,7 +1192,7 @@ func resolveRecurringScope(scopeValue, originalStartTime string) (string, error)
 		}
 	case scopeAll:
 	default:
-		return "", fmt.Errorf("invalid scope: %q (must be single, future, or all)", scope)
+		return "", usagef("invalid scope: %q (must be single, future, or all)", scope)
 	}
 	return scope, nil
 }

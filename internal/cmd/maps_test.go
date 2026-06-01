@@ -79,6 +79,54 @@ func TestMapsDirections(t *testing.T) {
 	}
 }
 
+func TestMapsDirectionsRejectsInvalidModeBeforeAPIKey(t *testing.T) {
+	t.Setenv("GOG_PLACES_API_KEY", "")
+	err := (&MapsDirectionsCmd{
+		Origin:      "Barcelona",
+		Destination: "Blanes",
+		Mode:        "hoverboard",
+	}).Run(newCalendarJSONContext(t), &RootFlags{})
+	if err == nil || !strings.Contains(err.Error(), "invalid --mode") {
+		t.Fatalf("expected invalid mode error, got %v", err)
+	}
+}
+
+func TestMapsDistanceRejectsInvalidUnitsBeforeAPIKey(t *testing.T) {
+	t.Setenv("GOG_PLACES_API_KEY", "")
+	err := (&MapsDistanceCmd{
+		Origins:      "Barcelona",
+		Destinations: "Blanes",
+		Units:        "parsecs",
+	}).Run(newCalendarJSONContext(t), &RootFlags{})
+	if err == nil || !strings.Contains(err.Error(), "invalid --units") {
+		t.Fatalf("expected invalid units error, got %v", err)
+	}
+}
+
+func TestMapsReverseGeocodeRejectsInvalidLatLngBeforeAPIKey(t *testing.T) {
+	t.Setenv("GOG_PLACES_API_KEY", "")
+	for _, tc := range []struct {
+		name string
+		lat  string
+		lng  string
+		want string
+	}{
+		{name: "lat parse", lat: "north", lng: "2.1", want: "invalid --lat"},
+		{name: "lng parse", lat: "41.0", lng: "east", want: "invalid --lng"},
+		{name: "lat nan", lat: "NaN", lng: "2.1", want: "invalid --lat"},
+		{name: "lng inf", lat: "41.0", lng: "+Inf", want: "invalid --lng"},
+		{name: "lat range", lat: "91", lng: "2.1", want: "invalid --lat"},
+		{name: "lng range", lat: "41.0", lng: "181", want: "invalid --lng"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := (&MapsReverseGeocodeCmd{Lat: tc.lat, Lng: tc.lng}).Run(newCalendarJSONContext(t), &RootFlags{})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q error, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestMapsGeocode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/geocode/json" {

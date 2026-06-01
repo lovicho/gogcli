@@ -55,6 +55,9 @@ func (c *SitesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if strings.TrimSpace(c.Drive) != "" && !c.AllDrives {
 		return usage("--drive cannot be combined with --no-all-drives")
 	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	svc, err := requireSitesDriveService(ctx, flags)
 	if err != nil {
 		return err
@@ -80,6 +83,9 @@ func (c *SitesSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if strings.TrimSpace(c.Drive) != "" && !c.AllDrives {
 		return usage("--drive cannot be combined with --no-all-drives")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
 	}
 	svc, err := requireSitesDriveService(ctx, flags)
 	if err != nil {

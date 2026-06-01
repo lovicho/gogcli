@@ -21,21 +21,21 @@ type sheetsTableColumnInput struct {
 func parseSheetsTableColumnsJSON(input string) ([]*sheets.TableColumnProperties, error) {
 	b, err := resolveInlineOrFileBytes(input)
 	if err != nil {
-		return nil, fmt.Errorf("read --columns-json: %w", err)
+		return nil, usagef("read --columns-json: %v", err)
 	}
 
 	var raw []sheetsTableColumnInput
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
-		return nil, fmt.Errorf("invalid columns JSON: %w", err)
+		return nil, usagef("invalid columns JSON: %v", err)
 	}
 	var extra any
 	if err := dec.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return nil, fmt.Errorf("invalid columns JSON: multiple JSON values")
+			return nil, usage("invalid columns JSON: multiple JSON values")
 		}
-		return nil, fmt.Errorf("invalid columns JSON: %w", err)
+		return nil, usagef("invalid columns JSON: %v", err)
 	}
 	if len(raw) == 0 {
 		return nil, usage("provide at least one table column")

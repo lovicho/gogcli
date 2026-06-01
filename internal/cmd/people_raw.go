@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"strings"
 )
 
@@ -41,8 +42,8 @@ func (c *ContactsRawCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 func runPeopleRaw(ctx context.Context, flags *RootFlags, id, fields string, pretty bool) error {
-	resource := normalizePeopleResource(id)
-	if resource == "" {
+	identifier := strings.TrimSpace(id)
+	if identifier == "" {
 		return usage("required: resource name or email")
 	}
 
@@ -58,6 +59,46 @@ func runPeopleRaw(ctx context.Context, flags *RootFlags, id, fields string, pret
 	svc, err := newPeopleContactsService(ctx, account)
 	if err != nil {
 		return wrapPeopleAPIError(err)
+	}
+
+	resource := normalizePeopleResource(identifier)
+	if strings.Contains(identifier, "@") && !strings.HasPrefix(identifier, "people/") {
+		matches := make([]string, 0, 1)
+		seen := make(map[string]bool)
+
+		pageToken := ""
+		for {
+			call := svc.People.Connections.List(peopleMeResource).
+				PersonFields("names,emailAddresses,metadata").
+				PageSize(1000).
+				Context(ctx)
+			if pageToken != "" {
+				call = call.PageToken(pageToken)
+			}
+			connections, listErr := call.Do()
+			if listErr != nil {
+				return wrapPeopleAPIError(listErr)
+			}
+			for _, person := range connections.Connections {
+				if person == nil || !personHasEmail(person, identifier) || person.ResourceName == "" || seen[person.ResourceName] {
+					continue
+				}
+				seen[person.ResourceName] = true
+				matches = append(matches, person.ResourceName)
+			}
+			if connections.NextPageToken == "" {
+				break
+			}
+			pageToken = connections.NextPageToken
+		}
+		switch len(matches) {
+		case 0:
+			return fmt.Errorf("contact not found for email %q", identifier)
+		case 1:
+			resource = matches[0]
+		default:
+			return fmt.Errorf("email %q matched multiple contacts; use a people/... resource name", identifier)
+		}
 	}
 
 	person, err := svc.People.Get(resource).PersonFields(mask).Context(ctx).Do()

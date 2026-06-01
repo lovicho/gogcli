@@ -222,6 +222,54 @@ func TestGmailDraftsDeleteCmd_JSON(t *testing.T) {
 	}
 }
 
+func TestGmailDraftsCreateCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testing.T) {
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	flags := &RootFlags{Account: "a@b.com", DryRun: true}
+
+	for _, cmd := range []GmailDraftsCreateCmd{
+		{To: "bad\ncc:evil@example.com", Subject: "S", Body: "B"},
+		{To: "a@example.com", ReplyTo: "bad\ncc:evil@example.com", Subject: "S", Body: "B"},
+		{To: "a@example.com", Subject: "S\nInjected: yes", Body: "B"},
+	} {
+		err := cmd.Run(ctx, flags)
+		if err == nil {
+			t.Fatal("expected invalid header error")
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+		}
+	}
+}
+
+func TestGmailDraftsUpdateCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testing.T) {
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	flags := &RootFlags{Account: "a@b.com", DryRun: true}
+	validTo := "a@example.com"
+	badTo := "bad\ncc:evil@example.com"
+
+	for _, cmd := range []GmailDraftsUpdateCmd{
+		{DraftID: "d1", To: &badTo, Subject: "S", Body: "B"},
+		{DraftID: "d1", To: &validTo, ReplyTo: "bad\ncc:evil@example.com", Subject: "S", Body: "B"},
+		{DraftID: "d1", To: &validTo, Subject: "S\nInjected: yes", Body: "B"},
+	} {
+		err := cmd.Run(ctx, flags)
+		if err == nil {
+			t.Fatal("expected invalid header error")
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+		}
+	}
+}
+
 func TestGmailDraftsSendCmd_Text(t *testing.T) {
 	origNew := newGmailService
 	t.Cleanup(func() { newGmailService = origNew })

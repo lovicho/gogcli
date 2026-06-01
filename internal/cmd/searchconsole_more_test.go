@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -306,5 +307,31 @@ func TestExecute_SearchConsoleSitemapsSubmit_DryRun_JSON(t *testing.T) {
 	}
 	if !parsed.DryRun || parsed.Op != "searchconsole.sitemaps.submit" {
 		t.Fatalf("unexpected payload: %#v", parsed)
+	}
+}
+
+func TestExecute_SearchConsoleSitemaps_InvalidFeedPathIsUsageBeforeDryRun(t *testing.T) {
+	origNew := newSearchConsoleService
+	t.Cleanup(func() { newSearchConsoleService = origNew })
+	newSearchConsoleService = func(context.Context, string) (*searchconsoleapi.Service, error) {
+		t.Fatalf("expected validation to fail before creating search console service")
+		return nil, errors.New("unexpected search console service call")
+	}
+
+	testCases := [][]string{
+		{"--json", "--dry-run", "searchconsole", "sitemaps", "submit", "sc-domain:example.com", "nope"},
+		{"--json", "--dry-run", "searchconsole", "sitemaps", "delete", "sc-domain:example.com", "nope"},
+		{"--json", "--dry-run", "searchconsole", "sitemaps", "submit", "sc-domain:example.com", "ftp://example.com/sitemap.xml"},
+	}
+	for _, args := range testCases {
+		t.Run(strings.Join(args[3:], "_"), func(t *testing.T) {
+			_ = captureStderr(t, func() {
+				err := Execute(args)
+				var exitErr *ExitError
+				if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid feedpath") {
+					t.Fatalf("unexpected err: %v", err)
+				}
+			})
+		})
 	}
 }

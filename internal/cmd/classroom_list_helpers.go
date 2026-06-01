@@ -13,6 +13,13 @@ func fetchClassroomPagedList[T any](all bool, page string, fetch func(string) ([
 	return loadPagedItems(page, all, fetch)
 }
 
+func nonNilClassroomItems[T any](items []*T) []*T {
+	if items == nil {
+		return []*T{}
+	}
+	return items
+}
+
 func writeClassroomPagedList[T any](
 	ctx context.Context,
 	jsonKey string,
@@ -23,6 +30,7 @@ func writeClassroomPagedList[T any](
 	hintOnEmpty bool,
 	printTable func(io.Writer),
 ) error {
+	items = nonNilClassroomItems(items)
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
 			jsonKey:         items,

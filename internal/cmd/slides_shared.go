@@ -1,9 +1,13 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
+	gapi "google.golang.org/api/googleapi"
 	"google.golang.org/api/slides/v1"
 )
 
@@ -65,16 +69,34 @@ func findSpeakerNotesObjectID(slide *slides.Page) string {
 	return ""
 }
 
-func buildSlidesClearAndInsertTextRequests(objectID string, text string) []*slides.Request {
-	requests := []*slides.Request{
-		{
+func slidesPageElementHasText(page *slides.Page, objectID string) bool {
+	if page == nil || objectID == "" {
+		return false
+	}
+	for _, el := range page.PageElements {
+		if el == nil || el.ObjectId != objectID || el.Shape == nil || el.Shape.Text == nil {
+			continue
+		}
+		for _, textElement := range el.Shape.Text.TextElements {
+			if textElement != nil && textElement.TextRun != nil && textElement.TextRun.Content != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func buildSlidesReplaceTextRequests(objectID string, text string, hasExistingText bool) []*slides.Request {
+	requests := []*slides.Request{}
+	if hasExistingText {
+		requests = append(requests, &slides.Request{
 			DeleteText: &slides.DeleteTextRequest{
 				ObjectId: objectID,
 				TextRange: &slides.Range{
 					Type: "ALL",
 				},
 			},
-		},
+		})
 	}
 	if text != "" {
 		requests = append(requests, &slides.Request{
@@ -85,4 +107,40 @@ func buildSlidesClearAndInsertTextRequests(objectID string, text string) []*slid
 		})
 	}
 	return requests
+}
+
+func buildSlidesClearAndInsertTextRequests(objectID string, text string) []*slides.Request {
+	return buildSlidesReplaceTextRequests(objectID, text, true)
+}
+
+func batchUpdateSlidesImageRequests(ctx context.Context, svc *slides.Service, presentationID string, req *slides.BatchUpdatePresentationRequest) error {
+	var lastErr error
+	for attempt := 0; ; attempt++ {
+		_, err := svc.Presentations.BatchUpdate(presentationID, req).Context(ctx).Do()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt >= len(docsImageInsertRetryDelays) || !isRetryableSlidesImageRequestError(err) {
+			return lastErr
+		}
+		if err := waitDocsImageInsertRetry(ctx, docsImageInsertRetryDelays[attempt]); err != nil {
+			return err
+		}
+	}
+}
+
+func isRetryableSlidesImageRequestError(err error) bool {
+	var apiErr *gapi.Error
+	if errors.As(err, &apiErr) {
+		if apiErr.Code >= 500 {
+			return true
+		}
+		if apiErr.Code == 400 && strings.Contains(apiErr.Message, "retrieving the image") {
+			return true
+		}
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "retrieving the image") ||
+		strings.Contains(errStr, "provided image should be publicly accessible")
 }

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -44,19 +43,20 @@ func (c *GmailSendAsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	sendAs := normalizeGmailSettingsItems(resp.SendAs)
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"sendAs": resp.SendAs})
+		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"sendAs": sendAs})
 	}
 
-	if len(resp.SendAs) == 0 {
+	if len(sendAs) == 0 {
 		u.Err().Println("No send-as aliases")
 		return nil
 	}
 
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "EMAIL\tDISPLAY NAME\tDEFAULT\tVERIFIED\tTREAT AS ALIAS")
-	for _, sa := range resp.SendAs {
+	for _, sa := range sendAs {
 		isDefault := ""
 		if sa.IsDefault {
 			isDefault = sendAsYes
@@ -88,7 +88,10 @@ func (c *GmailSendAsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	sendAsEmail := strings.TrimSpace(c.Email)
 	if sendAsEmail == "" {
-		return errors.New("email is required")
+		return usage("email is required")
+	}
+	if validateErr := validateGmailSettingsEmail("email", sendAsEmail); validateErr != nil {
+		return validateErr
 	}
 
 	svc, err := newGmailService(ctx, account)
@@ -128,13 +131,22 @@ func (c *GmailSendAsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	u := ui.FromContext(ctx)
 	sendAsEmail := strings.TrimSpace(c.Email)
 	if sendAsEmail == "" {
-		return errors.New("email is required")
+		return usage("email is required")
+	}
+	if err := validateGmailSettingsEmail("email", sendAsEmail); err != nil {
+		return err
+	}
+	replyTo := strings.TrimSpace(c.ReplyTo)
+	if replyTo != "" {
+		if err := validateGmailSettingsEmail("--reply-to", replyTo); err != nil {
+			return err
+		}
 	}
 
 	sendAs := &gmail.SendAs{
 		SendAsEmail:    sendAsEmail,
 		DisplayName:    c.DisplayName,
-		ReplyToAddress: c.ReplyTo,
+		ReplyToAddress: replyTo,
 		Signature:      c.Signature,
 		TreatAsAlias:   c.TreatAsAlias,
 	}
@@ -178,7 +190,10 @@ func (c *GmailSendAsVerifyCmd) Run(ctx context.Context, flags *RootFlags) error 
 	u := ui.FromContext(ctx)
 	sendAsEmail := strings.TrimSpace(c.Email)
 	if sendAsEmail == "" {
-		return errors.New("email is required")
+		return usage("email is required")
+	}
+	if err := validateGmailSettingsEmail("email", sendAsEmail); err != nil {
+		return err
 	}
 
 	if err := dryRunExit(ctx, flags, "gmail.sendas.verify", map[string]any{
@@ -221,7 +236,10 @@ func (c *GmailSendAsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error 
 	u := ui.FromContext(ctx)
 	sendAsEmail := strings.TrimSpace(c.Email)
 	if sendAsEmail == "" {
-		return errors.New("email is required")
+		return usage("email is required")
+	}
+	if err := validateGmailSettingsEmail("email", sendAsEmail); err != nil {
+		return err
 	}
 
 	if confirmErr := dryRunAndConfirmDestructive(ctx, flags, "gmail.sendas.delete", map[string]any{
@@ -269,7 +287,16 @@ func (c *GmailSendAsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flag
 	u := ui.FromContext(ctx)
 	sendAsEmail := strings.TrimSpace(c.Email)
 	if sendAsEmail == "" {
-		return errors.New("email is required")
+		return usage("email is required")
+	}
+	if err := validateGmailSettingsEmail("email", sendAsEmail); err != nil {
+		return err
+	}
+	replyTo := strings.TrimSpace(c.ReplyTo)
+	if flagProvided(kctx, "reply-to") && replyTo != "" {
+		if err := validateGmailSettingsEmail("--reply-to", replyTo); err != nil {
+			return err
+		}
 	}
 
 	updates := map[string]any{}
@@ -277,7 +304,7 @@ func (c *GmailSendAsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flag
 		updates["display_name"] = c.DisplayName
 	}
 	if flagProvided(kctx, "reply-to") {
-		updates["reply_to"] = c.ReplyTo
+		updates["reply_to"] = replyTo
 	}
 	if flagProvided(kctx, "signature") {
 		updates["signature"] = c.Signature
@@ -317,7 +344,7 @@ func (c *GmailSendAsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flag
 		current.DisplayName = c.DisplayName
 	}
 	if flagProvided(kctx, "reply-to") {
-		current.ReplyToAddress = c.ReplyTo
+		current.ReplyToAddress = replyTo
 	}
 	if flagProvided(kctx, "signature") {
 		current.Signature = c.Signature

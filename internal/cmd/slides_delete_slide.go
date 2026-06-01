@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"google.golang.org/api/slides/v1"
 
+	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -27,10 +29,10 @@ func (c *SlidesDeleteSlideCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return usage("empty slideId")
 	}
 
-	if err := dryRunExit(ctx, flags, "slides.delete-slide", map[string]any{
+	if err := dryRunAndConfirmDestructive(ctx, flags, "slides.delete-slide", map[string]any{
 		"presentation_id": presentationID,
 		"slide_id":        slideID,
-	}); err != nil {
+	}, fmt.Sprintf("delete slide %s from presentation %s", slideID, presentationID)); err != nil {
 		return err
 	}
 
@@ -55,6 +57,14 @@ func (c *SlidesDeleteSlideCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("delete slide: %w", err)
+	}
+
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+			"presentationId": presentationID,
+			"slideObjectId":  slideID,
+			"deleted":        true,
+		})
 	}
 
 	u.Out().Linef("Deleted slide %s", slideID)

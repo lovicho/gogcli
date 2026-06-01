@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -106,8 +107,30 @@ func TestGmailAutoForwardUpdateCmd_JSONAndValidation(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
 
 	cmd := &GmailAutoForwardUpdateCmd{}
-	if err := runKong(t, cmd, []string{"--disposition", "nope"}, context.Background(), flags); err == nil {
+	err = runKong(t, cmd, []string{"--disposition", "nope"}, context.Background(), flags)
+	if err == nil {
 		t.Fatalf("expected validation error")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+
+	cmdConflict := &GmailAutoForwardUpdateCmd{}
+	err = runKong(t, cmdConflict, []string{"--enable", "--disable"}, context.Background(), flags)
+	if err == nil {
+		t.Fatalf("expected conflict error")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+
+	cmdEmail := &GmailAutoForwardUpdateCmd{}
+	err = runKong(t, cmdEmail, []string{"--enable", "--email", "nope"}, context.Background(), flags)
+	if err == nil || !strings.Contains(err.Error(), "invalid --email") {
+		t.Fatalf("expected email validation error, got %v", err)
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
 	}
 
 	jsonOut := captureStdout(t, func() {
@@ -137,4 +160,21 @@ func TestGmailAutoForwardUpdateCmd_JSONAndValidation(t *testing.T) {
 	if !parsed.AutoForwarding.Enabled || parsed.AutoForwarding.EmailAddress != "new@example.com" {
 		t.Fatalf("unexpected json: %#v", parsed.AutoForwarding)
 	}
+}
+
+func TestGmailAutoForwardUpdate_InvalidEmailFailsBeforeDryRun(t *testing.T) {
+	origNew := newGmailService
+	t.Cleanup(func() { newGmailService = origNew })
+	newGmailService = func(context.Context, string) (*gmail.Service, error) {
+		t.Fatalf("expected validation to fail before creating gmail service")
+		return nil, errors.New("unexpected gmail service call")
+	}
+
+	_ = captureStderr(t, func() {
+		err := Execute([]string{"--account", "a@b.com", "--dry-run", "gmail", "autoforward", "update", "--enable", "--email", "nope"})
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid --email") {
+			t.Fatalf("unexpected err: %v", err)
+		}
+	})
 }

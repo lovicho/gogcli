@@ -95,6 +95,7 @@ func TestDesirePaths_RewriteFields_KeepsCalendarEventsWithGlobalFlagValue(t *tes
 	cases := [][]string{
 		{"--account", "foo@example.com", "calendar", "events", "--fields", "items(id)"},
 		{"--home", "/tmp/gog-home", "calendar", "events", "--fields", "items(id)"},
+		{"--access-token", "ya29.test-token", "drive", "ls", "--fields", "files(id,name)"},
 	}
 	for _, in := range cases {
 		in := in
@@ -108,9 +109,42 @@ func TestDesirePaths_RewriteFields_KeepsCalendarEventsWithGlobalFlagValue(t *tes
 }
 
 func TestDesirePaths_RewriteFields_RewritesNonCalendarCommands(t *testing.T) {
-	in := []string{"--account", "foo@example.com", "drive", "ls", "--fields=id,name"}
+	in := []string{"--account", "foo@example.com", "gmail", "search", "newer_than:1d", "--fields=id,name"}
 	got := rewriteDesirePathArgs(in)
-	want := []string{"--account", "foo@example.com", "drive", "ls", "--select=id,name"}
+	want := []string{"--account", "foo@example.com", "gmail", "search", "newer_than:1d", "--select=id,name"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected rewrite: got=%v want=%v", got, want)
+	}
+}
+
+func TestDesirePaths_RewriteFields_KeepsCommandsWithLocalFields(t *testing.T) {
+	cases := [][]string{
+		{"ls", "--fields=files(id,name)"},
+		{"list", "--fields=files(id,name)"},
+		{"drive", "ls", "--fields=files(id,name)"},
+		{"drive", "ls", "--max", "1", "--fields=files(id,name)"},
+		{"drive", "get", "file123", "--fields", "id,name,mimeType"},
+		{"drive", "raw", "file123", "--fields", "id,name"},
+		{"drive", "labels", "list", "--fields", "labels(id,name)"},
+		{"drive", "labels", "get", "labels/123", "--fields", "id,name"},
+		{"drive", "labels", "file", "list", "file123", "--fields", "labels(id,name)"},
+		{"sites", "get", "site123", "--fields", "id,name,webViewLink"},
+	}
+	for _, in := range cases {
+		in := in
+		t.Run(strings.Join(in, " "), func(t *testing.T) {
+			got := rewriteDesirePathArgs(in)
+			if !reflect.DeepEqual(got, in) {
+				t.Fatalf("unexpected rewrite: got=%v want=%v", got, in)
+			}
+		})
+	}
+}
+
+func TestDesirePaths_RewriteFields_RewritesGlobalPositionFields(t *testing.T) {
+	in := []string{"--fields=id,name", "drive", "ls"}
+	got := rewriteDesirePathArgs(in)
+	want := []string{"--select=id,name", "drive", "ls"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected rewrite: got=%v want=%v", got, want)
 	}

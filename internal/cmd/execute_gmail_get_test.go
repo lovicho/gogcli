@@ -301,6 +301,9 @@ func TestExecute_GmailGet_InvalidFormat(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected error")
 		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+		}
 		if !strings.Contains(err.Error(), "invalid --format") {
 			t.Fatalf("unexpected error: %v", err)
 		}

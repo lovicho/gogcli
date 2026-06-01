@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strings"
 )
 
@@ -36,7 +35,7 @@ func (c *GmailRawCmd) Run(ctx context.Context, flags *RootFlags) error {
 	switch format {
 	case gmailFormatFull, gmailFormatMetadata, gmailFormatMinimal, gmailFormatRaw:
 	default:
-		return fmt.Errorf("invalid --format: %q (expected full|metadata|minimal|raw)", format)
+		return usagef("invalid --format: %q (expected full|metadata|minimal|raw)", format)
 	}
 
 	account, err := requireAccount(flags)

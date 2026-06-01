@@ -265,7 +265,7 @@ func (c *AuthCredentialsRemoveCmd) removeAll(ctx context.Context, flags *RootFla
 			TokensRemoved: accounts,
 		})
 	}
-	if dryRunErr := dryRunExit(ctx, flags, "auth.credentials.remove_all", planned); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "auth.credentials.remove", planned); dryRunErr != nil {
 		return dryRunErr
 	}
 	if err := confirmDestructiveChecked(ctx, flagsWithoutDryRun(flags), fmt.Sprintf("remove all OAuth credentials (%s)", strings.Join(names, ", "))); err != nil {

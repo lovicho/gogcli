@@ -37,6 +37,9 @@ func (c *ClassroomAnnouncementsListCmd) Run(ctx context.Context, flags *RootFlag
 	if courseID == "" {
 		return usage("empty courseId")
 	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 
 	_, svc, err := requireClassroomService(ctx, flags)
 	if err != nil {

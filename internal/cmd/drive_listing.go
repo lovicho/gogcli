@@ -26,6 +26,9 @@ func (c *DriveLsCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if c.All && strings.TrimSpace(c.Parent) != "" {
 		return usage("--all cannot be combined with --parent")
 	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 
 	folderID := strings.TrimSpace(c.Parent)
 	if folderID == "" {
@@ -69,6 +72,9 @@ func (c *DriveSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if parentID != "" && c.RawQuery {
 		return usage("--parent cannot be combined with --raw-query; include the \"'<parentId>' in parents\" clause in your raw query instead")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
 	}
 
 	_, svc, err := requireDriveService(ctx, flags)

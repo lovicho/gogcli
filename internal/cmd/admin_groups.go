@@ -28,14 +28,16 @@ type AdminGroupsListCmd struct {
 
 func (c *AdminGroupsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAdminAccount(flags)
-	if err != nil {
-		return err
-	}
-
 	domain := strings.TrimSpace(c.Domain)
 	if domain == "" {
 		return usage("domain required (e.g., --domain example.com)")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAdminAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newAdminDirectoryService(ctx, account)
@@ -137,14 +139,16 @@ type AdminGroupsMembersListCmd struct {
 
 func (c *AdminGroupsMembersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAdminAccount(flags)
-	if err != nil {
-		return err
-	}
-
 	groupEmail := strings.TrimSpace(c.GroupEmail)
 	if groupEmail == "" {
 		return usage("group email required")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAdminAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newAdminDirectoryService(ctx, account)
@@ -234,6 +238,9 @@ func (c *AdminGroupsMembersAddCmd) Run(ctx context.Context, flags *RootFlags) er
 	memberEmail := strings.TrimSpace(c.MemberEmail)
 	if groupEmail == "" || memberEmail == "" {
 		return usage("group email and member email required")
+	}
+	if err := validatePlainEmail("member email", memberEmail); err != nil {
+		return err
 	}
 
 	role := strings.ToUpper(c.Role)

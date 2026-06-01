@@ -359,7 +359,10 @@ type gmailBackupCheckpointer struct {
 	pending []string
 }
 
-const gmailCheckpointShardMaxRows = 250
+const (
+	gmailBackupShardKindMessages = "messages"
+	gmailCheckpointShardMaxRows  = 250
+)
 
 var (
 	gmailCheckpointShardMaxPlaintextBytes int64 = 32 * 1024 * 1024
@@ -816,7 +819,7 @@ func buildGmailMessageShardFromCache(accountHash, rel, tempDir string, refs []gm
 	}
 	return backup.PlainShard{
 		Service:       backupServiceGmail,
-		Kind:          "messages",
+		Kind:          gmailBackupShardKindMessages,
 		Account:       accountHash,
 		Path:          filepath.ToSlash(rel),
 		Rows:          count,
@@ -893,7 +896,7 @@ func buildGmailCheckpointShardFromCache(accountHash, runID string, part int, ids
 	}
 	return backup.PlainShard{
 		Service:       backupServiceGmail,
-		Kind:          "messages",
+		Kind:          gmailBackupShardKindMessages,
 		Account:       accountHash,
 		Path:          filepath.ToSlash(rel),
 		Rows:          count,
@@ -992,7 +995,7 @@ func buildGmailMessageShardsFromCheckpoint(ctx context.Context, opts gmailBackup
 	shards := make([]backup.PlainShard, 0, len(manifest.Shards))
 	rows := 0
 	for _, entry := range manifest.Shards {
-		if entry.Service != backupServiceGmail || entry.Kind != "messages" || entry.Account != opts.AccountHash {
+		if entry.Service != backupServiceGmail || entry.Kind != gmailBackupShardKindMessages || entry.Account != opts.AccountHash {
 			return nil, false, fmt.Errorf("gmail checkpoint %s contains unexpected shard %s/%s/%s", opts.CheckpointRunID, entry.Service, entry.Kind, entry.Account)
 		}
 		shards = append(shards, backup.ExistingShard(entry, manifest.Recipients))
@@ -1178,7 +1181,7 @@ func buildGmailMessageShardsWithLimit(accountHash string, messages []gmailBackup
 				start++
 			}
 			rel := fmt.Sprintf("data/gmail/%s/messages/%s/part-%04d.jsonl.gz.age", accountHash, key, part)
-			shard, err := backup.NewJSONLShard(backupServiceGmail, "messages", accountHash, rel, values[chunkStart:start])
+			shard, err := backup.NewJSONLShard(backupServiceGmail, gmailBackupShardKindMessages, accountHash, rel, values[chunkStart:start])
 			if err != nil {
 				return nil, err
 			}

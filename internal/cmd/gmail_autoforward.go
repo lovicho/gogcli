@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"os"
+	"strings"
 
 	"github.com/alecthomas/kong"
 	"google.golang.org/api/gmail/v1"
@@ -60,7 +60,7 @@ type GmailAutoForwardUpdateCmd struct {
 func (c *GmailAutoForwardUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	if c.Enable && c.Disable {
-		return errors.New("cannot specify both --enable and --disable")
+		return usage("cannot specify both --enable and --disable")
 	}
 
 	updates := map[string]any{}
@@ -71,7 +71,11 @@ func (c *GmailAutoForwardUpdateCmd) Run(ctx context.Context, kctx *kong.Context,
 		updates["enabled"] = false
 	}
 	if flagProvided(kctx, "email") {
-		updates["email_address"] = c.Email
+		email := strings.TrimSpace(c.Email)
+		if err := validateGmailSettingsEmail("--email", email); err != nil {
+			return err
+		}
+		updates["email_address"] = email
 	}
 	if flagProvided(kctx, "disposition") {
 		// Validate disposition value
@@ -82,7 +86,7 @@ func (c *GmailAutoForwardUpdateCmd) Run(ctx context.Context, kctx *kong.Context,
 			"markRead":     true,
 		}
 		if !validDispositions[c.Disposition] {
-			return errors.New("invalid disposition value; must be one of: leaveInInbox, archive, trash, markRead")
+			return usage("invalid disposition value; must be one of: leaveInInbox, archive, trash, markRead")
 		}
 		updates["disposition"] = c.Disposition
 	}
@@ -124,7 +128,7 @@ func (c *GmailAutoForwardUpdateCmd) Run(ctx context.Context, kctx *kong.Context,
 		autoForward.Enabled = false
 	}
 	if flagProvided(kctx, "email") {
-		autoForward.EmailAddress = c.Email
+		autoForward.EmailAddress = strings.TrimSpace(c.Email)
 	}
 	if flagProvided(kctx, "disposition") {
 		autoForward.Disposition = c.Disposition

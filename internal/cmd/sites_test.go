@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/api/drive/v3"
+
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -64,6 +66,40 @@ func TestSitesListAndSearchConstrainToGoogleSites(t *testing.T) {
 	}
 	if !strings.Contains(tableOut, "Team Site") || !strings.Contains(tableOut, "site") {
 		t.Fatalf("unexpected output: %q", tableOut)
+	}
+}
+
+func TestSitesListSearchInvalidMaxFailsBeforeService(t *testing.T) {
+	origNew := newSitesDriveService
+	t.Cleanup(func() { newSitesDriveService = origNew })
+	newSitesDriveService = func(context.Context, string) (*drive.Service, error) {
+		t.Fatalf("expected max validation to fail before creating sites drive service")
+		return nil, context.Canceled
+	}
+
+	flags := &RootFlags{Account: "a@b.com"}
+	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if err != nil {
+		t.Fatalf("ui.New: %v", err)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	cases := []struct {
+		name string
+		cmd  any
+		args []string
+	}{
+		{name: "list zero", cmd: &SitesListCmd{}, args: []string{"--max", "0"}},
+		{name: "list negative", cmd: &SitesListCmd{}, args: []string{"--max=-1"}},
+		{name: "search zero", cmd: &SitesSearchCmd{}, args: []string{"team", "--max", "0"}},
+		{name: "search negative", cmd: &SitesSearchCmd{}, args: []string{"team", "--max=-1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runKong(t, tc.cmd, tc.args, ctx, flags)
+			if ExitCode(err) != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
+		})
 	}
 }
 

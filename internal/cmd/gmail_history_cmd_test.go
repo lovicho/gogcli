@@ -122,3 +122,16 @@ func TestGmailHistoryCmd_NoHistory(t *testing.T) {
 		t.Fatalf("expected no history message")
 	}
 }
+
+func TestGmailHistoryCmd_InvalidSinceIsUsageError(t *testing.T) {
+	err := runKong(t, &GmailHistoryCmd{}, []string{"--since", "nope"}, context.Background(), &RootFlags{Account: "a@b.com"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+	if !strings.Contains(err.Error(), `invalid historyId "nope"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

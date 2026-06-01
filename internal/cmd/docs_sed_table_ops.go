@@ -21,7 +21,7 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 
 	tablesWithIdx := collectAllTablesWithIndex(doc)
 	if len(tablesWithIdx) == 0 {
-		return fmt.Errorf("document has no tables")
+		return usage("document has no tables")
 	}
 
 	// Resolve table index
@@ -30,7 +30,7 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 		ti = len(tablesWithIdx) + ti + 1
 	}
 	if ti < 1 || ti > len(tablesWithIdx) {
-		return fmt.Errorf("table %d out of range (document has %d tables)", ref.tableIndex, len(tablesWithIdx))
+		return usagef("table %d out of range (document has %d tables)", ref.tableIndex, len(tablesWithIdx))
 	}
 	tw := tablesWithIdx[ti-1]
 	table := tw.table
@@ -48,10 +48,10 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 				target = numRows + target + 1
 			}
 			if target < 1 || target > numRows {
-				return fmt.Errorf("row %d out of range (table has %d rows)", ref.opTarget, numRows)
+				return usagef("row %d out of range (table has %d rows)", ref.opTarget, numRows)
 			}
 			if numRows <= 1 {
-				return fmt.Errorf("cannot delete the only row in a table")
+				return usage("cannot delete the only row in a table")
 			}
 			cellLoc := &docs.TableCellLocation{
 				TableStartLocation: tableStartLoc,
@@ -71,7 +71,7 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 				target = numRows + target + 1
 			}
 			if target < 1 || target > numRows {
-				return fmt.Errorf("row %d out of range for insert (table has %d rows)", ref.opTarget, numRows)
+				return usagef("row %d out of range for insert (table has %d rows)", ref.opTarget, numRows)
 			}
 			cellLoc := &docs.TableCellLocation{
 				TableStartLocation: tableStartLoc,
@@ -115,10 +115,10 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 				target = numCols + target + 1
 			}
 			if target < 1 || target > numCols {
-				return fmt.Errorf("col %d out of range (table has %d columns)", ref.opTarget, numCols)
+				return usagef("col %d out of range (table has %d columns)", ref.opTarget, numCols)
 			}
 			if numCols <= 1 {
-				return fmt.Errorf("cannot delete the only column in a table")
+				return usage("cannot delete the only column in a table")
 			}
 			cellLoc := &docs.TableCellLocation{
 				TableStartLocation: tableStartLoc,
@@ -138,7 +138,7 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 				target = numCols + target + 1
 			}
 			if target < 1 || target > numCols {
-				return fmt.Errorf("col %d out of range for insert (table has %d columns)", ref.opTarget, numCols)
+				return usagef("col %d out of range for insert (table has %d columns)", ref.opTarget, numCols)
 			}
 			cellLoc := &docs.TableCellLocation{
 				TableStartLocation: tableStartLoc,
@@ -171,7 +171,7 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 	}
 
 	if len(requests) == 0 {
-		return fmt.Errorf("no row/column operation to perform")
+		return usage("no row/column operation to perform")
 	}
 
 	err = retryOnQuota(ctx, func() error {
@@ -204,7 +204,11 @@ func (c *DocsSedCmd) runTableMerge(ctx context.Context, u *ui.UI, account, id st
 		tIdx = len(tablesWithIdx) + tIdx + 1
 	}
 	if tIdx < 1 || tIdx > len(tablesWithIdx) {
-		return fmt.Errorf("table index %d out of range (have %d tables)", ref.tableIndex, len(tablesWithIdx))
+		return usagef("table index %d out of range (have %d tables)", ref.tableIndex, len(tablesWithIdx))
+	}
+	table := tablesWithIdx[tIdx-1].table
+	if validationErr := validateMergeTableRef(table, ref); validationErr != nil {
+		return validationErr
 	}
 	tableStartLoc := &docs.Location{Index: tablesWithIdx[tIdx-1].startIdx}
 
@@ -215,7 +219,7 @@ func (c *DocsSedCmd) runTableMerge(ctx context.Context, u *ui.UI, account, id st
 	switch repl {
 	case "merge":
 		if ref.endRow == 0 || ref.endCol == 0 {
-			return fmt.Errorf("merge requires a range: |N|[r1,c1:r2,c2]")
+			return usage("merge requires a range: |N|[r1,c1:r2,c2]")
 		}
 		requests = append(requests, &docs.Request{
 			MergeTableCells: &docs.MergeTableCellsRequest{
@@ -249,7 +253,7 @@ func (c *DocsSedCmd) runTableMerge(ctx context.Context, u *ui.UI, account, id st
 		})
 		opDesc = fmt.Sprintf("unmerged [%d,%d]", ref.row, ref.col)
 	default:
-		return fmt.Errorf("unknown merge operation %q (expected merge, unmerge, or split)", repl)
+		return usagef("unknown merge operation %q (expected merge, unmerge, or split)", repl)
 	}
 
 	err = retryOnQuota(ctx, func() error {
@@ -263,4 +267,34 @@ func (c *DocsSedCmd) runTableMerge(ctx context.Context, u *ui.UI, account, id st
 	}
 
 	return sedOutputOK(ctx, u, id, sedOutputKV{"action", opDesc})
+}
+
+func validateMergeTableRef(table *docs.Table, ref *tableCellRef) error {
+	rows := len(table.TableRows)
+	if ref.row < 1 || ref.row > rows {
+		return usagef("row %d out of range (table has %d rows)", ref.row, rows)
+	}
+	cols := len(table.TableRows[ref.row-1].TableCells)
+	if ref.col < 1 || ref.col > cols {
+		return usagef("col %d out of range (row has %d columns)", ref.col, cols)
+	}
+	if ref.endRow != 0 {
+		if ref.endRow < ref.row || ref.endRow > rows {
+			return usagef("row %d out of range (table has %d rows)", ref.endRow, rows)
+		}
+	}
+	if ref.endCol != 0 {
+		maxCols := cols
+		if ref.endRow != 0 {
+			for i := ref.row - 1; i <= ref.endRow-1; i++ {
+				if len(table.TableRows[i].TableCells) > maxCols {
+					maxCols = len(table.TableRows[i].TableCells)
+				}
+			}
+		}
+		if ref.endCol < ref.col || ref.endCol > maxCols {
+			return usagef("col %d out of range (table has %d columns)", ref.endCol, maxCols)
+		}
+	}
+	return nil
 }

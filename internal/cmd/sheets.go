@@ -87,6 +87,7 @@ type SheetsCopyCmd struct {
 
 func (c *SheetsCopyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return copyViaDrive(ctx, flags, copyViaDriveOptions{
+		Op:           "sheets.copy",
 		ArgName:      "spreadsheetId",
 		ExpectedMime: "application/vnd.google-apps.spreadsheet",
 		KindLabel:    "Google Sheet",
@@ -135,9 +136,13 @@ func (c *SheetsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
+		values := resp.Values
+		if values == nil {
+			values = [][]interface{}{}
+		}
 		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
 			"range":  resp.Range,
-			"values": resp.Values,
+			"values": values,
 		})
 	}
 
@@ -185,16 +190,16 @@ func (c *SheetsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	case strings.TrimSpace(c.ValuesJSON) != "":
 		b, err := resolveInlineOrFileBytes(c.ValuesJSON)
 		if err != nil {
-			return fmt.Errorf("read --values-json: %w", err)
+			return usagef("read --values-json: %v", err)
 		}
 		dec := json.NewDecoder(strings.NewReader(string(b)))
 		dec.UseNumber()
 		if unmarshalErr := dec.Decode(&values); unmarshalErr != nil {
-			return fmt.Errorf("invalid JSON values: %w", unmarshalErr)
+			return usagef("invalid JSON values: %v", unmarshalErr)
 		}
 		var extra any
 		if extraErr := dec.Decode(&extra); extraErr != io.EOF {
-			return fmt.Errorf("invalid JSON values: trailing content")
+			return usage("invalid JSON values: trailing content")
 		}
 	case len(c.Values) > 0:
 		// Parse comma-separated rows, pipe-separated cells
@@ -209,7 +214,7 @@ func (c *SheetsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 			values = append(values, rowData)
 		}
 	default:
-		return fmt.Errorf("provide values as args or via --values-json")
+		return usage("provide values as args or via --values-json")
 	}
 
 	valueInputOption := strings.TrimSpace(c.ValueInput)
@@ -357,11 +362,11 @@ func parseSheetsBatchUpdateData(dataJSON string) ([]*sheets.ValueRange, error) {
 	}
 	b, err := resolveInlineOrFileBytes(dataJSON)
 	if err != nil {
-		return nil, fmt.Errorf("read --data-json: %w", err)
+		return nil, usagef("read --data-json: %v", err)
 	}
 	var data []*sheets.ValueRange
 	if unmarshalErr := json.Unmarshal(b, &data); unmarshalErr != nil {
-		return nil, fmt.Errorf("invalid JSON data: %w", unmarshalErr)
+		return nil, usagef("invalid JSON data: %v", unmarshalErr)
 	}
 	if len(data) == 0 {
 		return nil, usage("--data-json must contain at least one value range")
@@ -409,10 +414,10 @@ func (c *SheetsAppendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	case strings.TrimSpace(c.ValuesJSON) != "":
 		b, err := resolveInlineOrFileBytes(c.ValuesJSON)
 		if err != nil {
-			return fmt.Errorf("read --values-json: %w", err)
+			return usagef("read --values-json: %v", err)
 		}
 		if unmarshalErr := json.Unmarshal(b, &values); unmarshalErr != nil {
-			return fmt.Errorf("invalid JSON values: %w", unmarshalErr)
+			return usagef("invalid JSON values: %v", unmarshalErr)
 		}
 	case len(c.Values) > 0:
 		rawValues := strings.Join(c.Values, " ")
@@ -426,7 +431,7 @@ func (c *SheetsAppendCmd) Run(ctx context.Context, flags *RootFlags) error {
 			values = append(values, rowData)
 		}
 	default:
-		return fmt.Errorf("provide values as args or via --values-json")
+		return usage("provide values as args or via --values-json")
 	}
 
 	valueInputOption := strings.TrimSpace(c.ValueInput)

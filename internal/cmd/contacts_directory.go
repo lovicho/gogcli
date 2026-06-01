@@ -32,6 +32,9 @@ type ContactsDirectoryListCmd struct {
 
 func (c *ContactsDirectoryListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -127,11 +130,14 @@ type ContactsDirectorySearchCmd struct {
 
 func (c *ContactsDirectorySearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	query := strings.Join(c.Query, " ")
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
 	}
-	query := strings.Join(c.Query, " ")
 
 	svc, err := newPeopleDirectoryService(ctx, account)
 	if err != nil {
@@ -219,6 +225,8 @@ type ContactsOtherCmd struct {
 	Delete ContactsOtherDeleteCmd `cmd:"" name:"delete" help:"Delete an other contact"`
 }
 
+const contactsOtherReadMask = "names,emailAddresses,phoneNumbers"
+
 type ContactsOtherListCmd struct {
 	Max       int64  `name:"max" aliases:"limit" help:"Max results" default:"100"`
 	Page      string `name:"page" aliases:"cursor" help:"Page token"`
@@ -228,6 +236,9 @@ type ContactsOtherListCmd struct {
 
 func (c *ContactsOtherListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -240,7 +251,7 @@ func (c *ContactsOtherListCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 	fetch := func(pageToken string) ([]*people.Person, string, error) {
 		call := svc.OtherContacts.List().
-			ReadMask(contactsReadMask).
+			ReadMask(contactsOtherReadMask).
 			PageSize(c.Max).
 			Context(ctx)
 		if strings.TrimSpace(pageToken) != "" {
@@ -318,20 +329,24 @@ type ContactsOtherSearchCmd struct {
 
 func (c *ContactsOtherSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	query := strings.Join(c.Query, " ")
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
 	}
-	query := strings.Join(c.Query, " ")
 
 	svc, err := newPeopleOtherContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
 
+	warmSearchOtherContactsCache(ctx, svc)
 	resp, err := svc.OtherContacts.Search().
 		Query(query).
-		ReadMask(contactsReadMask).
+		ReadMask(contactsOtherReadMask).
 		PageSize(c.Max).
 		Do()
 	if err != nil {

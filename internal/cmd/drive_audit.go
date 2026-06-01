@@ -67,6 +67,9 @@ func (c *DriveAuditUserCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if targetUser == "" {
 		return usage("empty user")
 	}
+	if err := validateDriveScanBounds(c.Depth, c.Max); err != nil {
+		return err
+	}
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
 		return err
@@ -120,12 +123,15 @@ func (c *DriveAuditUserCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 func (c *DriveAuditSharingCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if c.PublicOnly && c.ExternalOnly {
+		return usage("--public-only cannot be combined with --external-only")
+	}
+	if err := validateDriveScanBounds(c.Depth, c.Max); err != nil {
+		return err
+	}
 	account, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
 		return err
-	}
-	if c.PublicOnly && c.ExternalOnly {
-		return usage("--public-only cannot be combined with --external-only")
 	}
 	internalDomains := normalizeInternalDomains(c.InternalDomain, account)
 
@@ -215,13 +221,7 @@ func driveAuditItems(ctx context.Context, svc *drive.Service, fileIDRaw, parentR
 		rootID = driveRootID
 	}
 	limit := maxRaw
-	if limit < 0 {
-		limit = 0
-	}
 	depth := depthRaw
-	if depth < 0 {
-		depth = 0
-	}
 	return listDriveTree(ctx, svc, driveTreeOptions{
 		RootID:        rootID,
 		MaxDepth:      depth,

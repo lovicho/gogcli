@@ -88,4 +88,19 @@ func TestSheetsMergeCmds(t *testing.T) {
 			t.Fatalf("expected unmerge request, got %#v", gotRequest)
 		}
 	})
+
+	t.Run("invalid merge type is usage", func(t *testing.T) {
+		gotRequest = nil
+		cmd := &SheetsMergeCmd{}
+		err := runKong(t, cmd, []string{"s1", "Sheet1!A1:B2", "--type", "BOGUS"}, ctx, flags)
+		if err == nil || !strings.Contains(err.Error(), "invalid --type") {
+			t.Fatalf("expected invalid type error, got %v", err)
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+		}
+		if gotRequest != nil {
+			t.Fatal("did not expect an API request")
+		}
+	})
 }

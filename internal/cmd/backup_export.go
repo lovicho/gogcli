@@ -143,6 +143,7 @@ func (c *BackupExportCmd) Run(ctx context.Context) error {
 			return initErr
 		}
 	}
+	fillMissingBackupCounts(result.Counts, manifest.Counts)
 	files, err := countExportFiles(outDir)
 	if err != nil {
 		return err
@@ -163,6 +164,19 @@ func (c *BackupExportCmd) Run(ctx context.Context) error {
 		u.Out().Linef("count.%s\t%d", key, result.Counts[key])
 	}
 	return nil
+}
+
+func fillMissingBackupCounts(out map[string]int, counts map[string]int) {
+	for key, value := range counts {
+		if _, exists := out[key]; exists && !backupManifestCountOverridesShardCount(key) {
+			continue
+		}
+		out[key] = value
+	}
+}
+
+func backupManifestCountOverridesShardCount(key string) bool {
+	return key == "drive.contents"
 }
 
 func prettyJSONL(data []byte) ([]byte, error) {
@@ -225,7 +239,7 @@ func ensureExportOutsideRepo(outDir, repo string) error {
 		return err
 	}
 	if rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." && !filepath.IsAbs(rel)) {
-		return fmt.Errorf("plaintext export directory must be outside backup repo: %s", outDir)
+		return usagef("plaintext export directory must be outside backup repo: %s", outDir)
 	}
 	return nil
 }
@@ -235,7 +249,7 @@ func resetExportTargets(outDir string, shards []backup.ShardEntry) error {
 	for _, shard := range shards {
 		target := ""
 		switch {
-		case shard.Service == backupServiceGmail && shard.Kind == "messages":
+		case shard.Service == backupServiceGmail && shard.Kind == gmailBackupShardKindMessages:
 			target = filepath.Join(outDir, backupServiceGmail, sanitizeFilePart(shard.Account), "messages", "index.jsonl")
 		case shard.Service == backupServiceDrive && shard.Kind == "contents":
 			target = filepath.Join(outDir, backupServiceDrive, sanitizeFilePart(shard.Account), "files", "index.jsonl")
@@ -285,7 +299,7 @@ func exportPlainShard(outDir string, shard backup.PlainShard, opts backupExportO
 		return exportDriveContents(outDir, shard)
 	case shard.Service == backupServiceGmail && shard.Kind == "labels":
 		return exportGmailLabels(outDir, shard)
-	case shard.Service == backupServiceGmail && shard.Kind == "messages":
+	case shard.Service == backupServiceGmail && shard.Kind == gmailBackupShardKindMessages:
 		return exportGmailMessages(outDir, shard, opts)
 	default:
 		return exportRawShard(outDir, shard)

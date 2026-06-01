@@ -53,7 +53,7 @@ func (c *CalendarProposeTimeCmd) Run(ctx context.Context, flags *RootFlags) erro
 	proposeURL := "https://calendar.google.com/calendar/u/0/r/proposetime/" + encoded
 
 	// Avoid touching auth/keyring and avoid mutating the event in dry-run mode.
-	if dryRunErr := dryRunExit(ctx, flags, "calendar.propose_time", map[string]any{
+	if dryRunErr := dryRunExit(ctx, flags, "calendar.propose-time", map[string]any{
 		"calendar_id": calendarID,
 		"event_id":    eventID,
 		"propose_url": proposeURL,
@@ -93,7 +93,7 @@ func (c *CalendarProposeTimeCmd) Run(ctx context.Context, flags *RootFlags) erro
 	// If declining, update the event response
 	if decline {
 		if len(event.Attendees) == 0 {
-			return fmt.Errorf("event has no attendees, cannot decline")
+			return usage("event has no attendees, cannot decline")
 		}
 
 		var selfIdx *int
@@ -104,10 +104,10 @@ func (c *CalendarProposeTimeCmd) Run(ctx context.Context, flags *RootFlags) erro
 			}
 		}
 		if selfIdx == nil {
-			return fmt.Errorf("you are not an attendee of this event")
+			return usage("you are not an attendee of this event")
 		}
 		if event.Attendees[*selfIdx].Organizer {
-			return fmt.Errorf("cannot decline your own event (you are the organizer)")
+			return usage("cannot decline your own event (you are the organizer)")
 		}
 
 		event.Attendees[*selfIdx].ResponseStatus = "declined"

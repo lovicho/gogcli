@@ -29,6 +29,12 @@ func (c *CalendarWorkingLocationCmd) Run(ctx context.Context, flags *RootFlags) 
 	if err != nil {
 		return err
 	}
+	if validateErr := validateCalendarDateFlag("--from", c.From); validateErr != nil {
+		return validateErr
+	}
+	if validateErr := validateCalendarDateFlag("--to", c.To); validateErr != nil {
+		return validateErr
+	}
 
 	summary := c.generateSummary()
 
@@ -42,7 +48,7 @@ func (c *CalendarWorkingLocationCmd) Run(ctx context.Context, flags *RootFlags) 
 		WorkingLocationProperties: props,
 	}
 
-	if dryRunErr := dryRunExit(ctx, flags, "calendar.working_location", map[string]any{
+	if dryRunErr := dryRunExit(ctx, flags, "calendar.working-location", map[string]any{
 		"calendar_id": calendarID,
 		"event":       event,
 	}); dryRunErr != nil {
@@ -107,14 +113,14 @@ func buildWorkingLocationProperties(input workingLocationInput) (*calendar.Event
 		}
 	case "custom":
 		if strings.TrimSpace(input.CustomLabel) == "" {
-			return nil, fmt.Errorf("--custom-label is required for type=custom")
+			return nil, usage("--custom-label is required for type=custom")
 		}
 		props.Type = "customLocation"
 		props.CustomLocation = &calendar.EventWorkingLocationPropertiesCustomLocation{
 			Label: strings.TrimSpace(input.CustomLabel),
 		}
 	default:
-		return nil, fmt.Errorf("invalid location type: %q (must be home, office, or custom)", locType)
+		return nil, usagef("invalid location type: %q (must be home, office, or custom)", locType)
 	}
 
 	return props, nil

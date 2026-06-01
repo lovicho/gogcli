@@ -89,6 +89,6 @@ func normalizeNumberFormatType(raw string) (string, error) {
 	case "NUMBER", "CURRENCY", "PERCENT", "DATE", "TIME", "DATE_TIME", "SCIENTIFIC", "TEXT":
 		return v, nil
 	default:
-		return "", fmt.Errorf("invalid --type %q (expected NUMBER, CURRENCY, PERCENT, DATE, TIME, DATE_TIME, SCIENTIFIC, or TEXT)", raw)
+		return "", usagef("invalid --type %q (expected NUMBER, CURRENCY, PERCENT, DATE, TIME, DATE_TIME, SCIENTIFIC, or TEXT)", raw)
 	}
 }

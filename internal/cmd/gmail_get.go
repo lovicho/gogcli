@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"os"
 	"strings"
 
@@ -44,7 +43,7 @@ func (c *GmailGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	switch format {
 	case gmailFormatFull, gmailFormatMetadata, gmailFormatRaw:
 	default:
-		return fmt.Errorf("invalid --format: %q (expected full|metadata|raw)", format)
+		return usagef("invalid --format: %q (expected full|metadata|raw)", format)
 	}
 	if c.SanitizeContent && format == gmailFormatRaw {
 		return usage("--sanitize-content cannot be used with --format raw")

@@ -27,10 +27,10 @@ type serviceAccountJSONInfo struct {
 func parseServiceAccountJSON(data []byte) (serviceAccountJSONInfo, error) {
 	var saJSON map[string]any
 	if err := json.Unmarshal(data, &saJSON); err != nil {
-		return serviceAccountJSONInfo{}, fmt.Errorf("invalid service account JSON: %w", err)
+		return serviceAccountJSONInfo{}, usagef("invalid service account JSON: %v", err)
 	}
 	if saJSON["type"] != "service_account" {
-		return serviceAccountJSONInfo{}, fmt.Errorf("invalid service account JSON: expected type=service_account")
+		return serviceAccountJSONInfo{}, usage("invalid service account JSON: expected type=service_account")
 	}
 
 	info := serviceAccountJSONInfo{}
@@ -73,7 +73,7 @@ func (c *AuthServiceAccountSetCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	if err := dryRunExit(ctx, flags, "auth.service_account.set", map[string]any{
+	if err := dryRunExit(ctx, flags, "auth.service-account.set", map[string]any{
 		"email":        email,
 		"key_source":   keySource,
 		"dest_path":    destPath,
@@ -174,7 +174,7 @@ func (c *AuthServiceAccountUnsetCmd) Run(ctx context.Context, flags *RootFlags) 
 		return usage("empty email")
 	}
 
-	if err := dryRunAndConfirmDestructive(ctx, flags, "auth.service_account.unset", map[string]any{
+	if err := dryRunAndConfirmDestructive(ctx, flags, "auth.service-account.unset", map[string]any{
 		"email": email,
 	}, fmt.Sprintf("remove stored service account for %s", email)); err != nil {
 		return err

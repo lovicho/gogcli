@@ -33,33 +33,38 @@ func (c *SheetsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("empty range")
 	}
 	if strings.TrimSpace(c.FormatJSON) == "" {
-		return fmt.Errorf("provide format JSON via --format-json")
-	}
-	formatFields := strings.TrimSpace(c.FormatFields)
-	if formatFields == "" {
-		return fmt.Errorf("provide format fields via --format-fields")
+		return usage("provide format JSON via --format-json")
 	}
 
-	if hasBoardersTypo(formatFields) {
-		return fmt.Errorf(`invalid --format-fields: found "boarders"; use "borders"`)
-	}
-
-	var err error
 	var format sheets.CellFormat
 	b, err := resolveInlineOrFileBytes(c.FormatJSON)
 	if err != nil {
-		return fmt.Errorf("read --format-json: %w", err)
+		return usagef("read --format-json: %v", err)
 	}
 	if err = decodeCellFormatJSON(b, &format); err != nil {
-		return fmt.Errorf("invalid format JSON: %w", err)
+		return usagef("invalid format JSON: %v", err)
 	}
 
-	normalizedFields, formatJSONPaths := normalizeFormatMask(formatFields)
-	if normalizedFields != "" {
-		formatFields = normalizedFields
+	formatFields := strings.TrimSpace(c.FormatFields)
+	var formatJSONPaths []string
+	if formatFields == "" {
+		var inferErr error
+		formatFields, formatJSONPaths, inferErr = inferFormatMaskFromCellFormatJSON(b)
+		if inferErr != nil {
+			return inferErr
+		}
+	} else {
+		if hasBoardersTypo(formatFields) {
+			return usage(`invalid --format-fields: found "boarders"; use "borders"`)
+		}
+		normalizedFields, paths := normalizeFormatMask(formatFields)
+		if normalizedFields != "" {
+			formatFields = normalizedFields
+		}
+		formatJSONPaths = paths
 	}
 	if err = applyForceSendFields(&format, formatJSONPaths); err != nil {
-		return err
+		return usage(err.Error())
 	}
 
 	if dryRunErr := dryRunExit(ctx, flags, "sheets.format", map[string]any{

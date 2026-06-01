@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"os"
 
 	"google.golang.org/api/gmail/v1"
@@ -91,7 +90,7 @@ func (c *GmailBatchModifyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	addLabels := splitCSV(c.Add)
 	removeLabels := splitCSV(c.Remove)
 	if len(addLabels) == 0 && len(removeLabels) == 0 {
-		return errors.New("must specify --add and/or --remove")
+		return usage("must specify --add and/or --remove")
 	}
 
 	if err := dryRunExit(ctx, flags, "gmail.batch.modify", map[string]any{

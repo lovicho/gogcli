@@ -255,7 +255,7 @@ func insertImagesIntoDocs(ctx context.Context, svc *docs.Service, docID string, 
 			imageURLs[img.index] = img.originalRef
 			continue
 		}
-		return fmt.Errorf("local markdown image %q cannot be inserted automatically; Google Docs image insertion requires a public HTTPS image URL, so upload the image to a public host and use that URL", img.originalRef)
+		return usagef("local markdown image %q cannot be inserted automatically; Google Docs image insertion requires a public HTTPS image URL, so upload the image to a public host and use that URL", img.originalRef)
 	}
 
 	reqs := buildImageInsertRequests(placeholders, images, imageURLs, tabID)

@@ -50,7 +50,7 @@ func (c *SlidesReplaceSlideCmd) Run(ctx context.Context, flags *RootFlags) error
 	case imageExtGIF:
 		mimeType = imageMimeGIF
 	default:
-		return fmt.Errorf("unsupported image format %q (use PNG, JPG, or GIF)", ext)
+		return usagef("unsupported image format %q (use PNG, JPG, or GIF)", ext)
 	}
 
 	if dryRunErr := dryRunExit(ctx, flags, "slides.replace-slide", map[string]any{
@@ -130,18 +130,7 @@ func (c *SlidesReplaceSlideCmd) Run(ctx context.Context, flags *RootFlags) error
 		return fmt.Errorf("set image permissions: %w", err)
 	}
 
-	// Obtain a public download URL.
-	imageURL := driveFile.WebContentLink
-	if imageURL == "" {
-		got, getErr := driveSvc.Files.Get(driveFile.Id).Fields("webContentLink").Context(ctx).Do()
-		if getErr != nil {
-			return fmt.Errorf("get image URL: %w", getErr)
-		}
-		imageURL = got.WebContentLink
-	}
-	if imageURL == "" {
-		return fmt.Errorf("could not obtain public URL for uploaded image")
-	}
+	imageURL := driveImageDownloadURL(driveFile.Id)
 
 	// Replace the image in-place.
 	requests := []*slides.Request{
@@ -160,12 +149,13 @@ func (c *SlidesReplaceSlideCmd) Run(ctx context.Context, flags *RootFlags) error
 		if notesObjectID == "" {
 			return fmt.Errorf("could not find speaker notes placeholder on slide %s", slideID)
 		}
-		requests = append(requests, buildSlidesClearAndInsertTextRequests(notesObjectID, notes)...)
+		notesPage := slide.SlideProperties.NotesPage
+		requests = append(requests, buildSlidesReplaceTextRequests(notesObjectID, notes, slidesPageElementHasText(notesPage, notesObjectID))...)
 	}
 
-	_, err = slidesSvc.Presentations.BatchUpdate(presentationID, &slides.BatchUpdatePresentationRequest{
+	err = batchUpdateSlidesImageRequests(ctx, slidesSvc, presentationID, &slides.BatchUpdatePresentationRequest{
 		Requests: requests,
-	}).Context(ctx).Do()
+	})
 	if err != nil {
 		return fmt.Errorf("replace slide image: %w", err)
 	}

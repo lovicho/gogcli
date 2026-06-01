@@ -21,20 +21,26 @@ func TestGmailSendAsCmd_ValidationErrors(t *testing.T) {
 	if err := (&GmailSendAsListCmd{}).Run(ctx, &RootFlags{}); err == nil {
 		t.Fatalf("expected missing account error")
 	}
-	if err := (&GmailSendAsGetCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}); err == nil {
-		t.Fatalf("expected missing email error")
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "get", run: func() error { return (&GmailSendAsGetCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}) }},
+		{name: "create", run: func() error { return (&GmailSendAsCreateCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}) }},
+		{name: "verify", run: func() error { return (&GmailSendAsVerifyCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}) }},
+		{name: "delete", run: func() error { return (&GmailSendAsDeleteCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}) }},
+		{name: "update", run: func() error { return (&GmailSendAsUpdateCmd{}).Run(ctx, nil, &RootFlags{Account: "a@b.com"}) }},
 	}
-	if err := (&GmailSendAsCreateCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}); err == nil {
-		t.Fatalf("expected missing email error")
-	}
-	if err := (&GmailSendAsVerifyCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}); err == nil {
-		t.Fatalf("expected missing email error")
-	}
-	if err := (&GmailSendAsDeleteCmd{}).Run(ctx, &RootFlags{Account: "a@b.com"}); err == nil {
-		t.Fatalf("expected missing email error")
-	}
-	if err := (&GmailSendAsUpdateCmd{}).Run(ctx, nil, &RootFlags{Account: "a@b.com"}); err == nil {
-		t.Fatalf("expected missing email error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil {
+				t.Fatal("expected missing email error")
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+			}
+		})
 	}
 }
 

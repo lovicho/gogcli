@@ -105,6 +105,53 @@ func TestConfigCmd_JSONEmptyValues(t *testing.T) {
 	}
 }
 
+func TestConfigCmd_InvalidInputIsUsageError(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "get unknown key",
+			args: []string{"config", "get", "nope"},
+			want: "unknown config key",
+		},
+		{
+			name: "set unknown key",
+			args: []string{"config", "set", "nope", "value"},
+			want: "unknown config key",
+		},
+		{
+			name: "unset unknown key",
+			args: []string{"config", "unset", "nope"},
+			want: "unknown config key",
+		},
+		{
+			name: "set invalid value",
+			args: []string{"config", "set", "gmail_no_send", "maybe"},
+			want: "invalid bool",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config-home"))
+
+			err := Execute(tt.args)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q in error, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
 func TestConfigNoSendRoundTrip(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config-home"))

@@ -217,6 +217,9 @@ func TestGmailLabelsRenameCmd_SystemLabelBlocked(t *testing.T) {
 	if !strings.Contains(err.Error(), `cannot rename system label "INBOX"`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
 	if patchCalled {
 		t.Fatal("patch should not run for system labels")
 	}

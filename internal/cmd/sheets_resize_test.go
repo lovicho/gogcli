@@ -100,6 +100,36 @@ func TestSheetsResizeCmds(t *testing.T) {
 	})
 }
 
+func TestSheetsResizeCmds_InvalidRangesAreUsageErrors(t *testing.T) {
+	flags := &RootFlags{Account: "a@b.com"}
+	for _, tc := range []struct {
+		name string
+		cmd  any
+		args []string
+	}{
+		{
+			name: "columns",
+			cmd:  &SheetsResizeColumnsCmd{},
+			args: []string{"s1", "1:3", "--width", "120"},
+		},
+		{
+			name: "rows",
+			cmd:  &SheetsResizeRowsCmd{},
+			args: []string{"s1", "A:C", "--height", "24"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runKong(t, tc.cmd, tc.args, context.Background(), flags)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+			}
+		})
+	}
+}
+
 func TestParseColumnsSpan(t *testing.T) {
 	t.Run("sheet range", func(t *testing.T) {
 		span, err := parseColumnsSpan("Sheet 1!$C:$A", "columns")

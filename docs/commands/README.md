@@ -54,7 +54,7 @@ Generated pages: 583.
 
 ## All Commands
 
-- [gog](gog.md) - Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Ads/Groups/Admin/Keep/YouTube/Maps/Photos
+- [gog](gog.md) - Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Groups/Admin/Keep/YouTube/Maps/Photos
   - [gog admin](gog-admin.md) - Google Workspace Admin (Directory API) - requires domain-wide delegation
     - [gog admin groups](gog-admin-groups.md) - Manage Workspace groups
       - [gog admin groups list](gog-admin-groups-list.md) - List groups in a domain
@@ -130,7 +130,7 @@ Generated pages: 583.
     - [gog calendar appointments](gog-calendar-appointments.md) - Report Calendar appointment schedule API limitation
     - [gog calendar calendars](gog-calendar-calendars.md) - List calendars
     - [gog calendar colors](gog-calendar-colors.md) - Show calendar colors
-    - [gog calendar conflicts](gog-calendar-conflicts.md) - Find conflicts
+    - [gog calendar conflicts](gog-calendar-conflicts.md) - Find busy-time overlaps across calendars
     - [gog calendar create](gog-calendar-create.md) - Create an event
     - [gog calendar create-calendar](gog-calendar-create-calendar.md) - Create a new secondary calendar
     - [gog calendar delete](gog-calendar-delete.md) - Delete an event

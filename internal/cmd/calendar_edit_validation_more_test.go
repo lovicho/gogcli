@@ -31,6 +31,8 @@ func TestCalendarCreateCmd_ValidationErrors(t *testing.T) {
 		{"missing calendar", CalendarCreateCmd{}},
 		{"missing summary", CalendarCreateCmd{CalendarID: "cal1", From: "2025-01-01T00:00:00Z", To: "2025-01-01T01:00:00Z"}},
 		{"invalid event type", CalendarCreateCmd{CalendarID: "cal1", Summary: "S", From: "2025-01-01T00:00:00Z", To: "2025-01-01T01:00:00Z", EventType: "nope"}},
+		{"out of office date only", CalendarCreateCmd{CalendarID: "cal1", EventType: "out-of-office", From: "2025-01-01", To: "2025-01-02"}},
+		{"out of office all day", CalendarCreateCmd{CalendarID: "cal1", EventType: "out-of-office", From: "2025-01-01T00:00:00Z", To: "2025-01-02T00:00:00Z", AllDay: true}},
 		{"working location missing type", CalendarCreateCmd{CalendarID: "cal1", EventType: "working-location", From: "2025-01-01", To: "2025-01-02"}},
 		{"working location with time", CalendarCreateCmd{CalendarID: "cal1", EventType: "working-location", From: "2025-01-01T00:00:00Z", To: "2025-01-02T00:00:00Z", WorkingLocationType: "home"}},
 		{"invalid color", CalendarCreateCmd{CalendarID: "cal1", Summary: "S", From: "2025-01-01T00:00:00Z", To: "2025-01-01T01:00:00Z", ColorId: "12"}},
@@ -144,8 +146,12 @@ func TestCalendarUpdateCmd_ValidationErrors(t *testing.T) {
 	{
 		cmd := &CalendarUpdateCmd{CalendarID: "cal", EventID: "evt", Scope: "nope"}
 		kctx := parseKongContext(t, cmd, []string{"cal", "evt", "--scope", "nope"})
-		if err := cmd.Run(ctx, kctx, flags); err == nil {
+		err := cmd.Run(ctx, kctx, flags)
+		if err == nil {
 			t.Fatalf("expected error for invalid scope")
+		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
 		}
 	}
 	{
@@ -205,6 +211,20 @@ func TestCalendarUpdateCmd_ValidationErrors(t *testing.T) {
 		}
 	}
 	{
+		cmd := &CalendarUpdateCmd{CalendarID: "cal", EventID: "evt", EventType: "out-of-office", From: "2025-01-01", To: "2025-01-02"}
+		kctx := parseKongContext(t, cmd, []string{"cal", "evt", "--event-type", "out-of-office", "--from", "2025-01-01", "--to", "2025-01-02"})
+		if err := cmd.Run(ctx, kctx, flags); err == nil {
+			t.Fatalf("expected error for out-of-office date-only range")
+		}
+	}
+	{
+		cmd := &CalendarUpdateCmd{CalendarID: "cal", EventID: "evt", EventType: "out-of-office", From: "2025-01-01T00:00:00Z", To: "2025-01-02T00:00:00Z", AllDay: true}
+		kctx := parseKongContext(t, cmd, []string{"cal", "evt", "--event-type", "out-of-office", "--from", "2025-01-01T00:00:00Z", "--to", "2025-01-02T00:00:00Z", "--all-day"})
+		if err := cmd.Run(ctx, kctx, flags); err == nil {
+			t.Fatalf("expected error for out-of-office all-day range")
+		}
+	}
+	{
 		cmd := &CalendarUpdateCmd{CalendarID: "cal", EventID: "evt", Summary: "S", SendUpdates: "invalid"}
 		kctx := parseKongContext(t, cmd, []string{"cal", "evt", "--summary", "S", "--send-updates", "invalid"})
 		if err := cmd.Run(ctx, kctx, flags); err == nil {
@@ -234,8 +254,14 @@ func TestCalendarDeleteCmd_ValidationErrors(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if err := tc.cmd.Run(ctx, flags); err == nil {
+		err := tc.cmd.Run(ctx, flags)
+		if err == nil {
 			t.Fatalf("expected error for %s", tc.name)
+		}
+		if tc.name == "invalid scope" {
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+			}
 		}
 	}
 }

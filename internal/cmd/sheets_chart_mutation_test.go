@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -398,6 +399,48 @@ func TestSheetsChartCreate_InvalidSpecJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid --spec-json") {
 		t.Errorf("unexpected error: %v", err)
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+}
+
+func TestSheetsChartCreate_InvalidAnchorIsUsageError(t *testing.T) {
+	ctx, _, cleanup := newChartTestContext(t, &chartRecorder{})
+	defer cleanup()
+
+	specJSON := `{"title":"Test Chart","basicChart":{"chartType":"BAR"}}`
+	for _, anchor := range []string{"nope", "   "} {
+		t.Run(fmt.Sprintf("%q", anchor), func(t *testing.T) {
+			err := runKong(t, &SheetsChartCreateCmd{}, []string{
+				"s1", "--spec-json", specJSON, "--sheet", "Sheet1", "--anchor", anchor,
+			}, ctx, &RootFlags{Account: "a@b.com", DryRun: true})
+			if err == nil {
+				t.Fatal("expected error for invalid anchor")
+			}
+			if !strings.Contains(err.Error(), "invalid --anchor") {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+			}
+		})
+	}
+}
+
+func TestSheetsChartUpdate_InvalidSpecJSON(t *testing.T) {
+	ctx, _, cleanup := newChartTestContext(t, &chartRecorder{})
+	defer cleanup()
+
+	err := runKong(t, &SheetsChartUpdateCmd{}, []string{"s1", "100", "--spec-json", "not json"}, ctx, &RootFlags{Account: "a@b.com"})
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "invalid --spec-json") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
 	}
 }
 

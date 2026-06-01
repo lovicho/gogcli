@@ -104,10 +104,13 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("--track-split requires --track")
 	}
 	if c.Track && strings.TrimSpace(htmlBodyInput) == "" {
-		return fmt.Errorf("--track requires --body-html or --body-html-file (pixel must be in HTML)")
+		return usage("--track requires --body-html or --body-html-file (pixel must be in HTML)")
 	}
 	if sigErr := c.validateSignatureOptions(); sigErr != nil {
 		return sigErr
+	}
+	if headerErr := validateComposeHeaderInputs(c.To, c.Cc, c.Bcc, c.ReplyTo, c.Subject, c.From); headerErr != nil {
+		return headerErr
 	}
 
 	attachPaths, err := expandComposeAttachmentPaths(c.Attach)

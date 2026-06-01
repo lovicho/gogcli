@@ -66,8 +66,9 @@ func TestSheetsNumberFormatCmd(t *testing.T) {
 
 	gotRepeat = nil
 	cmd := &SheetsNumberFormatCmd{}
-	if err := runKong(t, cmd, []string{"s1", "Sheet1!A1:B2", "--type", "CURRENCY", "--pattern", "$#,##0.00"}, ctx, flags); err != nil {
-		t.Fatalf("number-format: %v", err)
+	runErr := runKong(t, cmd, []string{"s1", "Sheet1!A1:B2", "--type", "CURRENCY", "--pattern", "$#,##0.00"}, ctx, flags)
+	if runErr != nil {
+		t.Fatalf("number-format: %v", runErr)
 	}
 	if gotRepeat == nil || gotRepeat.Cell == nil || gotRepeat.Cell.UserEnteredFormat == nil || gotRepeat.Cell.UserEnteredFormat.NumberFormat == nil {
 		t.Fatalf("missing number format payload: %#v", gotRepeat)
@@ -80,5 +81,18 @@ func TestSheetsNumberFormatCmd(t *testing.T) {
 	}
 	if gotRepeat.Cell.UserEnteredFormat.NumberFormat.Pattern != "$#,##0.00" {
 		t.Fatalf("unexpected pattern: %#v", gotRepeat.Cell.UserEnteredFormat.NumberFormat)
+	}
+
+	gotRepeat = nil
+	cmd = &SheetsNumberFormatCmd{}
+	runErr = runKong(t, cmd, []string{"s1", "Sheet1!A1:B2", "--type", "BOGUS"}, ctx, flags)
+	if runErr == nil || !strings.Contains(runErr.Error(), "invalid --type") {
+		t.Fatalf("expected invalid type error, got %v", runErr)
+	}
+	if got := ExitCode(runErr); got != 2 {
+		t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, runErr)
+	}
+	if gotRepeat != nil {
+		t.Fatal("did not expect an API request")
 	}
 }

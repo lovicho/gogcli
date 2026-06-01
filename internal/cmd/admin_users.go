@@ -34,14 +34,16 @@ type AdminUsersListCmd struct {
 
 func (c *AdminUsersListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAdminAccount(flags)
-	if err != nil {
-		return err
-	}
-
 	domain := strings.TrimSpace(c.Domain)
 	if domain == "" {
 		return usage("domain required (e.g., --domain example.com)")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAdminAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newAdminDirectoryService(ctx, account)
@@ -245,6 +247,9 @@ func (c *AdminUsersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if email == "" {
 		return usage("email required")
 	}
+	if err := validatePlainEmail("email", email); err != nil {
+		return err
+	}
 	if givenName == "" {
 		return usage("--given required")
 	}
@@ -276,7 +281,11 @@ func (c *AdminUsersCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		dryRunUser.OrgUnitPath = strings.TrimSpace(c.OrgUnit)
 	}
 	if c.RecoveryEmail != "" {
-		dryRunUser.RecoveryEmail = strings.TrimSpace(c.RecoveryEmail)
+		recoveryEmail := strings.TrimSpace(c.RecoveryEmail)
+		if emailErr := validatePlainEmail("--recovery-email", recoveryEmail); emailErr != nil {
+			return emailErr
+		}
+		dryRunUser.RecoveryEmail = recoveryEmail
 	}
 	if c.RecoveryPhone != "" {
 		dryRunUser.RecoveryPhone = strings.TrimSpace(c.RecoveryPhone)

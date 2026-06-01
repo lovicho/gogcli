@@ -52,6 +52,9 @@ type driveBulkPermissionPlan struct {
 
 func (c *DriveBulkRemovePublicCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if boundsErr := validateDriveScanBounds(c.Depth, c.Max); boundsErr != nil {
+		return boundsErr
+	}
 	request := driveBulkScanRequest(c.FileID, c.Parent, c.Depth, c.Max, c.AllDrives)
 	if err := dryRunExit(ctx, flags, "drive.bulk.remove-public", request); err != nil {
 		return err
@@ -100,6 +103,9 @@ func (c *DriveBulkUpdateRoleCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 	if from == to {
 		return usage("--from and --to must differ")
+	}
+	if boundsErr := validateDriveScanBounds(c.Depth, c.Max); boundsErr != nil {
+		return boundsErr
 	}
 	typeFilter := strings.ToLower(strings.TrimSpace(c.Type))
 	targetFilter := strings.ToLower(strings.TrimSpace(c.Target))

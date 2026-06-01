@@ -33,7 +33,7 @@ func (c *SheetsResizeColumnsCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 	span, err := parseColumnsSpan(columnsSpec, "columns")
 	if err != nil {
-		return err
+		return newUsageError(err)
 	}
 
 	return runSheetsMutation(ctx, flags, "sheets.resize-columns", map[string]any{
@@ -114,7 +114,7 @@ func (c *SheetsResizeRowsCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	span, err := parseRowsSpan(rowsSpec, "rows")
 	if err != nil {
-		return err
+		return newUsageError(err)
 	}
 
 	return runSheetsMutation(ctx, flags, "sheets.resize-rows", map[string]any{

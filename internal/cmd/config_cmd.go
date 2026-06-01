@@ -31,11 +31,11 @@ func (c *ConfigGetCmd) Run(ctx context.Context) error {
 
 	key, err := config.ParseKey(c.Key)
 	if err != nil {
-		return err
+		return usage(err.Error())
 	}
 	spec, err := config.KeySpecFor(key)
 	if err != nil {
-		return err
+		return usage(err.Error())
 	}
 	value := config.GetValue(cfg, key)
 
@@ -72,11 +72,11 @@ func (c *ConfigSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	key, err := config.ParseKey(c.Key)
 	if err != nil {
-		return err
+		return usage(err.Error())
 	}
 
 	if err := config.SetValue(&cfg, key, c.Value); err != nil {
-		return err
+		return usage(err.Error())
 	}
 
 	if err := dryRunExit(ctx, flags, "config.set", map[string]any{
@@ -111,11 +111,11 @@ func (c *ConfigUnsetCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	key, err := config.ParseKey(c.Key)
 	if err != nil {
-		return err
+		return usage(err.Error())
 	}
 
 	if err := config.UnsetValue(&cfg, key); err != nil {
-		return err
+		return usage(err.Error())
 	}
 
 	if err := dryRunExit(ctx, flags, "config.unset", map[string]any{

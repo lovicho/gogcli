@@ -21,8 +21,8 @@ type ClassroomInvitationsCmd struct {
 }
 
 type ClassroomInvitationsListCmd struct {
-	CourseID  string `name:"course" help:"Filter by course ID"`
-	UserID    string `name:"user" help:"Filter by user ID or email"`
+	CourseID  string `name:"course" help:"Filter by course ID (required when --user is omitted)"`
+	UserID    string `name:"user" help:"Filter by user ID or email (required when --course is omitted)"`
 	Max       int64  `name:"max" aliases:"limit" help:"Max results" default:"100"`
 	Page      string `name:"page" aliases:"cursor" help:"Page token"`
 	All       bool   `name:"all" aliases:"all-pages,allpages" help:"Fetch all pages"`
@@ -31,6 +31,12 @@ type ClassroomInvitationsListCmd struct {
 
 func (c *ClassroomInvitationsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if strings.TrimSpace(c.CourseID) == "" && strings.TrimSpace(c.UserID) == "" {
+		return usage("at least one of --course or --user is required")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -64,6 +70,7 @@ func (c *ClassroomInvitationsListCmd) Run(ctx context.Context, flags *RootFlags)
 	if err != nil {
 		return err
 	}
+	invitations = nonNilClassroomItems(invitations)
 
 	if outfmt.IsJSON(ctx) {
 		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{

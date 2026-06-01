@@ -38,6 +38,9 @@ func (c *ClassroomMaterialsListCmd) Run(ctx context.Context, flags *RootFlags) e
 	if courseID == "" {
 		return usage("empty courseId")
 	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 
 	_, svc, err := requireClassroomService(ctx, flags)
 	if err != nil {
@@ -74,6 +77,7 @@ func (c *ClassroomMaterialsListCmd) Run(ctx context.Context, flags *RootFlags) e
 		if err != nil {
 			return wrapClassroomError(err)
 		}
+		all = nonNilClassroomItems(all)
 		materials = all
 		if topic := strings.TrimSpace(c.Topic); topic != "" {
 			filtered := materials[:0]
@@ -105,6 +109,7 @@ func (c *ClassroomMaterialsListCmd) Run(ctx context.Context, flags *RootFlags) e
 			return wrapClassroomError(err)
 		}
 	}
+	materials = nonNilClassroomItems(materials)
 
 	return writeClassroomPagedList(ctx, "materials", materials, nextPageToken, "No materials", c.FailEmpty, true, func(w io.Writer) {
 		fmt.Fprintln(w, "ID\tTITLE\tSTATE\tUPDATED")

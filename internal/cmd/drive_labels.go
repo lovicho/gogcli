@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/drivelabels/v2"
@@ -56,6 +59,9 @@ func (c *DriveLabelsFileListCmd) Run(ctx context.Context, flags *RootFlags) erro
 	fileID := strings.TrimSpace(c.FileID)
 	if fileID == "" {
 		return usage("empty fileId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
 	}
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
@@ -186,6 +192,9 @@ func (c *DriveLabelsFileRemoveCmd) Run(ctx context.Context, flags *RootFlags) er
 
 func (c *DriveLabelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -351,7 +360,7 @@ func driveLabelFieldMods(c *DriveLabelsFileApplyCmd) ([]*drive.LabelFieldModific
 		for _, value := range values {
 			n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
 			if err != nil {
-				return fmt.Errorf("invalid integer label value %q: %w", value, err)
+				return usagef("invalid integer label value %q: %v", value, err)
 			}
 			ints = append(ints, n)
 		}
@@ -361,12 +370,22 @@ func driveLabelFieldMods(c *DriveLabelsFileApplyCmd) ([]*drive.LabelFieldModific
 		return nil, err
 	}
 	if err := add(c.Date, func(m *drive.LabelFieldModification, values []string) error {
+		for _, value := range values {
+			if _, err := time.Parse("2006-01-02", strings.TrimSpace(value)); err != nil {
+				return usagef("invalid date label value %q (expected YYYY-MM-DD)", value)
+			}
+		}
 		m.SetDateValues = values
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 	if err := add(c.User, func(m *drive.LabelFieldModification, values []string) error {
+		for _, value := range values {
+			if err := validatePlainEmail("--user", strings.TrimSpace(value)); err != nil {
+				return err
+			}
+		}
 		m.SetUserValues = values
 		return nil
 	}); err != nil {
@@ -403,8 +422,17 @@ func parseDriveLabelFieldAssignment(raw string) (string, []string, error) {
 
 func parseDriveLabelFieldsJSON(raw string) ([]*drive.LabelFieldModification, error) {
 	var obj map[string]any
-	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
-		return nil, fmt.Errorf("parse --fields-json: %w", err)
+	dec := json.NewDecoder(bytes.NewReader([]byte(raw)))
+	dec.UseNumber()
+	if err := dec.Decode(&obj); err != nil {
+		return nil, usagef("parse --fields-json: %v", err)
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return nil, usagef("parse --fields-json: %v", err)
+		}
+		return nil, usage("parse --fields-json: trailing JSON value")
 	}
 	mods := make([]*drive.LabelFieldModification, 0, len(obj))
 	for field, value := range obj {
@@ -416,8 +444,12 @@ func parseDriveLabelFieldsJSON(raw string) ([]*drive.LabelFieldModification, err
 		switch v := value.(type) {
 		case string:
 			mod.SetTextValues = []string{v}
-		case float64:
-			mod.SetIntegerValues = []int64{int64(v)}
+		case json.Number:
+			n, err := v.Int64()
+			if err != nil {
+				return nil, usagef("invalid integer label value %q in --fields-json", v.String())
+			}
+			mod.SetIntegerValues = []int64{n}
 		case bool:
 			mod.SetTextValues = []string{strconv.FormatBool(v)}
 		case []any:

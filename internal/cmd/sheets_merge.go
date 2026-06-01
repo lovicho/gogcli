@@ -118,6 +118,6 @@ func normalizeMergeType(raw string) (string, error) {
 	case "MERGE_ALL", "MERGE_COLUMNS", "MERGE_ROWS":
 		return v, nil
 	default:
-		return "", fmt.Errorf("invalid --type %q (expected MERGE_ALL, MERGE_COLUMNS, or MERGE_ROWS)", raw)
+		return "", usagef("invalid --type %q (expected MERGE_ALL, MERGE_COLUMNS, or MERGE_ROWS)", raw)
 	}
 }

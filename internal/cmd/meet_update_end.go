@@ -103,7 +103,7 @@ func (c *MeetEndCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("empty meeting code")
 	}
 
-	if dryRunErr := dryRunAndConfirmDestructive(ctx, flags, "meet.spaces.end_active_conference", map[string]any{
+	if dryRunErr := dryRunAndConfirmDestructive(ctx, flags, "meet.end", map[string]any{
 		"meeting_code": c.MeetingCode,
 	}, "end active conference in "+c.MeetingCode); dryRunErr != nil {
 		return dryRunErr

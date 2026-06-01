@@ -207,7 +207,7 @@ func (c *DocsSedCmd) runTableWildcardReplace(ctx context.Context, docsSvc *docs.
 
 	tables := collectAllTables(doc)
 	if len(tables) == 0 {
-		return fmt.Errorf("document has no tables")
+		return usage("document has no tables")
 	}
 
 	ti := ref.tableIndex
@@ -215,9 +215,12 @@ func (c *DocsSedCmd) runTableWildcardReplace(ctx context.Context, docsSvc *docs.
 		ti = len(tables) + ti + 1
 	}
 	if ti < 1 || ti > len(tables) {
-		return fmt.Errorf("table %d out of range (document has %d tables)", ref.tableIndex, len(tables))
+		return usagef("table %d out of range (document has %d tables)", ref.tableIndex, len(tables))
 	}
 	table := tables[ti-1]
+	if err := validateWildcardTableRef(table, ref); err != nil {
+		return err
+	}
 
 	// Collect all matching cells
 	type cellInfo struct {
@@ -314,4 +317,24 @@ func (c *DocsSedCmd) runTableWildcardReplace(ctx context.Context, docsSvc *docs.
 	}
 
 	return sedOutputOK(ctx, u, id, sedOutputKV{"replaced", replaced})
+}
+
+func validateWildcardTableRef(table *docs.Table, ref *tableCellRef) error {
+	rows := len(table.TableRows)
+	if ref.row != 0 && (ref.row < 1 || ref.row > rows) {
+		return usagef("row %d out of range (table has %d rows)", ref.row, rows)
+	}
+	if ref.col == 0 {
+		return nil
+	}
+	maxCols := 0
+	for _, row := range table.TableRows {
+		if len(row.TableCells) > maxCols {
+			maxCols = len(row.TableCells)
+		}
+	}
+	if ref.col < 1 || ref.col > maxCols {
+		return usagef("col %d out of range (table has %d columns)", ref.col, maxCols)
+	}
+	return nil
 }

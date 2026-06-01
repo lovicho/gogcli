@@ -105,26 +105,32 @@ func TestFindTableCell(t *testing.T) {
 	// Table out of range
 	_, err = findTableCell(doc, &tableCellRef{tableIndex: 5, row: 1, col: 1})
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 
 	// Row out of range
 	_, err = findTableCell(doc, &tableCellRef{tableIndex: 1, row: 10, col: 1})
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 
 	// Col out of range
 	_, err = findTableCell(doc, &tableCellRef{tableIndex: 1, row: 1, col: 10})
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 
 	// No tables
 	_, err = findTableCell(&docs.Document{Body: &docs.Body{}}, &tableCellRef{tableIndex: 1, row: 1, col: 1})
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 
 	// Table index 0 (out of range)
 	_, err = findTableCell(doc, &tableCellRef{tableIndex: 0, row: 1, col: 1})
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 
 	// Negative table index beyond range
 	_, err = findTableCell(doc, &tableCellRef{tableIndex: -5, row: 1, col: 1})
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 func TestGetCellText(t *testing.T) {

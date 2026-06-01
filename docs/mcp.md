@@ -40,7 +40,7 @@ Expose Docs read/write tools:
 ```bash
 gog --account you@example.com mcp \
   --allow-write \
-  --allow-tool docs.*
+  --allow-tool 'docs.*'
 ```
 
 `--allow-write` is always required for write tools. A write tool that matches
@@ -95,7 +95,7 @@ Examples:
 gog mcp --allow-tool gmail
 
 # Only Docs tools, including writes.
-gog mcp --allow-write --allow-tool docs.*
+gog mcp --allow-write --allow-tool 'docs.*'
 
 # Read-only server, but only Calendar and Sheets reads.
 gog mcp --allow-tool calendar,sheets
@@ -150,7 +150,7 @@ Read-only Docs and Sheets configuration:
   "command": "gog",
   "args": [
     "--account", "you@example.com",
-    "--enable-commands-exact", "docs.cat,sheets.get",
+    "--enable-commands-exact", "mcp,docs.cat,sheets.get",
     "mcp",
     "--allow-tool", "docs_get,sheets_read_range"
   ]
@@ -164,7 +164,7 @@ Docs read/write configuration:
   "command": "gog",
   "args": [
     "--account", "you@example.com",
-    "--enable-commands-exact", "docs.cat,docs.write",
+    "--enable-commands-exact", "mcp,docs.cat,docs.write",
     "--no-input",
     "mcp",
     "--allow-write",
@@ -189,7 +189,7 @@ mcporter list \
   --stdio-arg you@example.com \
   --stdio-arg mcp \
   --stdio-arg --allow-tool \
-  --stdio-arg docs.* \
+  --stdio-arg 'docs.*' \
   --schema \
   --json
 ```
@@ -275,12 +275,12 @@ to an untrusted or semi-trusted agent:
 
 ```bash
 gog --account you@example.com \
-  --enable-commands-exact docs.cat,docs.write \
+  --enable-commands-exact mcp,docs.cat,docs.write \
   --disable-commands gmail.send,gmail.drafts.send \
   --gmail-no-send \
   mcp \
   --allow-write \
-  --allow-tool docs.*
+  --allow-tool 'docs.*'
 ```
 
 If a tool maps to a disabled command, the tool call returns a non-zero exit code

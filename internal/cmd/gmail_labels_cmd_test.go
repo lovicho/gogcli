@@ -755,6 +755,9 @@ func TestGmailLabelsStyleCmd_RejectsSystemLabel(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot style system label") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
 }
 
 func TestFetchLabelIDToName(t *testing.T) {

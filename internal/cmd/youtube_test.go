@@ -16,6 +16,7 @@ import (
 )
 
 func TestYouTubeChannelsListWithAPIKey(t *testing.T) {
+	t.Setenv("GOG_ACCOUNT", "")
 	t.Setenv("GOG_YOUTUBE_API_KEY", "test-key")
 	origNew := newYouTubeWithAPIKey
 	t.Cleanup(func() { newYouTubeWithAPIKey = origNew })
@@ -105,6 +106,48 @@ func TestYouTubeMineUsesOAuthService(t *testing.T) {
 	}
 }
 
+func TestYouTubeChannelsMineJSONEmptyItems(t *testing.T) {
+	origNew := newYouTubeForAccount
+	t.Cleanup(func() { newYouTubeForAccount = origNew })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/youtube/v3/channels" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("mine"); got != "true" {
+			t.Fatalf("mine = %q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{})
+	}))
+	defer srv.Close()
+
+	svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", youtube.NewService)
+	newYouTubeForAccount = func(context.Context, string) (*youtube.Service, error) {
+		return svc, nil
+	}
+
+	var err error
+	stdout := captureStdout(t, func() {
+		err = runKong(t, &YouTubeChannelsListCmd{}, []string{"--mine", "--max", "1"}, newCmdJSONContext(t), &RootFlags{Account: "me@example.com", JSON: true})
+	})
+	if err != nil {
+		t.Fatalf("runKong: %v", err)
+	}
+
+	var got struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("json output %q: %v", stdout, err)
+	}
+	if got.Items == nil {
+		t.Fatalf("items is nil in output: %s", stdout)
+	}
+	if len(got.Items) != 0 {
+		t.Fatalf("items len = %d, output: %s", len(got.Items), stdout)
+	}
+}
+
 func TestYouTubeSearchWithAPIKey(t *testing.T) {
 	t.Setenv("GOG_ACCOUNT", "")
 	t.Setenv("GOG_YOUTUBE_API_KEY", "test-key")
@@ -161,6 +204,70 @@ func TestYouTubeSearchWithAPIKey(t *testing.T) {
 	}
 	if !strings.Contains(out, "UC123") || !strings.Contains(out, "Test Channel") {
 		t.Fatalf("stdout = %q", out)
+	}
+}
+
+func TestYouTubeSearchFiltersUnexpectedKinds(t *testing.T) {
+	origNew := newYouTubeForAccount
+	t.Cleanup(func() { newYouTubeForAccount = origNew })
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		if r.URL.Path != "/youtube/v3/search" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{
+					"id": map[string]any{
+						"kind":      "youtube#channel",
+						"channelId": "UC123",
+					},
+					"snippet": map[string]any{"title": "Unexpected Channel"},
+				},
+				{
+					"id": map[string]any{
+						"kind":    "youtube#video",
+						"videoId": "vid123",
+					},
+					"snippet": map[string]any{"title": "Expected Video"},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", youtube.NewService)
+	newYouTubeForAccount = func(context.Context, string) (*youtube.Service, error) {
+		return svc, nil
+	}
+
+	var err error
+	stdout := captureStdout(t, func() {
+		err = runKong(t, &YouTubeSearchListCmd{}, []string{"test query", "--type", "video", "--max", "2"}, newCmdJSONContext(t), &RootFlags{Account: "me@example.com", JSON: true})
+	})
+	if err != nil {
+		t.Fatalf("runKong: %v", err)
+	}
+	if !strings.Contains(gotQuery, "type=video") {
+		t.Fatalf("query = %s", gotQuery)
+	}
+
+	var got struct {
+		Items []struct {
+			ID struct {
+				Kind      string `json:"kind"`
+				VideoID   string `json:"videoId"`
+				ChannelID string `json:"channelId"`
+			} `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("json output %q: %v", stdout, err)
+	}
+	if len(got.Items) != 1 || got.Items[0].ID.VideoID != "vid123" || got.Items[0].ID.ChannelID != "" {
+		t.Fatalf("unexpected filtered output: %s", stdout)
 	}
 }
 
@@ -301,6 +408,84 @@ func TestYouTubeVideosListWithAccountUsesOAuthService(t *testing.T) {
 	}
 }
 
+func TestYouTubeChannelReadCommandsWithAccountUseOAuthService(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(context.Context, *RootFlags) error
+		path string
+		key  string
+		want string
+	}{
+		{
+			name: "channels by id",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return runKong(t, &YouTubeChannelsListCmd{}, []string{"--id", "UC123", "--max", "1"}, ctx, flags)
+			},
+			path: "/youtube/v3/channels",
+			key:  "id",
+			want: "UC123",
+		},
+		{
+			name: "playlists by channel",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return runKong(t, &YouTubePlaylistsListCmd{}, []string{"--channel-id", "UC123", "--max", "1"}, ctx, flags)
+			},
+			path: "/youtube/v3/playlists",
+			key:  "channelId",
+			want: "UC123",
+		},
+		{
+			name: "activities by channel",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return runKong(t, &YouTubeActivitiesListCmd{}, []string{"--channel-id", "UC123", "--max", "1"}, ctx, flags)
+			},
+			path: "/youtube/v3/activities",
+			key:  "channelId",
+			want: "UC123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origOAuth := newYouTubeForAccount
+			origAPIKey := newYouTubeWithAPIKey
+			t.Cleanup(func() {
+				newYouTubeForAccount = origOAuth
+				newYouTubeWithAPIKey = origAPIKey
+			})
+
+			var gotAccount string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != tt.path {
+					t.Fatalf("path = %s", r.URL.Path)
+				}
+				if got := r.URL.Query().Get(tt.key); got != tt.want {
+					t.Fatalf("%s = %q", tt.key, got)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{}})
+			}))
+			defer srv.Close()
+
+			svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", youtube.NewService)
+			newYouTubeForAccount = func(_ context.Context, account string) (*youtube.Service, error) {
+				gotAccount = account
+				return svc, nil
+			}
+			newYouTubeWithAPIKey = func(context.Context, string) (*youtube.Service, error) {
+				t.Fatal("API key service should not be used when account is configured")
+				return nil, errors.New("unexpected API key service")
+			}
+
+			if err := tt.run(newQuietUIContext(t), &RootFlags{Account: "me@example.com"}); err != nil {
+				t.Fatalf("runKong: %v", err)
+			}
+			if gotAccount != "me@example.com" {
+				t.Fatalf("account = %q", gotAccount)
+			}
+		})
+	}
+}
+
 func TestYouTubeCommentsListWithAccountUsesOAuthService(t *testing.T) {
 	origOAuth := newYouTubeCommentsForAccount
 	origAPIKey := newYouTubeWithAPIKey
@@ -390,5 +575,102 @@ func TestYouTubeValidation(t *testing.T) {
 	err = runKong(t, &YouTubeActivitiesListCmd{}, []string{"--channel-id", "UC123", "--mine"}, newQuietUIContext(t), &RootFlags{Account: "me@example.com"})
 	if err == nil || !strings.Contains(err.Error(), "either --channel-id or --mine") {
 		t.Fatalf("expected mutually exclusive validation, got %v", err)
+	}
+}
+
+func TestYouTubeValidationRejectsBlankSelectorsBeforeService(t *testing.T) {
+	origOAuth := newYouTubeForAccount
+	origCommentsOAuth := newYouTubeCommentsForAccount
+	origAPIKey := newYouTubeWithAPIKey
+	t.Cleanup(func() {
+		newYouTubeForAccount = origOAuth
+		newYouTubeCommentsForAccount = origCommentsOAuth
+		newYouTubeWithAPIKey = origAPIKey
+	})
+	newYouTubeForAccount = func(context.Context, string) (*youtube.Service, error) {
+		t.Fatalf("expected validation to fail before OAuth YouTube service creation")
+		return nil, context.Canceled
+	}
+	newYouTubeCommentsForAccount = func(context.Context, string) (*youtube.Service, error) {
+		t.Fatalf("expected validation to fail before OAuth YouTube comments service creation")
+		return nil, context.Canceled
+	}
+	newYouTubeWithAPIKey = func(context.Context, string) (*youtube.Service, error) {
+		t.Fatalf("expected validation to fail before API-key YouTube service creation")
+		return nil, context.Canceled
+	}
+
+	ctx := newQuietUIContext(t)
+	flags := &RootFlags{Account: "me@example.com"}
+	tests := []struct {
+		name string
+		run  func() error
+		want string
+	}{
+		{
+			name: "videos empty csv ids",
+			run: func() error {
+				return runKong(t, &YouTubeVideosListCmd{}, []string{"--id", ",", "--max", "1"}, ctx, flags)
+			},
+			want: "set --id VIDEO_IDS or --chart mostPopular",
+		},
+		{
+			name: "channels empty csv ids",
+			run: func() error {
+				return runKong(t, &YouTubeChannelsListCmd{}, []string{"--id", ",", "--max", "1"}, ctx, flags)
+			},
+			want: "set --id CHANNEL_IDS or --mine",
+		},
+		{
+			name: "comments blank video",
+			run: func() error {
+				return runKong(t, &YouTubeCommentsListCmd{}, []string{"--video-id", " ", "--max", "1"}, ctx, flags)
+			},
+			want: "set --video-id ID or --channel-id ID",
+		},
+		{
+			name: "activities blank channel",
+			run: func() error {
+				return runKong(t, &YouTubeActivitiesListCmd{}, []string{"--channel-id", " ", "--max", "1"}, ctx, flags)
+			},
+			want: "set --channel-id ID or --mine",
+		},
+		{
+			name: "playlists blank channel",
+			run: func() error {
+				return runKong(t, &YouTubePlaylistsListCmd{}, []string{"--channel-id", " ", "--max", "1"}, ctx, flags)
+			},
+			want: "set --channel-id ID or --mine",
+		},
+		{
+			name: "chart blank region",
+			run: func() error {
+				return runKong(t, &YouTubeVideosListCmd{}, []string{"--chart", "mostPopular", "--region", " ", "--max", "1"}, ctx, flags)
+			},
+			want: "--chart mostPopular requires --region",
+		},
+		{
+			name: "search empty type csv",
+			run: func() error {
+				return runKong(t, &YouTubeSearchListCmd{}, []string{"query", "--type", ",", "--max", "1"}, ctx, flags)
+			},
+			want: "--type must be video, channel, or playlist",
+		},
+		{
+			name: "search blank query",
+			run: func() error {
+				return runKong(t, &YouTubeSearchListCmd{}, []string{" ", "--max", "1"}, ctx, flags)
+			},
+			want: "search query is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.run()
+			if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected usage error containing %q, got %v", tt.want, err)
+			}
+		})
 	}
 }

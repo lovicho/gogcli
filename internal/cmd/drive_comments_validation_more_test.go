@@ -26,6 +26,9 @@ func TestDriveComments_ValidationErrors(t *testing.T) {
 	if err := (&DriveCommentsListCmd{}).Run(ctx, flags); err == nil {
 		t.Fatalf("expected list missing fileId error")
 	}
+	if err := (&DriveCommentsListCmd{FileID: "f1", Max: 0}).Run(ctx, flags); err == nil {
+		t.Fatalf("expected list max error")
+	}
 	if err := (&DriveCommentsGetCmd{}).Run(ctx, flags); err == nil {
 		t.Fatalf("expected get missing fileId error")
 	}

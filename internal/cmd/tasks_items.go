@@ -38,13 +38,16 @@ type TasksListCmd struct {
 
 func (c *TasksListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	account, err := requireAccount(flags)
-	if err != nil {
-		return err
-	}
 	tasklistID := strings.TrimSpace(c.TasklistID)
 	if tasklistID == "" {
 		return usage("empty tasklistId")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return err
 	}
 
 	svc, err := newTasksService(ctx, account)
@@ -199,6 +202,13 @@ type tasksAddRepeatConfig struct {
 	Until     string
 }
 
+type tasksAddDatePlan struct {
+	DueTime    time.Time
+	DueHasTime bool
+	DueValue   string
+	Until      *time.Time
+}
+
 func resolveTasksAddRepeatConfig(c *TasksAddCmd, due string) (tasksAddRepeatConfig, error) {
 	config := tasksAddRepeatConfig{
 		Interval:  1,
@@ -225,7 +235,7 @@ func resolveTasksAddRepeatConfig(c *TasksAddCmd, due string) (tasksAddRepeatConf
 		config.Unit, err = parseRepeatUnit(config.Repeat)
 	}
 	if err != nil {
-		return tasksAddRepeatConfig{}, err
+		return tasksAddRepeatConfig{}, newUsageError(err)
 	}
 
 	if config.Unit == repeatNone && (config.Until != "" || c.RepeatCount != 0) {
@@ -250,6 +260,55 @@ func resolveTasksAddRepeatConfig(c *TasksAddCmd, due string) (tasksAddRepeatConf
 	return config, nil
 }
 
+func prepareTasksAddDatePlan(due string, repeatConfig tasksAddRepeatConfig) (tasksAddDatePlan, error) {
+	plan := tasksAddDatePlan{}
+	due = strings.TrimSpace(due)
+	if due == "" {
+		return plan, nil
+	}
+
+	dueTime, dueHasTime, err := parseTaskDate(due)
+	if err != nil {
+		return tasksAddDatePlan{}, newUsageError(err)
+	}
+	plan.DueTime = dueTime
+	plan.DueHasTime = dueHasTime
+	plan.DueValue = formatTaskDue(dueTime, dueHasTime)
+
+	if repeatConfig.Unit == repeatNone {
+		return plan, nil
+	}
+
+	if repeatConfig.Until != "" {
+		untilValue, untilHasTime, parseErr := parseTaskDate(repeatConfig.Until)
+		if parseErr != nil {
+			return tasksAddDatePlan{}, newUsageError(parseErr)
+		}
+		switch {
+		case dueHasTime && !untilHasTime:
+			untilValue = time.Date(
+				untilValue.Year(),
+				untilValue.Month(),
+				untilValue.Day(),
+				dueTime.Hour(),
+				dueTime.Minute(),
+				dueTime.Second(),
+				dueTime.Nanosecond(),
+				dueTime.Location(),
+			)
+		case !dueHasTime && untilHasTime:
+			untilValue = time.Date(untilValue.Year(), untilValue.Month(), untilValue.Day(), 0, 0, 0, 0, time.UTC)
+		}
+		plan.Until = &untilValue
+	}
+
+	if plan.Until != nil && dueTime.After(*plan.Until) {
+		return tasksAddDatePlan{}, usage("repeat produced no occurrences")
+	}
+
+	return plan, nil
+}
+
 func (c *TasksAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	tasklistID := strings.TrimSpace(c.TasklistID)
@@ -265,6 +324,10 @@ func (c *TasksAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 	parent := strings.TrimSpace(c.Parent)
 	previous := strings.TrimSpace(c.Previous)
 	repeatConfig, err := resolveTasksAddRepeatConfig(c, due)
+	if err != nil {
+		return err
+	}
+	datePlan, err := prepareTasksAddDatePlan(due, repeatConfig)
 	if err != nil {
 		return err
 	}
@@ -303,14 +366,10 @@ func (c *TasksAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if !outfmt.IsJSON(ctx) {
 			warnTasksDueTime(u, due)
 		}
-		dueValue, dueErr := normalizeTaskDue(due)
-		if dueErr != nil {
-			return dueErr
-		}
 		task := &tasks.Task{
 			Title: title,
 			Notes: notes,
-			Due:   dueValue,
+			Due:   datePlan.DueValue,
 		}
 		call := svc.Tasks.Insert(tasklistID, task)
 		if parent != "" {
@@ -345,36 +404,7 @@ func (c *TasksAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 		warnTasksDueTime(u, due)
 	}
 
-	dueTime, dueHasTime, err := parseTaskDate(due)
-	if err != nil {
-		return err
-	}
-
-	var until *time.Time
-	if repeatConfig.Until != "" {
-		untilValue, untilHasTime, parseErr := parseTaskDate(repeatConfig.Until)
-		if parseErr != nil {
-			return parseErr
-		}
-		switch {
-		case dueHasTime && !untilHasTime:
-			untilValue = time.Date(
-				untilValue.Year(),
-				untilValue.Month(),
-				untilValue.Day(),
-				dueTime.Hour(),
-				dueTime.Minute(),
-				dueTime.Second(),
-				dueTime.Nanosecond(),
-				dueTime.Location(),
-			)
-		case !dueHasTime && untilHasTime:
-			untilValue = time.Date(untilValue.Year(), untilValue.Month(), untilValue.Day(), 0, 0, 0, 0, time.UTC)
-		}
-		until = &untilValue
-	}
-
-	schedule := expandRepeatSchedule(dueTime, repeatConfig.Unit, repeatConfig.Interval, c.RepeatCount, until)
+	schedule := expandRepeatSchedule(datePlan.DueTime, repeatConfig.Unit, repeatConfig.Interval, c.RepeatCount, datePlan.Until)
 	if len(schedule) == 0 {
 		return usage("repeat produced no occurrences")
 	}
@@ -399,7 +429,7 @@ func (c *TasksAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 		task := &tasks.Task{
 			Title: title,
 			Notes: notes,
-			Due:   formatTaskDue(due, dueHasTime),
+			Due:   formatTaskDue(due, datePlan.DueHasTime),
 		}
 		call := svc.Tasks.Insert(tasklistID, task)
 		if parent != "" {

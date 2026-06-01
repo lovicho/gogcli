@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,6 +42,23 @@ func TestGmailFiltersCreate_Forward_NoInputRequiresForce(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "refusing to create gmail filter forwarding") {
 		t.Fatalf("expected refusing error, got %v", err)
 	}
+}
+
+func TestGmailFiltersCreate_InvalidForwardFailsBeforeDryRun(t *testing.T) {
+	origNew := newGmailService
+	t.Cleanup(func() { newGmailService = origNew })
+	newGmailService = func(context.Context, string) (*gmail.Service, error) {
+		t.Fatalf("expected validation to fail before creating gmail service")
+		return nil, errors.New("unexpected gmail service call")
+	}
+
+	_ = captureStderr(t, func() {
+		err := Execute([]string{"--account", "a@b.com", "--dry-run", "gmail", "filters", "create", "--from", "a@example.com", "--forward", "nope"})
+		var exitErr *ExitError
+		if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid --forward") {
+			t.Fatalf("unexpected err: %v", err)
+		}
+	})
 }
 
 func TestGmailFilters_TextPaths(t *testing.T) {
@@ -207,6 +225,98 @@ func TestGmailFiltersList_NoFilters(t *testing.T) {
 			t.Fatalf("list: %v", err)
 		}
 	})
+}
+
+func TestGmailFiltersList_JSONEmptyArray(t *testing.T) {
+	origNew := newGmailService
+	t.Cleanup(func() { newGmailService = origNew })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/settings/filters") {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	svc, err := gmail.NewService(context.Background(),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(srv.Client()),
+		option.WithEndpoint(srv.URL+"/"),
+	)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
+
+	flags := &RootFlags{Account: "a@b.com", JSON: true}
+	ctx := outfmt.WithMode(newQuietUIContext(t), outfmt.Mode{JSON: true})
+	out := captureStdout(t, func() {
+		if err := runKong(t, &GmailFiltersListCmd{}, []string{}, ctx, flags); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+
+	var parsed struct {
+		Filters []json.RawMessage `json:"filters"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if parsed.Filters == nil {
+		t.Fatalf("filters must be an empty array, got nil: %s", out)
+	}
+	if len(parsed.Filters) != 0 {
+		t.Fatalf("filters len = %d, want 0", len(parsed.Filters))
+	}
+}
+
+func TestGmailFiltersExport_JSONEmptyArray(t *testing.T) {
+	origNew := newGmailService
+	t.Cleanup(func() { newGmailService = origNew })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/settings/filters") && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	svc, err := gmail.NewService(context.Background(),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(srv.Client()),
+		option.WithEndpoint(srv.URL+"/"),
+	)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
+
+	flags := &RootFlags{Account: "a@b.com"}
+	ctx := newQuietUIContext(t)
+	out := captureStdout(t, func() {
+		if err := runKong(t, &GmailFiltersExportCmd{}, []string{"--format", "json"}, ctx, flags); err != nil {
+			t.Fatalf("export: %v", err)
+		}
+	})
+
+	var parsed struct {
+		Filters []json.RawMessage `json:"filters"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if parsed.Filters == nil {
+		t.Fatalf("filters must be an empty array, got nil: %s", out)
+	}
+	if len(parsed.Filters) != 0 {
+		t.Fatalf("filters len = %d, want 0", len(parsed.Filters))
+	}
 }
 
 func TestGmailFiltersExport(t *testing.T) {

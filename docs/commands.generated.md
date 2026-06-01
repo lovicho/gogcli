@@ -2,7 +2,7 @@
 
 Generated from `gog schema --json`.
 
-- [`gog <command> [flags]`](commands/gog.md) - Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Ads/Groups/Admin/Keep/YouTube/Maps/Photos
+- [`gog <command> [flags]`](commands/gog.md) - Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Groups/Admin/Keep/YouTube/Maps/Photos
   - [`gog admin <command> [flags]`](commands/gog-admin.md) - Google Workspace Admin (Directory API) - requires domain-wide delegation
     - [`gog admin groups <command>`](commands/gog-admin-groups.md) - Manage Workspace groups
       - [`gog admin groups list (ls) [flags]`](commands/gog-admin-groups-list.md) - List groups in a domain
@@ -78,7 +78,7 @@ Generated from `gog schema --json`.
     - [`gog calendar (cal) appointments (appointment-schedules,appt)`](commands/gog-calendar-appointments.md) - Report Calendar appointment schedule API limitation
     - [`gog calendar (cal) calendars [flags]`](commands/gog-calendar-calendars.md) - List calendars
     - [`gog calendar (cal) colors`](commands/gog-calendar-colors.md) - Show calendar colors
-    - [`gog calendar (cal) conflicts [flags]`](commands/gog-calendar-conflicts.md) - Find conflicts
+    - [`gog calendar (cal) conflicts [flags]`](commands/gog-calendar-conflicts.md) - Find busy-time overlaps across calendars
     - [`gog calendar (cal) create (add,new) <calendarId> [flags]`](commands/gog-calendar-create.md) - Create an event
     - [`gog calendar (cal) create-calendar (new-calendar) <summary> [flags]`](commands/gog-calendar-create-calendar.md) - Create a new secondary calendar
     - [`gog calendar (cal) delete (rm,del,remove) <calendarId> <eventId> [flags]`](commands/gog-calendar-delete.md) - Delete an event

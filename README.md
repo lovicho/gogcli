@@ -427,10 +427,10 @@ gog --account you@gmail.com mcp
 
 # Docs tools only; writes require explicit opt-in.
 gog --account you@gmail.com \
-  --enable-commands-exact docs.cat,docs.write \
+  --enable-commands-exact mcp,docs.cat,docs.write \
   mcp \
   --allow-write \
-  --allow-tool docs.*
+  --allow-tool 'docs.*'
 ```
 
 See [docs/mcp.md](docs/mcp.md) for client config, tool selection, safety

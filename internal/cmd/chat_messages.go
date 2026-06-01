@@ -32,17 +32,19 @@ type ChatMessagesListCmd struct {
 
 func (c *ChatMessagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	space, err := normalizeSpace(c.Space)
+	if err != nil {
+		return usage("required: space")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
 	}
 	if err = requireWorkspaceAccount(account); err != nil {
 		return err
-	}
-
-	space, err := normalizeSpace(c.Space)
-	if err != nil {
-		return usage("required: space")
 	}
 
 	svc, err := newChatService(ctx, account)

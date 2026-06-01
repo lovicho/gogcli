@@ -26,6 +26,9 @@ type GmailSearchCmd struct {
 
 func (c *GmailSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if err := validateGmailMaxResults(c.Max); err != nil {
+		return err
+	}
 	account, err := requireAccount(flags)
 	if err != nil {
 		return err
@@ -124,6 +127,7 @@ func gmailFromContactQuery(ctx context.Context, account, selector string) (strin
 	if err != nil {
 		return "", err
 	}
+	warmSearchContactsCache(ctx, svc)
 	resp, err := svc.People.SearchContacts().
 		Query(selector).
 		PageSize(10).

@@ -133,6 +133,38 @@ func TestAuthServiceAccountSet_RequiresOneKeySource(t *testing.T) {
 	}
 }
 
+func TestAuthServiceAccountSet_InvalidJSONIsUsageError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "malformed", body: "nope", want: "invalid service account JSON"},
+		{name: "wrong type", body: `{"type":"authorized_user"}`, want: "expected type=service_account"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			keyPath := filepath.Join(t.TempDir(), "sa.json")
+			if err := os.WriteFile(keyPath, []byte(tc.body), 0o600); err != nil {
+				t.Fatalf("write key: %v", err)
+			}
+			err := Execute([]string{"auth", "service-account", "set", "bad@example.com", "--key", keyPath, "--dry-run"})
+			if err == nil {
+				t.Fatal("expected invalid JSON error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want substring %q", err, tc.want)
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+			}
+		})
+	}
+}
+
 func TestAuthServiceAccountStatus_MissingTextHasHint(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

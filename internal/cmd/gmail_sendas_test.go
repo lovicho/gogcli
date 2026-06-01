@@ -306,6 +306,20 @@ func TestGmailBatchModifyCmd_JSON(t *testing.T) {
 	}
 }
 
+func TestGmailBatchModifyCmd_MissingLabelsIsUsageError(t *testing.T) {
+	flags := &RootFlags{Account: "a@b.com"}
+	err := runKong(t, &GmailBatchModifyCmd{}, []string{"msg1"}, context.Background(), flags)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
+	if !strings.Contains(err.Error(), "must specify --add and/or --remove") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestGmailSendAsCreateCmd_JSON(t *testing.T) {
 	origNew := newGmailService
 	t.Cleanup(func() { newGmailService = origNew })

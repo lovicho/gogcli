@@ -200,6 +200,7 @@ func TestRunTableOp_OutOfRange(t *testing.T) {
 	err := cmd.runTableOp(context.Background(), u, "", "test-doc-id", expr)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "out of range")
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 func TestRunTableOp_NoTables(t *testing.T) {
@@ -214,6 +215,7 @@ func TestRunTableOp_NoTables(t *testing.T) {
 	err := cmd.runTableOp(context.Background(), u, "", "test-doc-id", expr)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no tables")
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 // =============================================================================
@@ -267,6 +269,7 @@ func TestRunTableCellReplace_CellNotFound(t *testing.T) {
 	}
 	err := cmd.runTableCellReplace(context.Background(), u, "", "test-doc-id", expr)
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 // =============================================================================
@@ -346,6 +349,7 @@ func TestRunTableRowColOp_NoTables(t *testing.T) {
 	}
 	err := cmd.runTableRowColOp(context.Background(), u, "", "test-doc-id", expr)
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 func TestRunTableRowColOp_RowOutOfRange(t *testing.T) {
@@ -361,6 +365,7 @@ func TestRunTableRowColOp_RowOutOfRange(t *testing.T) {
 	}
 	err := cmd.runTableRowColOp(context.Background(), u, "", "test-doc-id", expr)
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 func TestRunTableRowColOp_DeleteOnlyRow(t *testing.T) {
@@ -376,6 +381,7 @@ func TestRunTableRowColOp_DeleteOnlyRow(t *testing.T) {
 	}
 	err := cmd.runTableRowColOp(context.Background(), u, "", "test-doc-id", expr)
 	assert.Error(t, err)
+	assert.Equal(t, 2, ExitCode(err))
 }
 
 func TestRunTableRowColOp_AppendRow(t *testing.T) {

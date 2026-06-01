@@ -23,7 +23,10 @@ func (c *CalendarSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	query := strings.TrimSpace(c.Query)
 	if query == "" {
-		return fmt.Errorf("search query cannot be empty")
+		return usage("search query cannot be empty")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
 	}
 
 	_, svc, err := requireCalendarService(ctx, flags)

@@ -3,7 +3,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -122,7 +121,7 @@ func driveUploadConvertMimeType(path string, auto bool, target string) (string, 
 	if target != "" {
 		mimeType, ok := googleConvertTargetMimeType(target)
 		if !ok {
-			return "", false, fmt.Errorf("--convert-to: invalid value %q (use doc|sheet|slides)", target)
+			return "", false, usagef("--convert-to: invalid value %q (use doc|sheet|slides)", target)
 		}
 		return mimeType, true, nil
 	}
@@ -132,7 +131,7 @@ func driveUploadConvertMimeType(path string, auto bool, target string) (string, 
 
 	mimeType, ok := googleConvertMimeType(path)
 	if !ok {
-		return "", false, fmt.Errorf("--convert: unsupported file type %q (supported: docx, xlsx, pptx, doc, xls, ppt, csv, txt, html, md)", filepath.Ext(path))
+		return "", false, usagef("--convert: unsupported file type %q (supported: docx, xlsx, pptx, doc, xls, ppt, csv, txt, html, md)", filepath.Ext(path))
 	}
 	return mimeType, true, nil
 }
@@ -306,7 +305,7 @@ func runDriveReplaceUpload(ctx context.Context, svc *drive.Service, file io.Read
 		return err
 	}
 	if strings.HasPrefix(existing.MimeType, "application/vnd.google-apps.") {
-		return fmt.Errorf("cannot replace content for Google Workspace files (mimeType=%s)", existing.MimeType)
+		return usagef("cannot replace content for Google Workspace files (mimeType=%s)", existing.MimeType)
 	}
 
 	meta := &drive.File{}

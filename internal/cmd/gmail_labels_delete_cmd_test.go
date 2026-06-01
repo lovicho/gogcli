@@ -298,6 +298,9 @@ func TestGmailLabelsDeleteCmd_SystemLabelBlocked(t *testing.T) {
 	if !strings.Contains(err.Error(), `cannot delete system label "INBOX"`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("expected usage exit code 2, got %d (err=%v)", got, err)
+	}
 	if deleteCalled {
 		t.Fatal("delete should not run for system labels")
 	}

@@ -2,7 +2,7 @@
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Find conflicts
+Find busy-time overlaps across calendars
 
 ## Usage
 
@@ -19,7 +19,7 @@ gog calendar (cal) conflicts [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/ads/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
 | `--all` | `bool` |  | Query all calendars |
 | `--cal` | `[]string` |  | Calendar ID, name, or index (can be repeated) |
 | `--calendars` | `string` |  | Comma-separated calendar IDs, names, or indices from 'calendar calendars' |

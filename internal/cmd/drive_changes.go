@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -63,16 +64,20 @@ type DriveChangesListCmd struct {
 
 func (c *DriveChangesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	_, svc, err := requireDriveService(ctx, flags)
-	if err != nil {
-		return err
-	}
 	token := strings.TrimSpace(c.Page)
 	if token == "" {
 		token = strings.TrimSpace(c.Token)
 	}
 	if token == "" {
 		return usage("missing --token")
+	}
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+
+	_, svc, err := requireDriveService(ctx, flags)
+	if err != nil {
+		return err
 	}
 
 	fetch := func(pageToken string) ([]*drive.Change, string, error) {
@@ -146,6 +151,12 @@ func (c *DriveChangesWatchCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if webhookURL == "" {
 		return usage("missing --webhook-url")
 	}
+	if err := validateDriveChangesWebhookURL(webhookURL); err != nil {
+		return err
+	}
+	if c.ExpirationMS < 0 {
+		return usage("--expiration-ms must be >= 0")
+	}
 	channelID := strings.TrimSpace(c.ChannelID)
 	if channelID == "" {
 		var err error
@@ -202,6 +213,14 @@ func (c *DriveChangesWatchCmd) Run(ctx context.Context, flags *RootFlags) error 
 	u.Out().Linef("resourceId\t%s", resp.ResourceId)
 	u.Out().Linef("resourceUri\t%s", resp.ResourceUri)
 	u.Out().Linef("expiration\t%d", resp.Expiration)
+	return nil
+}
+
+func validateDriveChangesWebhookURL(rawURL string) error {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return usage("--webhook-url must be an absolute HTTPS URL")
+	}
 	return nil
 }
 

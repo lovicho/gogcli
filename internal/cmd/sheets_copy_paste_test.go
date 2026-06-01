@@ -132,6 +132,9 @@ func TestSheetsCopyPasteCmd(t *testing.T) {
 		if !strings.Contains(err.Error(), "invalid --type") {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		if got := ExitCode(err); got != 2 {
+			t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+		}
 		if gotRequest != nil {
 			t.Fatal("did not expect an API request")
 		}

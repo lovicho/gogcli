@@ -31,6 +31,9 @@ type GmailDraftsListCmd struct {
 
 func (c *GmailDraftsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if err := validateGmailMaxResults(c.Max); err != nil {
+		return err
+	}
 	_, svc, err := requireGmailService(ctx, flags)
 	if err != nil {
 		return err
@@ -465,6 +468,9 @@ func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if validateErr := input.validate(); validateErr != nil {
 		return validateErr
 	}
+	if headerErr := validateComposeHeaderInputs(input.To, input.Cc, input.Bcc, input.ReplyTo, input.Subject, input.From); headerErr != nil {
+		return headerErr
+	}
 
 	if dryRunErr := dryRunExit(ctx, flags, "gmail.drafts.create", map[string]any{
 		"to":                  splitCSV(input.To),
@@ -556,6 +562,9 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 	if validateErr := input.validate(); validateErr != nil {
 		return validateErr
+	}
+	if headerErr := validateComposeHeaderInputs(input.To, input.Cc, input.Bcc, input.ReplyTo, input.Subject, input.From); headerErr != nil {
+		return headerErr
 	}
 
 	if dryRunErr := dryRunExit(ctx, flags, "gmail.drafts.update", map[string]any{

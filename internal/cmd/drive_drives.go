@@ -22,6 +22,10 @@ type DriveDrivesCmd struct {
 
 func (c *DriveDrivesCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
+	if c.Max <= 0 {
+		return usage("max must be > 0")
+	}
+
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
 		return err
