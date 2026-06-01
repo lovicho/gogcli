@@ -33,6 +33,7 @@
 - Forms: return an empty JSON array, not null, for `forms watch list` when a form has no active watches.
 - Forms: return an empty JSON array, not null, for `forms responses list` when a form has no responses.
 - Docs/Sheets/Slides: report service-specific dry-run ops for `copy` commands instead of `drive.copy`.
+- Docs: return usage exit code 2 when Markdown writes contain local image references that must be hosted at a public HTTPS URL.
 - CLI: report public command paths in dry-run op fields for service-account, Calendar, Forms, Meet, and Sheets named-range commands.
 - CLI: preserve command-local `--fields` API masks for Drive, Drive Labels, Sites, and Calendar Events instead of rewriting them to JSON `--select`.
 - Drive: return usage exit code 2 when `drive download --tab` rejects unsupported export formats.

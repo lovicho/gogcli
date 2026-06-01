@@ -439,6 +439,9 @@ func TestDocsWrite_MarkdownLocalImagesReturnActionableError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected local markdown image error")
 	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+	}
 	if !strings.Contains(err.Error(), "local markdown image") || !strings.Contains(err.Error(), "public HTTPS image URL") {
 		t.Fatalf("expected actionable local-image error, got %v", err)
 	}
