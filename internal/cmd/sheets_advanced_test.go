@@ -166,6 +166,35 @@ func TestSheetsBandingSetListAndClear(t *testing.T) {
 	}
 }
 
+func TestSheetsBandingSet_InvalidPropertiesJSONIsUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "row",
+			args: []string{"s1", "Sheet1!A1:C5", "--row-properties-json", "nope"},
+			want: "invalid --row-properties-json",
+		},
+		{
+			name: "column",
+			args: []string{"s1", "Sheet1!A1:C5", "--column-properties-json", "nope"},
+			want: "invalid --column-properties-json",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runKong(t, &SheetsBandingSetCmd{}, tc.args, context.Background(), &RootFlags{DryRun: true})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q error, got %v", tc.want, err)
+			}
+			if got := ExitCode(err); got != 2 {
+				t.Fatalf("ExitCode = %d, want 2 (err=%v)", got, err)
+			}
+		})
+	}
+}
+
 type sheetsAdvancedTestState struct {
 	ConditionalRules int
 	BandedRangeID    int64

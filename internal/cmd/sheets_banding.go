@@ -263,11 +263,11 @@ type bandingItem struct {
 func bandingProperties(rowJSON, columnJSON string) (*sheets.BandingProperties, *sheets.BandingProperties, error) {
 	rowProps, err := parseBandingProperties(rowJSON, defaultRowBandingProperties())
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid --row-properties-json: %w", err)
+		return nil, nil, usagef("invalid --row-properties-json: %v", err)
 	}
 	colProps, err := parseBandingProperties(columnJSON, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid --column-properties-json: %w", err)
+		return nil, nil, usagef("invalid --column-properties-json: %v", err)
 	}
 	if rowProps == nil && colProps == nil {
 		return nil, nil, usage("provide row or column banding properties")

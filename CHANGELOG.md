@@ -65,6 +65,7 @@
 - Sheets: return usage exit code 2 for missing or invalid `sheets update` and `sheets append` values instead of reporting them as generic runtime failures.
 - Sheets: return usage exit code 2 for invalid chart specs and format JSON instead of reporting them as generic runtime failures.
 - Sheets: return usage exit code 2 for invalid formatting field masks instead of reporting them as generic runtime failures.
+- Sheets: return usage exit code 2 for invalid banding properties JSON instead of reporting it as a generic runtime failure.
 - Sheets: return usage exit code 2 for missing or invalid `sheets table append` values instead of reporting them as generic runtime failures.
 - Sheets: return usage exit code 2 for invalid `--type` values in copy-paste, merge, and number-format commands.
 - Slides: make local-image insertion/replacement use stable Drive download URLs and retry while public sharing propagates.
