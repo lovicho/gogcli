@@ -256,8 +256,9 @@ type GmailDraftsCreateCmd struct {
 	BodyFile         string   `name:"body-file" help:"Body file path (plain text; '-' for stdin)"`
 	BodyHTML         string   `name:"body-html" help:"Body (HTML; optional)"`
 	ReplyToMessageID string   `name:"reply-to-message-id" help:"Reply to Gmail message ID (sets In-Reply-To/References and thread)"`
+	ThreadID         string   `name:"thread-id" help:"Reply within a Gmail thread (uses latest message for headers)"`
 	ReplyTo          string   `name:"reply-to" help:"Reply-To header address"`
-	Quote            bool     `name:"quote" help:"Include quoted original message in reply (requires --reply-to-message-id)"`
+	Quote            bool     `name:"quote" help:"Include quoted original message in reply (requires --reply-to-message-id or --thread-id)"`
 	Attach           []string `name:"attach" help:"Attachment file path (repeatable)"`
 	From             string   `name:"from" help:"Send from this email address (must be a verified send-as alias)"`
 }
@@ -442,8 +443,12 @@ func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	replyToMessageID := normalizeGmailMessageID(c.ReplyToMessageID)
-	if c.Quote && replyToMessageID == "" {
-		return usage("--quote requires --reply-to-message-id")
+	threadID := normalizeGmailThreadID(c.ThreadID)
+	if replyToMessageID != "" && threadID != "" {
+		return usage("use only one of --reply-to-message-id or --thread-id")
+	}
+	if c.Quote && replyToMessageID == "" && threadID == "" {
+		return usage("--quote requires --reply-to-message-id or --thread-id")
 	}
 
 	attachPaths, err := expandComposeAttachmentPaths(c.Attach)
@@ -459,7 +464,7 @@ func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		Body:             body,
 		BodyHTML:         c.BodyHTML,
 		ReplyToMessageID: replyToMessageID,
-		ReplyToThreadID:  "",
+		ReplyToThreadID:  threadID,
 		ReplyTo:          c.ReplyTo,
 		Quote:            c.Quote,
 		Attach:           attachPaths,
@@ -480,6 +485,7 @@ func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		"body_len":            len(strings.TrimSpace(input.Body)),
 		"body_html_len":       len(strings.TrimSpace(input.BodyHTML)),
 		"reply_to_message_id": strings.TrimSpace(input.ReplyToMessageID),
+		"thread_id":           strings.TrimSpace(input.ReplyToThreadID),
 		"reply_to":            strings.TrimSpace(input.ReplyTo),
 		"quote":               input.Quote,
 		"from":                strings.TrimSpace(input.From),
@@ -515,6 +521,7 @@ type GmailDraftsUpdateCmd struct {
 	BodyFile         string   `name:"body-file" help:"Body file path (plain text; '-' for stdin)"`
 	BodyHTML         string   `name:"body-html" help:"Body (HTML; optional)"`
 	ReplyToMessageID string   `name:"reply-to-message-id" help:"Reply to Gmail message ID (sets In-Reply-To/References and thread)"`
+	ThreadID         string   `name:"thread-id" help:"Reply within a Gmail thread (uses latest message for headers); overrides the draft's existing thread"`
 	ReplyTo          string   `name:"reply-to" help:"Reply-To header address"`
 	Quote            bool     `name:"quote" help:"Include quoted original message in reply"`
 	Attach           []string `name:"attach" help:"Attachment file path (repeatable)"`
@@ -540,6 +547,10 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	replyToMessageID := normalizeGmailMessageID(c.ReplyToMessageID)
+	threadID := normalizeGmailThreadID(c.ThreadID)
+	if replyToMessageID != "" && threadID != "" {
+		return usage("use only one of --reply-to-message-id or --thread-id")
+	}
 
 	attachPaths, err := expandComposeAttachmentPaths(c.Attach)
 	if err != nil {
@@ -554,7 +565,7 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		Body:             body,
 		BodyHTML:         c.BodyHTML,
 		ReplyToMessageID: replyToMessageID,
-		ReplyToThreadID:  "",
+		ReplyToThreadID:  threadID,
 		ReplyTo:          c.ReplyTo,
 		Quote:            c.Quote,
 		Attach:           attachPaths,
@@ -577,6 +588,7 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		"body_len":            len(strings.TrimSpace(input.Body)),
 		"body_html_len":       len(strings.TrimSpace(input.BodyHTML)),
 		"reply_to_message_id": strings.TrimSpace(input.ReplyToMessageID),
+		"thread_id":           strings.TrimSpace(threadID),
 		"reply_to":            strings.TrimSpace(input.ReplyTo),
 		"quote":               input.Quote,
 		"from":                strings.TrimSpace(input.From),
@@ -610,19 +622,27 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		to = existingTo
 	}
 
+	// A caller-provided --thread-id targets that thread for reply headers,
+	// overriding the draft's own existing thread; otherwise fall back to the
+	// existing draft thread as before.
+	targetThreadID := existingThreadID
+	if threadID != "" {
+		targetThreadID = threadID
+	}
+
 	replyToThreadID := ""
 	if c.Quote && strings.TrimSpace(replyToMessageID) == "" {
-		resolvedMessageID, resolveErr := resolveQuoteReplyTargetMessageID(ctx, svc, existingThreadID, account, existingMessageID)
+		resolvedMessageID, resolveErr := resolveQuoteReplyTargetMessageID(ctx, svc, targetThreadID, account, existingMessageID)
 		if resolveErr != nil {
 			return resolveErr
 		}
 		replyToMessageID = resolvedMessageID
 	}
 	if strings.TrimSpace(replyToMessageID) == "" {
-		replyToThreadID = existingThreadID
+		replyToThreadID = targetThreadID
 	}
 	if c.Quote && strings.TrimSpace(replyToMessageID) == "" && strings.TrimSpace(replyToThreadID) == "" {
-		return usage("--quote requires --reply-to-message-id or existing draft thread")
+		return usage("--quote requires --reply-to-message-id or --thread-id or existing draft thread")
 	}
 
 	input.To = to

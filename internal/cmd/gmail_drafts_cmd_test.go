@@ -1402,3 +1402,191 @@ func TestGmailDraftsUpdateCmd_QuoteRequiresReplyContext(t *testing.T) {
 		t.Fatalf("expected quote/reply context validation error, got %v", err)
 	}
 }
+
+// --thread-id on drafts create anchors In-Reply-To/References to the thread's
+// latest message and stamps the draft's threadId (parity with `gmail send`).
+func TestGmailDraftsCreateCmd_WithThreadID(t *testing.T) {
+	origNew := newGmailService
+	t.Cleanup(func() { newGmailService = origNew })
+
+	var posted gmail.Draft
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/threads/t1") && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "t1",
+				"messages": []map[string]any{
+					{
+						"id": "old", "threadId": "t1", "internalDate": "1000",
+						"payload": map[string]any{"headers": []map[string]any{
+							{"name": "Message-ID", "value": "<old@id>"},
+						}},
+					},
+					{
+						"id": "latest", "threadId": "t1", "internalDate": "2000",
+						"payload": map[string]any{"headers": []map[string]any{
+							{"name": "Message-ID", "value": "<latest@id>"},
+							{"name": "References", "value": "<r1@id>"},
+						}},
+					},
+				},
+			})
+			return
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts") && r.Method == http.MethodPost:
+			body, _ := io.ReadAll(r.Body)
+			if unmarshalErr := json.Unmarshal(body, &posted); unmarshalErr != nil {
+				t.Fatalf("unmarshal: %v", unmarshalErr)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "d1", "message": map[string]any{"id": "m2", "threadId": "t1"}})
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	svc, err := gmail.NewService(context.Background(),
+		option.WithoutAuthentication(), option.WithHTTPClient(srv.Client()), option.WithEndpoint(srv.URL+"/"))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
+
+	flags := &RootFlags{Account: "a@b.com"}
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
+
+	_ = captureStdout(t, func() {
+		if runErr := runKong(t, &GmailDraftsCreateCmd{}, []string{
+			"--to", "a@example.com", "--subject", "Re: hi", "--body", "Hello", "--thread-id", "t1",
+		}, ctx, flags); runErr != nil {
+			t.Fatalf("execute: %v", runErr)
+		}
+	})
+
+	if posted.Message == nil {
+		t.Fatal("no draft posted")
+	}
+	if posted.Message.ThreadId != "t1" {
+		t.Fatalf("expected draft threadId t1, got %q", posted.Message.ThreadId)
+	}
+	raw, decErr := base64.RawURLEncoding.DecodeString(posted.Message.Raw)
+	if decErr != nil {
+		t.Fatalf("decode raw: %v", decErr)
+	}
+	s := string(raw)
+	if !strings.Contains(s, "In-Reply-To: <latest@id>") {
+		t.Fatalf("In-Reply-To not anchored to latest thread message:\n%s", s)
+	}
+	if !strings.Contains(s, "References:") || !strings.Contains(s, "<latest@id>") {
+		t.Fatalf("References not built from latest thread message:\n%s", s)
+	}
+}
+
+// --thread-id and --reply-to-message-id are mutually exclusive on drafts create.
+func TestGmailDraftsCreateCmd_ThreadIDAndMessageIDMutuallyExclusive(t *testing.T) {
+	flags := &RootFlags{Account: "a@b.com"}
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := ui.WithUI(context.Background(), u)
+	err := runKong(t, &GmailDraftsCreateCmd{}, []string{
+		"--subject", "S", "--body", "B", "--reply-to-message-id", "m1", "--thread-id", "t1",
+	}, ctx, flags)
+	if err == nil || !strings.Contains(err.Error(), "use only one of --reply-to-message-id or --thread-id") {
+		t.Fatalf("expected mutual-exclusion error, got %v", err)
+	}
+}
+
+// A caller-provided --thread-id on drafts update overrides the draft's own
+// existing thread when anchoring reply headers.
+func TestGmailDraftsUpdateCmd_WithThreadIDOverridesExisting(t *testing.T) {
+	origNew := newGmailService
+	t.Cleanup(func() { newGmailService = origNew })
+
+	var posted gmail.Draft
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":      "d1",
+				"message": map[string]any{"id": "m1", "threadId": "te"},
+			})
+			return
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/threads/t1") && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "t1",
+				"messages": []map[string]any{
+					{
+						"id": "latest", "threadId": "t1", "internalDate": "2000",
+						"payload": map[string]any{"headers": []map[string]any{
+							{"name": "Message-ID", "value": "<latest@id>"},
+							{"name": "Subject", "value": "Original"},
+						}},
+					},
+				},
+			})
+			return
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodPut:
+			body, _ := io.ReadAll(r.Body)
+			if unmarshalErr := json.Unmarshal(body, &posted); unmarshalErr != nil {
+				t.Fatalf("unmarshal: %v", unmarshalErr)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "d1", "message": map[string]any{"id": "m2", "threadId": "t1"}})
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+	}))
+	defer srv.Close()
+
+	svc, err := gmail.NewService(context.Background(),
+		option.WithoutAuthentication(), option.WithHTTPClient(srv.Client()), option.WithEndpoint(srv.URL+"/"))
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
+
+	flags := &RootFlags{Account: "a@b.com"}
+	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
+	if uiErr != nil {
+		t.Fatalf("ui.New: %v", uiErr)
+	}
+	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
+
+	_ = captureStdout(t, func() {
+		if runErr := runKong(t, &GmailDraftsUpdateCmd{}, []string{
+			"d1", "--to", "a@example.com", "--body", "Hello", "--thread-id", "t1",
+		}, ctx, flags); runErr != nil {
+			t.Fatalf("execute: %v", runErr)
+		}
+	})
+
+	if posted.Message == nil {
+		t.Fatal("no draft posted")
+	}
+	if posted.Message.ThreadId != "t1" {
+		t.Fatalf("expected caller thread t1 to override existing te, got %q", posted.Message.ThreadId)
+	}
+	raw, decErr := base64.RawURLEncoding.DecodeString(posted.Message.Raw)
+	if decErr != nil {
+		t.Fatalf("decode raw: %v", decErr)
+	}
+	if !strings.Contains(string(raw), "In-Reply-To: <latest@id>") {
+		t.Fatalf("In-Reply-To not anchored to caller thread's latest message:\n%s", string(raw))
+	}
+	if !strings.Contains(string(raw), "Subject: Re: Original") {
+		t.Fatalf("subject not auto-filled from caller thread:\n%s", string(raw))
+	}
+}
