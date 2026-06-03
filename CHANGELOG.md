@@ -4,6 +4,8 @@
 
 ### Added
 
+- Gmail: add `--thread-id` to `gmail drafts create` and `gmail drafts update` so drafts can reply within a thread using the latest message headers. (#673, #674) — thanks @chrischall.
+
 ### Fixed
 
 ## 0.21.0 - 2026-06-01

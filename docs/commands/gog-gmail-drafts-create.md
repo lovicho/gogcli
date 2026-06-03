@@ -40,12 +40,13 @@ gog gmail (mail,email) drafts (draft) create (add,new) [flags]
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
-| `--quote` | `bool` |  | Include quoted original message in reply (requires --reply-to-message-id) |
+| `--quote` | `bool` |  | Include quoted original message in reply (requires --reply-to-message-id or --thread-id) |
 | `--reply-to` | `string` |  | Reply-To header address |
 | `--reply-to-message-id` | `string` |  | Reply to Gmail message ID (sets In-Reply-To/References and thread) |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `--subject` | `string` |  | Subject (required) |
+| `--thread-id` | `string` |  | Reply within a Gmail thread (uses latest message for headers) |
 | `--to` | `string` |  | Recipients (comma-separated) |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--version` | `kong.VersionFlag` |  | Print version and exit |
