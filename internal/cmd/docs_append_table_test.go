@@ -168,12 +168,14 @@ func newFakeDocsTableSvc(t *testing.T, body string, drift int64) (*docs.Service,
 	return svc, f
 }
 
-// TestInsertDocsMarkdownAt_AppendsTable_IssueRepro replays the exact repro
-// from #592 — a table-only markdown file appended to a doc via the same code
-// path `gog docs write --markdown --append` exercises. The fake server reports
-// the inserted table with a drift of 5 from the requested Location.Index, well
-// outside the original ±2 search window; without the fix this fails with
-// "insert native table: table not found near index 9".
+// TestInsertDocsMarkdownAt_AppendsTable_IssueRepro replays the original #592
+// repro — a table-only markdown file appended to a doc via the same code
+// path `gog docs write --markdown --append` exercises. After the #699
+// collapse the table's per-cell inserts are folded into ONE batchUpdate
+// (was: one per cell), so a single-table append produces three batchUpdates:
+// the body InsertText, the InsertTable structure, and the consolidated
+// per-cell content. Multi-table bodies scale at 1 + 2 * tables instead of
+// O(cell-count).
 func TestInsertDocsMarkdownAt_AppendsTable_IssueRepro(t *testing.T) {
 	svc, fake := newFakeDocsTableSvc(t, "Existing\n", 5)
 
@@ -200,22 +202,79 @@ func TestInsertDocsMarkdownAt_AppendsTable_IssueRepro(t *testing.T) {
 		t.Fatalf("expected 3x3 table, got rows=%d cols=%d", fake.tableRows, fake.tableCols)
 	}
 
-	if len(fake.batchCalls) < 2 {
-		t.Fatalf("expected at least 2 batchUpdate calls (text + table), got %d", len(fake.batchCalls))
+	// Wire profile: body + InsertTable + consolidated cell content = 3 calls.
+	// Was O(cell-count) per cell pre-#699; the per-cell loop was the quota
+	// burn that this PR collapses. Three calls is the floor while we still
+	// need a Get-round-trip to discover actual cell indices after InsertTable.
+	if len(fake.batchCalls) != 3 {
+		t.Fatalf("expected exactly 3 batchUpdate calls (body, InsertTable, cells), got %d", len(fake.batchCalls))
 	}
 
-	first := fake.batchCalls[0]
-	var sawInsertText bool
-	for _, rq := range first {
-		if rq.InsertText != nil {
-			sawInsertText = true
-			if rq.InsertText.Location.Index != insertIdx {
-				t.Fatalf("first InsertText at %d, want %d", rq.InsertText.Location.Index, insertIdx)
-			}
+	body := fake.batchCalls[0]
+	if len(body) == 0 || body[0].InsertText == nil {
+		t.Fatalf("first batch should start with InsertText, got %#v", body)
+	}
+	if body[0].InsertText.Location.Index != insertIdx {
+		t.Fatalf("body InsertText at %d, want %d", body[0].InsertText.Location.Index, insertIdx)
+	}
+
+	tableBatch := fake.batchCalls[1]
+	var sawInsertTable bool
+	for _, rq := range tableBatch {
+		if rq.InsertTable != nil {
+			sawInsertTable = true
+			break
 		}
 	}
-	if !sawInsertText {
-		t.Fatalf("first batch should carry InsertText, got %#v", first)
+	if !sawInsertTable {
+		t.Fatalf("second batch should carry InsertTable, got %#v", tableBatch)
+	}
+
+	// Third batch carries all the per-cell content as one batch (the #699
+	// collapse). Expect at least one InsertText for the cells.
+	cellBatch := fake.batchCalls[2]
+	var sawCellInsertText bool
+	for _, rq := range cellBatch {
+		if rq.InsertText != nil {
+			sawCellInsertText = true
+			break
+		}
+	}
+	if !sawCellInsertText {
+		t.Fatalf("third batch should carry the cell InsertText content, got %#v", cellBatch)
+	}
+}
+
+func TestInsertNativeTableChunksLargeCellBatch(t *testing.T) {
+	svc, fake := newFakeDocsTableSvc(t, "Existing\n", 0)
+
+	cols := docsBatchUpdateRequestCap/2 + 1
+	cells := make([][]string, 1)
+	cells[0] = make([]string, cols)
+	for i := range cells[0] {
+		cells[0][i] = "header"
+	}
+
+	tableEnd, err := NewTableInserter(svc, "doc1").InsertNativeTable(context.Background(), 9, cells, "")
+	if err != nil {
+		t.Fatalf("InsertNativeTable: %v", err)
+	}
+	if tableEnd <= 9 {
+		t.Fatalf("expected table end to advance, got %d", tableEnd)
+	}
+	if len(fake.batchCalls) != 3 {
+		t.Fatalf("expected table insert plus two cell-content chunks, got %d", len(fake.batchCalls))
+	}
+	if len(fake.batchCalls[1]) != docsBatchUpdateRequestCap {
+		t.Fatalf("first cell chunk has %d requests, want %d", len(fake.batchCalls[1]), docsBatchUpdateRequestCap)
+	}
+	if len(fake.batchCalls[2]) != 2 {
+		t.Fatalf("second cell chunk has %d requests, want 2", len(fake.batchCalls[2]))
+	}
+	for i, batch := range fake.batchCalls {
+		if len(batch) > docsBatchUpdateRequestCap {
+			t.Fatalf("batch %d exceeded cap: %d", i, len(batch))
+		}
 	}
 }
 
@@ -368,8 +427,11 @@ func TestPickTableNear_IgnoresWrongDimensions(t *testing.T) {
 }
 
 // TestInsertDocsMarkdownAt_TableErrorIsActionable guards the wrapped error
-// message so the original symptom of #592 stays diagnostically searchable in
-// logs when the Docs API genuinely does not produce a table.
+// message that the markdown append path surfaces when the Docs API rejects
+// the batchUpdate carrying the InsertTableRequest (for example, when the
+// server cannot place the table at the requested location). After #699 the
+// body + table fold into a single batchUpdate so the error wrap is
+// "append (markdown):" rather than the old per-table "insert native table:".
 func TestInsertDocsMarkdownAt_TableErrorIsActionable(t *testing.T) {
 	var batchCalls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -380,7 +442,14 @@ func TestInsertDocsMarkdownAt_TableErrorIsActionable(t *testing.T) {
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
 			batchCalls++
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]any{
+					"code":    400,
+					"message": "Invalid requests[1].insertTable: cannot insert table at requested location",
+					"status":  "INVALID_ARGUMENT",
+				},
+			})
 		default:
 			http.NotFound(w, r)
 		}
@@ -399,12 +468,15 @@ func TestInsertDocsMarkdownAt_TableErrorIsActionable(t *testing.T) {
 	markdown := "| a | b |\n|---|---|\n| 1 | 2 |\n"
 	_, _, err = insertDocsMarkdownAt(context.Background(), svc, "doc1", 9, markdown, "")
 	if err == nil {
-		t.Fatal("expected error when server has no table; got nil")
+		t.Fatal("expected error from Docs API rejection; got nil")
 	}
-	if !strings.Contains(err.Error(), "insert native table") {
-		t.Fatalf("error should be wrapped with 'insert native table'; got %v", err)
+	if !strings.Contains(err.Error(), "append (markdown)") {
+		t.Fatalf("error should be wrapped with 'append (markdown):'; got %v", err)
 	}
-	if batchCalls < 2 {
-		t.Fatalf("expected >=2 batchUpdate calls before failure, got %d", batchCalls)
+	if !strings.Contains(err.Error(), "insertTable") {
+		t.Fatalf("error should surface the underlying Docs API message about insertTable; got %v", err)
+	}
+	if batchCalls != 1 {
+		t.Fatalf("expected exactly 1 batchUpdate call (body + table folded), got %d", batchCalls)
 	}
 }

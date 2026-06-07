@@ -71,6 +71,83 @@ func TestParseMarkdown(t *testing.T) {
 	}
 }
 
+func TestParseMarkdown_NestedLists(t *testing.T) {
+	result := ParseMarkdown("- Parent\n  - Child\n    - Grandchild\n\t- Tab sibling\n1. One\n  1. Nested one")
+	if len(result) != 6 {
+		t.Fatalf("ParseMarkdown() got %d elements, want 6: %#v", len(result), result)
+	}
+
+	want := []struct {
+		typ     MarkdownElementType
+		content string
+		level   int
+	}{
+		{MDListItem, "Parent", 0},
+		{MDListItem, "Child", 1},
+		{MDListItem, "Grandchild", 2},
+		{MDListItem, "Tab sibling", 2},
+		{MDNumberedList, "One", 0},
+		{MDNumberedList, "Nested one", 1},
+	}
+	for i, w := range want {
+		if got := result[i]; got.Type != w.typ || got.Content != w.content || got.Level != w.level {
+			t.Fatalf("element %d = {type:%v content:%q level:%d}, want {type:%v content:%q level:%d}",
+				i, got.Type, got.Content, got.Level, w.typ, w.content, w.level)
+		}
+	}
+}
+
+func TestParseMarkdown_NestedListsFourSpaceBlock(t *testing.T) {
+	result := ParseMarkdown("- Two-space parent\n  - Two-space child\n\n- Four-space parent\n    - Four-space child\n        - Four-space grandchild")
+	if len(result) != 6 {
+		t.Fatalf("ParseMarkdown() got %d elements, want 6: %#v", len(result), result)
+	}
+
+	want := []struct {
+		typ     MarkdownElementType
+		content string
+		level   int
+	}{
+		{MDListItem, "Two-space parent", 0},
+		{MDListItem, "Two-space child", 1},
+		{MDEmptyLine, "", 0},
+		{MDListItem, "Four-space parent", 0},
+		{MDListItem, "Four-space child", 1},
+		{MDListItem, "Four-space grandchild", 2},
+	}
+	for i, w := range want {
+		if got := result[i]; got.Type != w.typ || got.Content != w.content || got.Level != w.level {
+			t.Fatalf("element %d = {type:%v content:%q level:%d}, want {type:%v content:%q level:%d}",
+				i, got.Type, got.Content, got.Level, w.typ, w.content, w.level)
+		}
+	}
+}
+
+func TestParseMarkdown_IndentedListMarkerWithoutParent(t *testing.T) {
+	result := ParseMarkdown("    - keep literal")
+	if len(result) != 1 {
+		t.Fatalf("ParseMarkdown() got %d elements, want 1: %#v", len(result), result)
+	}
+	got := result[0]
+	if got.Type != MDParagraph || got.Content != "    - keep literal" {
+		t.Fatalf("element = {type:%v content:%q}, want paragraph with literal text", got.Type, got.Content)
+	}
+}
+
+func TestParseMarkdown_TopLevelListResetsNestedIndentStack(t *testing.T) {
+	result := ParseMarkdown("- A\n  - B\n    - C\n1. D\n    1. E")
+	if len(result) != 5 {
+		t.Fatalf("ParseMarkdown() got %d elements, want 5: %#v", len(result), result)
+	}
+
+	wantLevels := []int{0, 1, 2, 0, 1}
+	for i, want := range wantLevels {
+		if got := result[i].Level; got != want {
+			t.Fatalf("element %d level = %d, want %d (%#v)", i, got, want, result[i])
+		}
+	}
+}
+
 func TestParseInlineFormatting(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -144,6 +221,27 @@ func TestParseInlineFormatting_NestedAndUnderscoreStyles(t *testing.T) {
 	assertInlineStyle(t, text, styles, "bold and italic", true, false, false)
 	assertInlineStyle(t, text, styles, "and italic", false, true, false)
 	assertInlineStyle(t, text, styles, "both", true, true, false)
+}
+
+func TestParseInlineFormatting_Strikethrough(t *testing.T) {
+	styles, text := ParseInlineFormatting("~~struck out~~ vs **bold**")
+	if text != "struck out vs bold" {
+		t.Fatalf("text = %q", text)
+	}
+
+	assertInlineStrikethrough(t, text, styles, "struck out")
+	assertInlineStyle(t, text, styles, "bold", true, false, false)
+}
+
+func TestParseInlineFormatting_LongTildeRunsAreLiteral(t *testing.T) {
+	styles, text := ParseInlineFormatting("~~ok~~ and ~~~not~~~ and ~~~~also not~~~~")
+	if text != "ok and ~~~not~~~ and ~~~~also not~~~~" {
+		t.Fatalf("text = %q", text)
+	}
+	if len(styles) != 1 {
+		t.Fatalf("expected only the exact two-tilde span to format, got %#v", styles)
+	}
+	assertInlineStrikethrough(t, text, styles, "ok")
 }
 
 func TestParseInlineFormatting_ClosingMarkerIgnoresCodeSpan(t *testing.T) {
@@ -259,11 +357,24 @@ func assertInlineStyle(t *testing.T, text string, styles []TextStyle, wantText s
 		if int(style.End) > len(text) {
 			continue
 		}
-		if text[style.Start:style.End] == wantText && style.Bold == bold && style.Italic == italic && style.Code == code {
+		if text[style.Start:style.End] == wantText && style.Bold == bold && style.Italic == italic && style.Code == code && !style.Strikethrough {
 			return
 		}
 	}
 	t.Fatalf("missing style text=%q bold=%v italic=%v code=%v in %#v", wantText, bold, italic, code, styles)
+}
+
+func assertInlineStrikethrough(t *testing.T, text string, styles []TextStyle, wantText string) {
+	t.Helper()
+	for _, style := range styles {
+		if int(style.End) > len(text) {
+			continue
+		}
+		if text[style.Start:style.End] == wantText && style.Strikethrough {
+			return
+		}
+	}
+	t.Fatalf("missing strikethrough text=%q in %#v", wantText, styles)
 }
 
 func assertInlineLink(t *testing.T, text string, styles []TextStyle, wantText string, wantURL string) {

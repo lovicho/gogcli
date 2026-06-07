@@ -4,11 +4,16 @@
 
 ### Added
 
+- Docs: add `--code` to `docs format` and plain-text `docs write` for the existing monospace grey code style. (#685) — thanks @sebsnyk.
 - Drive/Docs: add `--since` to `drive comments list` and `docs comments list` for server-side comment modified-time filtering. (#688) — thanks @sebsnyk.
 - Gmail: add `--thread-id` to `gmail drafts create` and `gmail drafts update` so drafts can reply within a thread using the latest message headers. (#673, #674) — thanks @chrischall.
 
 ### Fixed
 
+- Docs: preserve nested list levels when writing markdown into a specific tab with `docs write --replace --markdown --tab`. (#696)
+- Docs: fix `docs export --tab` tab resolution against the live Docs API field mask. (#696)
+- Docs: render GFM `~~strikethrough~~` spans in the local markdown writer used by `docs write --tab --markdown`. (#702)
+- Docs: batch table-cell writes for `docs write --tab --markdown` to avoid per-cell Docs API quota bursts on table-heavy documents. (#699) — thanks @sebsnyk.
 - Gmail: preserve existing `gmail drafts update` attachments when `--attach` is omitted, add `--clear-attachments` for intentional removal, and keep `--attach` as explicit replacement. (#680, #681) — thanks @chrischall.
 
 ## 0.21.0 - 2026-06-01

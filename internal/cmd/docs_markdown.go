@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf16"
@@ -48,12 +49,13 @@ type MarkdownElement struct {
 
 // TextStyle represents text formatting
 type TextStyle struct {
-	Bold   bool
-	Italic bool
-	Code   bool
-	Link   string
-	Start  int64
-	End    int64
+	Bold          bool
+	Italic        bool
+	Strikethrough bool
+	Code          bool
+	Link          string
+	Start         int64
+	End           int64
 }
 
 // ParagraphStyle represents paragraph-level formatting
@@ -75,12 +77,16 @@ func ParseMarkdown(text string) []MarkdownElement {
 
 	inCodeBlock := false
 	var codeBlockContent strings.Builder
+	var listIndents []int
+	listActive := false
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 
 		// Handle code blocks
 		if strings.HasPrefix(line, "```") {
+			listIndents = nil
+			listActive = false
 			if inCodeBlock {
 				// End code block
 				elements = append(elements, MarkdownElement{
@@ -106,6 +112,8 @@ func ParseMarkdown(text string) []MarkdownElement {
 
 		// Empty line
 		if strings.TrimSpace(line) == "" {
+			listIndents = nil
+			listActive = false
 			if len(elements) > 0 && elements[len(elements)-1].Type != MDEmptyLine {
 				elements = append(elements, MarkdownElement{Type: MDEmptyLine})
 			}
@@ -114,6 +122,8 @@ func ParseMarkdown(text string) []MarkdownElement {
 
 		// Horizontal rule
 		if isHorizontalRule(line) {
+			listIndents = nil
+			listActive = false
 			elements = append(elements, MarkdownElement{
 				Type: MDHorizontalRule,
 			})
@@ -122,6 +132,8 @@ func ParseMarkdown(text string) []MarkdownElement {
 
 		// Headings
 		if headingLevel, content := parseHeading(line); headingLevel > 0 {
+			listIndents = nil
+			listActive = false
 			headingType := MDHeading1
 			switch headingLevel {
 			case 1:
@@ -146,6 +158,8 @@ func ParseMarkdown(text string) []MarkdownElement {
 
 		// Blockquote
 		if strings.HasPrefix(line, "> ") {
+			listIndents = nil
+			listActive = false
 			content := strings.TrimPrefix(line, "> ")
 			if debugMarkdown {
 				fmt.Printf("[PARSE] Blockquote detected: %q -> %q\n", line, content)
@@ -157,22 +171,18 @@ func ParseMarkdown(text string) []MarkdownElement {
 			continue
 		}
 
-		// Numbered list
-		if match := regexp.MustCompile(`^(\d+)\.\s+(.+)`).FindStringSubmatch(line); match != nil {
+		// Lists, including tab-scoped markdown nesting. The Docs API derives
+		// nesting from leading tabs after CreateParagraphBullets is applied.
+		if listType, content, indent, ok := parseMarkdownListItem(line); ok && (indent == 0 || listActive) {
+			if indent == 0 {
+				listIndents = nil
+			}
 			elements = append(elements, MarkdownElement{
-				Type:    MDNumberedList,
-				Content: match[2],
-			})
-			continue
-		}
-
-		// Bullet list
-		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-			content := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
-			elements = append(elements, MarkdownElement{
-				Type:    MDListItem,
+				Type:    listType,
 				Content: content,
+				Level:   markdownListLevel(indent, &listIndents),
 			})
+			listActive = true
 			continue
 		}
 
@@ -195,6 +205,8 @@ func ParseMarkdown(text string) []MarkdownElement {
 					Type:       MDTable,
 					TableCells: tableCells,
 				})
+				listIndents = nil
+				listActive = false
 				// Skip all table lines
 				i += countMarkdownTableLines(lines[i:]) - 1
 				continue
@@ -202,6 +214,8 @@ func ParseMarkdown(text string) []MarkdownElement {
 		}
 
 		// Regular paragraph
+		listIndents = nil
+		listActive = false
 		elements = append(elements, MarkdownElement{
 			Type:    MDParagraph,
 			Content: line,
@@ -213,6 +227,56 @@ func ParseMarkdown(text string) []MarkdownElement {
 	}
 
 	return elements
+}
+
+var markdownNumberedListRE = regexp.MustCompile(`^(\d+)\.\s+(.+)`)
+
+func parseMarkdownListItem(line string) (MarkdownElementType, string, int, bool) {
+	indent, rest := markdownListIndentColumns(line)
+	if match := markdownNumberedListRE.FindStringSubmatch(rest); match != nil {
+		return MDNumberedList, match[2], indent, true
+	}
+	if strings.HasPrefix(rest, "- ") || strings.HasPrefix(rest, "* ") {
+		return MDListItem, rest[2:], indent, true
+	}
+	return MDText, "", 0, false
+}
+
+func markdownListIndentColumns(line string) (int, string) {
+	column := 0
+	i := 0
+	for i < len(line) {
+		switch line[i] {
+		case ' ':
+			column++
+			i++
+		case '\t':
+			column += 4 - column%4
+			i++
+		default:
+			return column, line[i:]
+		}
+	}
+	return column, ""
+}
+
+func markdownListLevel(indent int, indents *[]int) int {
+	if indent <= 0 {
+		return 0
+	}
+	for i, seen := range *indents {
+		if seen == indent {
+			return i + 1
+		}
+	}
+	*indents = append(*indents, indent)
+	sort.Ints(*indents)
+	for i, seen := range *indents {
+		if seen == indent {
+			return i + 1
+		}
+	}
+	return len(*indents)
 }
 
 // isTableSeparator checks if a line is a markdown table separator (|---|---|)
@@ -423,17 +487,18 @@ func parseInlineSegment(text string) (string, []TextStyle) {
 			}
 		}
 
-		if marker, bold, italic, ok := inlineMarkerAt(text, i); ok {
+		if marker, bold, italic, strikethrough, ok := inlineMarkerAt(text, i); ok {
 			searchFrom := i + len(marker)
 			if end := findClosingInlineMarker(text, searchFrom, marker); end >= 0 && end > searchFrom {
 				content, nestedStyles := parseInlineSegment(text[searchFrom:end])
 				start := utf16Len(stripped.String())
 				stripped.WriteString(content)
 				styles = append(styles, TextStyle{
-					Start:  start,
-					End:    start + utf16Len(content),
-					Bold:   bold,
-					Italic: italic,
+					Start:         start,
+					End:           start + utf16Len(content),
+					Bold:          bold,
+					Italic:        italic,
+					Strikethrough: strikethrough,
 				})
 				styles = appendShiftedStyles(styles, nestedStyles, start)
 				i = end + len(marker)
@@ -501,24 +566,41 @@ func appendShiftedStyles(styles []TextStyle, nested []TextStyle, offset int64) [
 	return styles
 }
 
-func inlineMarkerAt(text string, i int) (marker string, bold bool, italic bool, ok bool) {
-	for _, candidate := range []string{"***", "___", "**", "__", "*", "_"} {
+func inlineMarkerAt(text string, i int) (marker string, bold bool, italic bool, strikethrough bool, ok bool) {
+	for _, candidate := range []string{"***", "___", "**", "__", "~~", "*", "_"} {
 		if !strings.HasPrefix(text[i:], candidate) {
 			continue
 		}
 		if candidate[0] == '_' && !isUnderscoreOpeningDelimiter(text, i, len(candidate)) {
-			return "", false, false, false
+			return "", false, false, false, false
+		}
+		if candidate == "~~" {
+			if i > 0 && text[i-1] == '~' {
+				return "", false, false, false, false
+			}
+			if tildeRunLenAt(text, i) != len(candidate) {
+				return "", false, false, false, false
+			}
+			return candidate, false, false, true, true
 		}
 		switch len(candidate) {
 		case 3:
-			return candidate, true, true, true
+			return candidate, true, true, false, true
 		case 2:
-			return candidate, true, false, true
+			return candidate, true, false, false, true
 		default:
-			return candidate, false, true, true
+			return candidate, false, true, false, true
 		}
 	}
-	return "", false, false, false
+	return "", false, false, false, false
+}
+
+func tildeRunLenAt(text string, i int) int {
+	runEnd := i
+	for runEnd < len(text) && text[runEnd] == '~' {
+		runEnd++
+	}
+	return runEnd - i
 }
 
 func findClosingInlineMarker(text string, searchFrom int, marker string) int {
@@ -552,6 +634,9 @@ func closingInlineMarkerInRun(text string, searchFrom int, i int, marker string)
 	markerLen := len(marker)
 	if runLen < markerLen {
 		return 0, runEnd, false
+	}
+	if marker == "~~" {
+		return i, runEnd, runLen == markerLen
 	}
 
 	if markerLen == 1 {

@@ -4,10 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"google.golang.org/api/docs/v1"
 )
+
+// docsBatchUpdateRequestCap is the Docs API hard limit on the number of
+// requests a single documents.batchUpdate may carry. When the consolidated
+// body + table + formatting request list exceeds it we chunk into multiple
+// sequential batchUpdate calls, preserving the request order so cell-index
+// arithmetic stays consistent. See #699.
+const docsBatchUpdateRequestCap = 500
 
 const (
 	docsContentFormatPlain    = "plain"
@@ -127,21 +135,13 @@ func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.
 	}
 	formattingRequests, textToInsert, tables := MarkdownToDocsRequests(elements, baseIndex, tabID)
 
-	for _, req := range formattingRequests {
-		if req.UpdateTextStyle != nil && req.UpdateTextStyle.Range != nil {
-			req.UpdateTextStyle.Range.TabId = tabID
-		}
-		if req.UpdateParagraphStyle != nil && req.UpdateParagraphStyle.Range != nil {
-			req.UpdateParagraphStyle.Range.TabId = tabID
-		}
-		if req.CreateParagraphBullets != nil && req.CreateParagraphBullets.Range != nil {
-			req.CreateParagraphBullets.Range.TabId = tabID
-		}
-		if req.DeleteParagraphBullets != nil && req.DeleteParagraphBullets.Range != nil {
-			req.DeleteParagraphBullets.Range.TabId = tabID
-		}
-	}
+	applyTabIDToFormattingRequests(formattingRequests, tabID)
 
+	// Structural DeleteContentRange + body InsertText + per-element formatting
+	// go in one batchUpdate. Tables are inserted afterwards via InsertNativeTable
+	// (which does its own InsertTable + Get + batched cell-content per table —
+	// see #699 follow-up: cross-table prediction was unreliable, server-readback
+	// per table is correct).
 	requests := make([]*docs.Request, 0, 2+len(formattingRequests))
 	requests = append(requests, &docs.Request{
 		DeleteContentRange: &docs.DeleteContentRangeRequest{
@@ -158,14 +158,10 @@ func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.
 		requests = append(requests, formattingRequests...)
 	}
 
-	_, err = svc.Documents.BatchUpdate(doc.DocumentId, &docs.BatchUpdateDocumentRequest{
-		WriteControl: &docs.WriteControl{RequiredRevisionId: doc.RevisionId},
-		Requests:     requests,
-	}).Context(ctx).Do()
+	requestCount, err = submitBatchedDocsRequests(ctx, svc, doc.DocumentId, requests, &docs.WriteControl{RequiredRevisionId: doc.RevisionId})
 	if err != nil {
 		return 0, 0, fmt.Errorf("replace (markdown): %w", err)
 	}
-	requestCount = len(requests)
 
 	if len(tables) > 0 {
 		tableInserter := NewTableInserter(svc, doc.DocumentId)
@@ -174,7 +170,7 @@ func replaceDocsMarkdownRange(ctx context.Context, svc *docs.Service, doc *docs.
 			tableIndex := table.StartIndex + tableOffset
 			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells, tabID)
 			if tableErr != nil {
-				return requestCount, len(prefix) + len(textToInsert), fmt.Errorf("insert native table: %w", tableErr)
+				return requestCount, len(textToInsert), fmt.Errorf("insert native table: %w", tableErr)
 			}
 			tableOffset = nextTableInsertOffset(tableOffset, tableIndex, tableEnd)
 		}
@@ -209,7 +205,61 @@ func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, 
 		return 0, 0, nil
 	}
 
-	for _, req := range formattingRequests {
+	applyTabIDToFormattingRequests(formattingRequests, tabID)
+
+	// Body InsertText + per-element formatting in one batchUpdate. Tables
+	// follow via InsertNativeTable (one InsertTable + one cell batch per
+	// table — see #699 follow-up).
+	requests := make([]*docs.Request, 0, 1+len(formattingRequests))
+	requests = append(requests, &docs.Request{
+		InsertText: &docs.InsertTextRequest{
+			Location: &docs.Location{Index: insertIdx, TabId: tabID},
+			Text:     prefix + textToInsert,
+		},
+	})
+	requests = append(requests, formattingRequests...)
+
+	requestCount, err = submitBatchedDocsRequests(ctx, svc, docID, requests, nil)
+	if err != nil {
+		return 0, 0, fmt.Errorf("append (markdown): %w", err)
+	}
+
+	if len(tables) > 0 {
+		tableInserter := NewTableInserter(svc, docID)
+		tableOffset := int64(0)
+		for _, table := range tables {
+			tableIndex := table.StartIndex + tableOffset
+			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells, tabID)
+			if tableErr != nil {
+				return requestCount, len(textToInsert), fmt.Errorf("insert native table: %w", tableErr)
+			}
+			tableOffset = nextTableInsertOffset(tableOffset, tableIndex, tableEnd)
+		}
+	}
+
+	if len(images) > 0 {
+		imgErr := insertImagesIntoDocs(ctx, svc, docID, images, tabID)
+		cleanupDocsImagePlaceholders(ctx, svc, docID, images, tabID)
+		if imgErr != nil {
+			return requestCount, len(prefix) + len(textToInsert), fmt.Errorf("insert images: %w", imgErr)
+		}
+	}
+
+	return requestCount, len(prefix) + len(textToInsert), nil
+}
+
+// applyTabIDToFormattingRequests propagates tabID to every request whose
+// range needs to be tab-scoped. Centralised so both the append and replace
+// markdown paths stay in sync — previously each duplicated the same eight
+// nil-guarded assignments inline.
+func applyTabIDToFormattingRequests(requests []*docs.Request, tabID string) {
+	if tabID == "" {
+		return
+	}
+	for _, req := range requests {
+		if req == nil {
+			continue
+		}
 		if req.UpdateTextStyle != nil && req.UpdateTextStyle.Range != nil {
 			req.UpdateTextStyle.Range.TabId = tabID
 		}
@@ -223,45 +273,54 @@ func insertDocsMarkdownAt(ctx context.Context, svc *docs.Service, docID string, 
 			req.DeleteParagraphBullets.Range.TabId = tabID
 		}
 	}
+}
 
-	requests := make([]*docs.Request, 0, 1+len(formattingRequests))
-	requests = append(requests, &docs.Request{
-		InsertText: &docs.InsertTextRequest{
-			Location: &docs.Location{Index: insertIdx, TabId: tabID},
-			Text:     prefix + textToInsert,
-		},
-	})
-	requests = append(requests, formattingRequests...)
-
-	_, err = svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
-		Requests: requests,
-	}).Context(ctx).Do()
-	if err != nil {
-		return 0, 0, fmt.Errorf("append (markdown): %w", err)
+// submitBatchedDocsRequests sends the supplied request list as one or more
+// documents.batchUpdate calls, splitting at docsBatchUpdateRequestCap-sized
+// chunks when the consolidated request count exceeds the Docs API per-batch
+// hard limit. Each chunk preserves the source order so cell-index
+// arithmetic remains consistent across the split. Returns the total number
+// of requests submitted (matches len(requests) on success); chunk events are
+// announced on stderr so callers can correlate wire traffic with logs.
+func submitBatchedDocsRequests(ctx context.Context, svc *docs.Service, docID string, requests []*docs.Request, writeControl *docs.WriteControl) (int, error) {
+	if len(requests) == 0 {
+		return 0, nil
+	}
+	if len(requests) <= docsBatchUpdateRequestCap {
+		_, err := svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
+			WriteControl: writeControl,
+			Requests:     requests,
+		}).Context(ctx).Do()
+		if err != nil {
+			return 0, err
+		}
+		return len(requests), nil
 	}
 
-	if len(tables) > 0 {
-		tableInserter := NewTableInserter(svc, docID)
-		tableOffset := int64(0)
-		for _, table := range tables {
-			tableIndex := table.StartIndex + tableOffset
-			tableEnd, tableErr := tableInserter.InsertNativeTable(ctx, tableIndex, table.Cells, tabID)
-			if tableErr != nil {
-				return len(requests), len(textToInsert), fmt.Errorf("insert native table: %w", tableErr)
-			}
-			tableOffset = nextTableInsertOffset(tableOffset, tableIndex, tableEnd)
+	totalChunks := (len(requests) + docsBatchUpdateRequestCap - 1) / docsBatchUpdateRequestCap
+	for i := 0; i < len(requests); i += docsBatchUpdateRequestCap {
+		end := i + docsBatchUpdateRequestCap
+		if end > len(requests) {
+			end = len(requests)
+		}
+		chunkIdx := i/docsBatchUpdateRequestCap + 1
+		fmt.Fprintf(os.Stderr, "gog: docs batchUpdate split %d/%d (%d requests; Docs API per-call cap is %d)\n",
+			chunkIdx, totalChunks, end-i, docsBatchUpdateRequestCap)
+		// WriteControl is only meaningful on the first chunk — subsequent
+		// chunks operate on whatever revision the prior chunk produced.
+		var wc *docs.WriteControl
+		if i == 0 {
+			wc = writeControl
+		}
+		_, err := svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
+			WriteControl: wc,
+			Requests:     requests[i:end],
+		}).Context(ctx).Do()
+		if err != nil {
+			return i, err
 		}
 	}
-
-	if len(images) > 0 {
-		imgErr := insertImagesIntoDocs(ctx, svc, docID, images, tabID)
-		cleanupDocsImagePlaceholders(ctx, svc, docID, images, tabID)
-		if imgErr != nil {
-			return len(requests), len(textToInsert), fmt.Errorf("insert images: %w", imgErr)
-		}
-	}
-
-	return len(requests), len(prefix) + len(textToInsert), nil
+	return len(requests), nil
 }
 
 func markdownAppendNeedsParagraphBoundary(elements []MarkdownElement) bool {
