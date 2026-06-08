@@ -99,6 +99,9 @@ func TestDocsFormatFlagsValidation(t *testing.T) {
 	if _, err := (DocsFormatFlags{TextColor: "oops"}).buildRequests(1, 2, ""); err == nil {
 		t.Fatalf("expected invalid color error")
 	}
+	if _, err := (DocsFormatFlags{link: "https://example.com", noLink: true}).buildRequests(1, 2, ""); err == nil {
+		t.Fatalf("expected conflicting link flags error")
+	}
 	if _, err := (DocsFormatFlags{Bold: true, NoBold: true}).buildRequests(1, 2, ""); err == nil {
 		t.Fatalf("expected conflicting bold flags error")
 	}
@@ -110,6 +113,120 @@ func TestDocsFormatFlagsValidation(t *testing.T) {
 	}
 	if _, err := (DocsFormatFlags{Code: true, BgColor: "#fff"}).buildRequests(1, 2, ""); err == nil {
 		t.Fatalf("expected conflicting code/bg-color flags error")
+	}
+}
+
+func TestDocsFormatFlagsLinkRequests(t *testing.T) {
+	cases := []struct {
+		name         string
+		flags        DocsFormatFlags
+		wantURL      string
+		wantBookmark string
+	}{
+		{
+			name:    "url",
+			flags:   DocsFormatFlags{link: "https://example.com"},
+			wantURL: "https://example.com",
+		},
+		{
+			name:    "mailto",
+			flags:   DocsFormatFlags{link: "mailto:foo@bar.com"},
+			wantURL: "mailto:foo@bar.com",
+		},
+		{
+			name:         "bookmark",
+			flags:        DocsFormatFlags{link: "#bookmark-1"},
+			wantBookmark: "bookmark-1",
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			reqs, err := tt.flags.buildRequests(3, 9, "")
+			if err != nil {
+				t.Fatalf("buildRequests: %v", err)
+			}
+			textReq := reqs[0].UpdateTextStyle
+			if textReq == nil || textReq.Fields != "link" || textReq.TextStyle.Link == nil {
+				t.Fatalf("unexpected link request: %#v", reqs)
+			}
+			if textReq.TextStyle.Link.Url != tt.wantURL {
+				t.Fatalf("url = %q, want %q", textReq.TextStyle.Link.Url, tt.wantURL)
+			}
+			if textReq.TextStyle.Link.BookmarkId != tt.wantBookmark {
+				t.Fatalf("bookmark = %q, want %q", textReq.TextStyle.Link.BookmarkId, tt.wantBookmark)
+			}
+		})
+	}
+}
+
+func TestDocsFormatFlagsNoLinkClearsLink(t *testing.T) {
+	reqs, err := (DocsFormatFlags{noLink: true}).buildRequests(3, 9, "")
+	if err != nil {
+		t.Fatalf("buildRequests: %v", err)
+	}
+	textReq := reqs[0].UpdateTextStyle
+	if textReq == nil || textReq.Fields != "link" {
+		t.Fatalf("unexpected clear-link request: %#v", reqs)
+	}
+	encoded, err := json.Marshal(textReq.TextStyle)
+	if err != nil {
+		t.Fatalf("marshal style: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"link":null`) {
+		t.Fatalf("clearing link must send JSON null, got %s", encoded)
+	}
+}
+
+func TestDocsFormatInternalLinkTreatsHeadingID(t *testing.T) {
+	link := docsFormatInternalLink(nil, "", "h.heading1")
+	if link == nil || link.HeadingId != "h.heading1" {
+		t.Fatalf("expected heading ID link, got %#v", link)
+	}
+}
+
+func TestDocsFormatCmdLinkResolvesHeadingSlug(t *testing.T) {
+	origDocs := newDocsService
+	t.Cleanup(func() { newDocsService = origDocs })
+
+	var batchRequests [][]*docs.Request
+	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
+			var req docs.BatchUpdateDocumentRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			batchRequests = append(batchRequests, req.Requests)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(docBodyWithHeadingAndText("Target Heading\n", "see this\n", "h.target"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer cleanup()
+	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
+
+	ctx := newDocsJSONContext(t)
+	flags := &RootFlags{Account: "a@b.com"}
+	if err := runKong(t, &DocsFormatCmd{}, []string{"doc1", "--match", "see", "--link", "#target-heading"}, ctx, flags); err != nil {
+		t.Fatalf("format: %v", err)
+	}
+	if len(batchRequests) != 1 {
+		t.Fatalf("expected one batch, got %d", len(batchRequests))
+	}
+	reqs := batchRequests[0]
+	if len(reqs) != 1 || reqs[0].UpdateTextStyle == nil {
+		t.Fatalf("unexpected requests: %#v", reqs)
+	}
+	textReq := reqs[0].UpdateTextStyle
+	if got := textReq.Range; got.StartIndex != 16 || got.EndIndex != 19 {
+		t.Fatalf("unexpected match range: %#v", got)
+	}
+	if textReq.TextStyle.Link == nil || textReq.TextStyle.Link.HeadingId != "h.target" {
+		t.Fatalf("expected heading link, got %#v", textReq.TextStyle.Link)
 	}
 }
 
@@ -205,5 +322,52 @@ func TestDocsFormatCmdMatchAll(t *testing.T) {
 	}
 	if got := reqs[1].UpdateTextStyle.Range; got.StartIndex != 12 || got.EndIndex != 17 {
 		t.Fatalf("unexpected second match range: %#v", got)
+	}
+}
+
+func docBodyWithHeadingAndText(heading, body, headingID string) map[string]any {
+	bodyStart := 1 + len(heading)
+	bodyEnd := bodyStart + len(body)
+	return map[string]any{
+		"documentId": "doc1",
+		"body": map[string]any{
+			"content": []any{
+				map[string]any{
+					"startIndex":   0,
+					"endIndex":     1,
+					"sectionBreak": map[string]any{"sectionStyle": map[string]any{}},
+				},
+				map[string]any{
+					"startIndex": 1,
+					"endIndex":   bodyStart,
+					"paragraph": map[string]any{
+						"paragraphStyle": map[string]any{
+							"namedStyleType": "HEADING_1",
+							"headingId":      headingID,
+						},
+						"elements": []any{
+							map[string]any{
+								"startIndex": 1,
+								"endIndex":   bodyStart,
+								"textRun":    map[string]any{"content": heading},
+							},
+						},
+					},
+				},
+				map[string]any{
+					"startIndex": bodyStart,
+					"endIndex":   bodyEnd,
+					"paragraph": map[string]any{
+						"elements": []any{
+							map[string]any{
+								"startIndex": bodyStart,
+								"endIndex":   bodyEnd,
+								"textRun":    map[string]any{"content": body},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }

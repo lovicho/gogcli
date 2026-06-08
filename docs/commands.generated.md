@@ -237,6 +237,7 @@ Generated from `gog schema --json`.
     - [`gog docs (doc) delete-tab <docId> [flags]`](commands/gog-docs-delete-tab.md) - Delete a tab from a Google Doc
     - [`gog docs (doc) edit <docId> <find> <replace> [flags]`](commands/gog-docs-edit.md) - Find and replace text in a Google Doc
     - [`gog docs (doc) export (download,dl) <docId> [flags]`](commands/gog-docs-export.md) - Export a Google Doc (pdf|docx|txt|md|html)
+    - [`gog docs (doc) find-range <docId> <text> [flags]`](commands/gog-docs-find-range.md) - Find text and print Docs API UTF-16 index ranges
     - [`gog docs (doc) find-replace <docId> <find> [<replace>] [flags]`](commands/gog-docs-find-replace.md) - Find and replace text. Supports plain text or markdown with images; use --first for a single occurrence.
     - [`gog docs (doc) format <docId> [flags]`](commands/gog-docs-format.md) - Apply text or paragraph formatting to a Google Doc
     - [`gog docs (doc) info (get,show) <docId>`](commands/gog-docs-info.md) - Get Google Doc metadata
@@ -541,6 +542,7 @@ Generated from `gog schema --json`.
     - [`gog slides (slide) delete-slide <presentationId> <slideId>`](commands/gog-slides-delete-slide.md) - Delete a slide by object ID
     - [`gog slides (slide) export (download,dl) <presentationId> [flags]`](commands/gog-slides-export.md) - Export a Google Slides deck (pdf|pptx)
     - [`gog slides (slide) info (get,show) <presentationId>`](commands/gog-slides-info.md) - Get Google Slides presentation metadata
+    - [`gog slides (slide) insert-image --width=FLOAT-64 <presentationId> <slideId> <image> [flags]`](commands/gog-slides-insert-image.md) - Insert an image at a position and size on an existing slide
     - [`gog slides (slide) insert-text <presentationId> <objectId> <text> [flags]`](commands/gog-slides-insert-text.md) - Insert text into an existing page element (shape or table) by objectId
     - [`gog slides (slide) list-slides <presentationId>`](commands/gog-slides-list-slides.md) - List all slides with their object IDs
     - [`gog slides (slide) raw <presentationId> [flags]`](commands/gog-slides-raw.md) - Dump raw Google Slides API response as JSON (Presentations.Get; lossless; for scripting and LLM consumption)

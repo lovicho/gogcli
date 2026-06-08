@@ -19,6 +19,8 @@ type DocsFormatCmd struct {
 	MatchCase bool            `name:"match-case" help:"Use case-sensitive matching with --match"`
 	Tab       string          `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
 	TabID     string          `name:"tab-id" hidden:"" help:"(deprecated) Use --tab"`
+	Link      string          `name:"link" help:"Set hyperlink target (http://, https://, mailto:, #bookmarkId, or #heading-slug)"`
+	NoLink    bool            `name:"no-link" help:"Clear hyperlink"`
 	Format    DocsFormatFlags `embed:""`
 }
 
@@ -40,6 +42,10 @@ type DocsFormatFlags struct {
 	LineSpacing   float64 `name:"line-spacing" help:"Paragraph line spacing percentage, for example 100 or 150"`
 	HeadingLevel  *int    `name:"heading-level" help:"Set paragraph named style to HEADING_1..HEADING_6 (shortcut for --named-style=HEADING_N)"`
 	NamedStyle    string  `name:"named-style" help:"Set paragraph named style: NORMAL_TEXT, TITLE, SUBTITLE, HEADING_1..HEADING_6"`
+
+	link         string
+	noLink       bool
+	resolvedLink *docs.Link
 }
 
 const (
@@ -59,7 +65,8 @@ func (c *DocsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if id == "" {
 		return usage("empty docId")
 	}
-	if !c.Format.any() {
+	format := c.Format.withLinkFlags(c.Link, c.NoLink)
+	if !format.any() {
 		return usage("no formatting flags provided")
 	}
 	if c.MatchAll && strings.TrimSpace(c.Match) == "" {
@@ -72,7 +79,7 @@ func (c *DocsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	c.Tab = tab
 
-	if _, err := c.Format.buildRequests(1, 2, c.Tab); err != nil {
+	if _, err := format.buildRequests(1, 2, c.Tab); err != nil {
 		return err
 	}
 
@@ -87,6 +94,8 @@ func (c *DocsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 			"font_size":     c.Format.FontSize,
 			"text_color":    c.Format.TextColor,
 			"bg_color":      c.Format.BgColor,
+			"link":          c.Link,
+			"no_link":       c.NoLink,
 			"code":          c.Format.Code,
 			"bold":          c.Format.Bold,
 			"no_bold":       c.Format.NoBold,
@@ -110,6 +119,11 @@ func (c *DocsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	format, err = format.withResolvedLink(ctx, svc, id, c.Tab)
+	if err != nil {
+		return err
+	}
+
 	ranges, tabID, err := c.targetRanges(ctx, svc, id)
 	if err != nil {
 		return err
@@ -120,7 +134,7 @@ func (c *DocsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	reqs := make([]*docs.Request, 0, len(ranges)*2)
 	for _, r := range ranges {
-		formatReqs, buildErr := c.Format.buildRequests(r.startIndex, r.endIndex, tabID)
+		formatReqs, buildErr := format.buildRequests(r.startIndex, r.endIndex, tabID)
 		if buildErr != nil {
 			return buildErr
 		}
@@ -220,6 +234,8 @@ func (f DocsFormatFlags) any() bool {
 		f.FontSize != 0 ||
 		strings.TrimSpace(f.TextColor) != "" ||
 		strings.TrimSpace(f.BgColor) != "" ||
+		strings.TrimSpace(f.link) != "" ||
+		f.noLink ||
 		f.Code ||
 		f.Bold || f.NoBold ||
 		f.Italic || f.NoItalic ||
@@ -298,6 +314,25 @@ func (f DocsFormatFlags) buildTextStyleRequest(start, end int64, tabID string) (
 		style.BackgroundColor = optionalColor
 		fields = append(fields, "backgroundColor")
 	}
+	if strings.TrimSpace(f.link) != "" && f.noLink {
+		return nil, false, usage("--link and --no-link cannot be combined")
+	}
+	if link := strings.TrimSpace(f.link); link != "" {
+		resolved := f.resolvedLink
+		if resolved == nil {
+			var err error
+			resolved, err = docsFormatLink(link)
+			if err != nil {
+				return nil, false, err
+			}
+		}
+		style.Link = resolved
+		fields = append(fields, "link")
+	}
+	if f.noLink {
+		style.NullFields = append(style.NullFields, "Link")
+		fields = append(fields, "link")
+	}
 	addBoolStyle := func(set, unset bool, field, forceField string, apply func(bool)) error {
 		if set && unset {
 			return usage(fmt.Sprintf("--%s and --no-%s cannot be combined", field, field))
@@ -332,6 +367,75 @@ func (f DocsFormatFlags) buildTextStyleRequest(start, end int64, tabID string) (
 		TextStyle: style,
 		Fields:    strings.Join(fields, ","),
 	}}, true, nil
+}
+
+func (f DocsFormatFlags) withLinkFlags(link string, noLink bool) DocsFormatFlags {
+	f.link = link
+	f.noLink = noLink
+	return f
+}
+
+func (f DocsFormatFlags) withResolvedLink(ctx context.Context, svc *docs.Service, docID, tab string) (DocsFormatFlags, error) {
+	link := strings.TrimSpace(f.link)
+	if link == "" || f.noLink || !strings.HasPrefix(link, "#") {
+		return f, nil
+	}
+	target := strings.TrimSpace(strings.TrimPrefix(link, "#"))
+	if target == "" {
+		return f, usage("--link target cannot be empty")
+	}
+	getCall := svc.Documents.Get(docID).Context(ctx)
+	if tab != "" {
+		getCall = getCall.IncludeTabsContent(true)
+	}
+	doc, err := getCall.Do()
+	if err != nil {
+		if isDocsNotFound(err) {
+			return f, fmt.Errorf("doc not found or not a Google Doc (id=%s)", docID)
+		}
+		return f, err
+	}
+	f.resolvedLink = docsFormatInternalLink(doc, tab, target)
+	return f, nil
+}
+
+func docsFormatLink(value string) (*docs.Link, error) {
+	link := strings.TrimSpace(value)
+	if link == "" {
+		return nil, usage("--link target cannot be empty")
+	}
+	if target, ok := strings.CutPrefix(link, "#"); ok {
+		target = strings.TrimSpace(target)
+		if target == "" {
+			return nil, usage("--link target cannot be empty")
+		}
+		return &docs.Link{BookmarkId: target}, nil
+	}
+	return &docs.Link{Url: link}, nil
+}
+
+func docsFormatInternalLink(doc *docs.Document, tab, target string) *docs.Link {
+	content, resolvedTabID, err := markdownHeadingLinkContent(doc, tab)
+	if err == nil && len(content) > 0 {
+		_, autoHeadingBySlug, explicitHeadingBySlug := markdownHeadingLinkTargets(content, resolvedTabID, nil, 0, 0)
+		if heading, ok := explicitHeadingBySlug[target]; ok {
+			return docsFormatHeadingLink(heading)
+		}
+		if heading, ok := autoHeadingBySlug[target]; ok {
+			return docsFormatHeadingLink(heading)
+		}
+	}
+	if strings.HasPrefix(target, "h.") {
+		return docsFormatHeadingLink(markdownHeadingTarget{headingID: target, tabID: resolvedTabID})
+	}
+	return &docs.Link{BookmarkId: target}
+}
+
+func docsFormatHeadingLink(target markdownHeadingTarget) *docs.Link {
+	if target.tabID != "" {
+		return &docs.Link{Heading: &docs.HeadingLink{Id: target.headingID, TabId: target.tabID}}
+	}
+	return &docs.Link{HeadingId: target.headingID}
 }
 
 func (f DocsFormatFlags) buildParagraphStyleRequest(start, end int64, tabID string) (*docs.Request, bool, error) {

@@ -54,54 +54,7 @@ func rewriteMarkdownHeadingLinksInRange(ctx context.Context, svc *docs.Service, 
 	if len(content) == 0 {
 		return 0, nil
 	}
-	paragraphs := markdownParagraphsInContent(content, minIndex)
-
-	autoHeadingBySlug := map[string]markdownHeadingTarget{}
-	explicitHeadingBySlug := map[string]markdownHeadingTarget{}
-	explicitHeadingByKey := map[markdownHeadingMatchKey]string{}
-	for _, explicit := range explicitAnchors {
-		anchor := strings.TrimSpace(explicit.Anchor)
-		text := markdownHeadingNormalizedText(explicit.Text)
-		if anchor == "" || text == "" || explicit.Occurrence <= 0 {
-			continue
-		}
-		explicitHeadingByKey[markdownHeadingMatchKey{
-			text:       text,
-			occurrence: explicit.Occurrence,
-		}] = anchor
-	}
-	slugCounts := map[string]int{}
-	usedHeadingSlugs := map[string]bool{}
-	headingTextCounts := map[string]int{}
-	for _, ref := range paragraphs {
-		if ref.paragraph == nil || ref.paragraph.ParagraphStyle == nil {
-			continue
-		}
-		if minIndex > 0 && ref.startIndex < minIndex {
-			continue
-		}
-		if maxIndex > 0 && ref.startIndex >= maxIndex {
-			continue
-		}
-		style := ref.paragraph.ParagraphStyle
-		if !strings.HasPrefix(style.NamedStyleType, "HEADING_") || strings.TrimSpace(style.HeadingId) == "" {
-			continue
-		}
-		text := markdownHeadingParagraphText(ref.paragraph)
-		target := markdownHeadingTarget{headingID: style.HeadingId, tabID: resolvedTabID}
-		matchText := markdownHeadingNormalizedText(text)
-		headingTextCounts[matchText]++
-		explicit := explicitHeadingByKey[markdownHeadingMatchKey{
-			text:       matchText,
-			occurrence: headingTextCounts[matchText],
-		}]
-		if explicit != "" {
-			explicitHeadingBySlug[explicit] = target
-			usedHeadingSlugs[explicit] = true
-		} else if slug := markdownHeadingSlug(text, slugCounts, usedHeadingSlugs); slug != "" {
-			autoHeadingBySlug[slug] = target
-		}
-	}
+	paragraphs, autoHeadingBySlug, explicitHeadingBySlug := markdownHeadingLinkTargets(content, resolvedTabID, explicitAnchors, minIndex, maxIndex)
 	if len(autoHeadingBySlug) == 0 && len(explicitHeadingBySlug) == 0 {
 		return 0, nil
 	}
@@ -162,6 +115,57 @@ func rewriteMarkdownHeadingLinksInRange(ctx context.Context, svc *docs.Service, 
 		return 0, err
 	}
 	return len(requests), nil
+}
+
+func markdownHeadingLinkTargets(content []*docs.StructuralElement, resolvedTabID string, explicitAnchors []markdownExplicitHeadingAnchor, minIndex int64, maxIndex int64) ([]markdownParagraphRef, map[string]markdownHeadingTarget, map[string]markdownHeadingTarget) {
+	paragraphs := markdownParagraphsInContent(content, minIndex)
+	autoHeadingBySlug := map[string]markdownHeadingTarget{}
+	explicitHeadingBySlug := map[string]markdownHeadingTarget{}
+	explicitHeadingByKey := map[markdownHeadingMatchKey]string{}
+	for _, explicit := range explicitAnchors {
+		anchor := strings.TrimSpace(explicit.Anchor)
+		text := markdownHeadingNormalizedText(explicit.Text)
+		if anchor == "" || text == "" || explicit.Occurrence <= 0 {
+			continue
+		}
+		explicitHeadingByKey[markdownHeadingMatchKey{
+			text:       text,
+			occurrence: explicit.Occurrence,
+		}] = anchor
+	}
+	slugCounts := map[string]int{}
+	usedHeadingSlugs := map[string]bool{}
+	headingTextCounts := map[string]int{}
+	for _, ref := range paragraphs {
+		if ref.paragraph == nil || ref.paragraph.ParagraphStyle == nil {
+			continue
+		}
+		if minIndex > 0 && ref.startIndex < minIndex {
+			continue
+		}
+		if maxIndex > 0 && ref.startIndex >= maxIndex {
+			continue
+		}
+		style := ref.paragraph.ParagraphStyle
+		if !strings.HasPrefix(style.NamedStyleType, "HEADING_") || strings.TrimSpace(style.HeadingId) == "" {
+			continue
+		}
+		text := markdownHeadingParagraphText(ref.paragraph)
+		target := markdownHeadingTarget{headingID: style.HeadingId, tabID: resolvedTabID}
+		matchText := markdownHeadingNormalizedText(text)
+		headingTextCounts[matchText]++
+		explicit := explicitHeadingByKey[markdownHeadingMatchKey{
+			text:       matchText,
+			occurrence: headingTextCounts[matchText],
+		}]
+		if explicit != "" {
+			explicitHeadingBySlug[explicit] = target
+			usedHeadingSlugs[explicit] = true
+		} else if slug := markdownHeadingSlug(text, slugCounts, usedHeadingSlugs); slug != "" {
+			autoHeadingBySlug[slug] = target
+		}
+	}
+	return paragraphs, autoHeadingBySlug, explicitHeadingBySlug
 }
 
 func markdownHeadingLinkContent(doc *docs.Document, tabID string) ([]*docs.StructuralElement, string, error) {

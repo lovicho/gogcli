@@ -40,6 +40,7 @@ gog docs (doc) format <docId> [flags]
 | `--italic` | `bool` |  | Set italic |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--line-spacing` | `float64` |  | Paragraph line spacing percentage, for example 100 or 150 |
+| `--link` | `string` |  | Set hyperlink target (http://, https://, mailto:, #bookmarkId, or #heading-slug) |
 | `--match` | `string` |  | Only format the first text match |
 | `--match-all` | `bool` |  | Format all matches instead of only the first |
 | `--match-case` | `bool` |  | Use case-sensitive matching with --match |
@@ -47,6 +48,7 @@ gog docs (doc) format <docId> [flags]
 | `--no-bold` | `bool` |  | Clear bold |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
 | `--no-italic` | `bool` |  | Clear italic |
+| `--no-link` | `bool` |  | Clear hyperlink |
 | `--no-strikethrough`<br>`--no-strike` | `bool` |  | Clear strikethrough |
 | `--no-underline` | `bool` |  | Clear underline |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
