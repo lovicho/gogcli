@@ -2,17 +2,22 @@
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Get cell hyperlinks from a range
+Get or set cell hyperlinks
 
 ## Usage
 
 ```bash
-gog sheets (sheet) links (hyperlinks) <spreadsheetId> <range>
+gog sheets (sheet) links (hyperlinks) <command>
 ```
 
 ## Parent
 
 - [gog sheets](gog-sheets.md)
+
+## Subcommands
+
+- [gog sheets links get](gog-sheets-links-get.md) - Get cell hyperlinks from a range
+- [gog sheets links set](gog-sheets-links-set.md) - Set cell hyperlinks (rich-text links)
 
 ## Flags
 

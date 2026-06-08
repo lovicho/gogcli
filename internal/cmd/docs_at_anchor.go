@@ -1,0 +1,127 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"google.golang.org/api/docs/v1"
+)
+
+type docsAtAnchorFlags struct {
+	At         string
+	AtProvided bool
+	Occurrence *int
+	MatchCase  bool
+	Tab        string
+}
+
+type docsResolvedAtAnchor struct {
+	Match      docsTextRangeMatch
+	RevisionID string
+	Document   *docs.Document
+}
+
+const docsAtIndexAnchorStart = "at:start"
+
+func validateDocsAtAnchorFlags(anchor docsAtAnchorFlags) error {
+	if anchor.At == "" {
+		if anchor.AtProvided {
+			return usage("empty --at")
+		}
+		if anchor.Occurrence != nil {
+			return usage("--occurrence requires --at")
+		}
+		if anchor.MatchCase {
+			return usage("--match-case requires --at")
+		}
+		return nil
+	}
+	if anchor.Occurrence != nil && *anchor.Occurrence <= 0 {
+		return usage("--occurrence must be > 0")
+	}
+	return nil
+}
+
+func resolveDocsAtAnchor(ctx context.Context, svc *docs.Service, docID string, anchor docsAtAnchorFlags) (docsResolvedAtAnchor, error) {
+	if anchor.At == "" {
+		return docsResolvedAtAnchor{}, usage("empty --at")
+	}
+	if err := validateDocsAtAnchorFlags(anchor); err != nil {
+		return docsResolvedAtAnchor{}, err
+	}
+
+	loaded, err := loadDocsTargetDocument(ctx, svc, docID, anchor.Tab)
+	if err != nil {
+		return docsResolvedAtAnchor{}, err
+	}
+	matches := findDocsTextRanges(loaded.target, anchor.At, docsTextRangeOptions{
+		MatchCase:            anchor.MatchCase,
+		NormalizeWhitespace:  false,
+		PreserveHTMLEntities: true,
+		RequireTextSegment:   true,
+		TabID:                loaded.tabID,
+	})
+	match, err := selectDocsAtAnchorMatch(anchor.At, matches, anchor.Occurrence)
+	if err != nil {
+		return docsResolvedAtAnchor{}, err
+	}
+	return docsResolvedAtAnchor{Match: match, RevisionID: loaded.full.RevisionId, Document: loaded.full}, nil
+}
+
+func selectDocsAtAnchorMatch(at string, matches []docsTextRangeMatch, occurrence *int) (docsTextRangeMatch, error) {
+	if len(matches) == 0 {
+		return docsTextRangeMatch{}, &ExitError{
+			Code: emptyResultsExitCode,
+			Err:  fmt.Errorf("anchor not found: %q", at),
+		}
+	}
+	if occurrence != nil {
+		if *occurrence <= 0 {
+			return docsTextRangeMatch{}, usage("--occurrence must be > 0")
+		}
+		if *occurrence > len(matches) {
+			return docsTextRangeMatch{}, &ExitError{
+				Code: emptyResultsExitCode,
+				Err:  fmt.Errorf("anchor %q occurrence %d not found; matches: %s", at, *occurrence, formatDocsAnchorOccurrences(matches)),
+			}
+		}
+		return matches[*occurrence-1], nil
+	}
+	if len(matches) > 1 {
+		return docsTextRangeMatch{}, usagef("ambiguous --at %q matched %d occurrences; pass --occurrence 1..%d (matches: %s)", at, len(matches), len(matches), formatDocsAnchorOccurrences(matches))
+	}
+	return matches[0], nil
+}
+
+func formatDocsAnchorOccurrences(matches []docsTextRangeMatch) string {
+	parts := make([]string, 0, len(matches))
+	for _, match := range matches {
+		part := fmt.Sprintf("%d:%d", match.StartIndex, match.EndIndex)
+		if match.TabID != "" {
+			part += "@" + match.TabID
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func addDocsAtAnchorDryRunPayload(payload map[string]any, anchor docsAtAnchorFlags) {
+	if anchor.At == "" {
+		return
+	}
+	payload["at"] = anchor.At
+	if anchor.Occurrence != nil {
+		payload["occurrence"] = *anchor.Occurrence
+	}
+	if anchor.MatchCase {
+		payload["matchCase"] = true
+	}
+}
+
+func docsRequiredRevisionWriteControl(revisionID string) *docs.WriteControl {
+	if revisionID == "" {
+		return nil
+	}
+	return &docs.WriteControl{RequiredRevisionId: revisionID}
+}

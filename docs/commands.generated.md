@@ -228,12 +228,13 @@ Generated from `gog schema --json`.
       - [`gog docs (doc) comments delete (rm,del,remove) <docId> <commentId>`](commands/gog-docs-comments-delete.md) - Delete a comment
       - [`gog docs (doc) comments get (info,show) <docId> <commentId>`](commands/gog-docs-comments-get.md) - Get a comment by ID
       - [`gog docs (doc) comments list (ls) <docId> [flags]`](commands/gog-docs-comments-list.md) - List comments on a Google Doc
+      - [`gog docs (doc) comments locate <docId> <commentId> [flags]`](commands/gog-docs-comments-locate.md) - Resolve a comment quote to Docs API index ranges
       - [`gog docs (doc) comments reopen <docId> <commentId> [flags]`](commands/gog-docs-comments-reopen.md) - Reopen a previously resolved comment
       - [`gog docs (doc) comments reply (respond) <docId> <commentId> <content> [flags]`](commands/gog-docs-comments-reply.md) - Reply to a comment
       - [`gog docs (doc) comments resolve <docId> <commentId> [flags]`](commands/gog-docs-comments-resolve.md) - Resolve a comment (mark as done)
     - [`gog docs (doc) copy (cp,duplicate) <docId> <title> [flags]`](commands/gog-docs-copy.md) - Copy a Google Doc
     - [`gog docs (doc) create (add,new) <title> [flags]`](commands/gog-docs-create.md) - Create a Google Doc
-    - [`gog docs (doc) delete --start=INT-64 --end=INT-64 <docId> [flags]`](commands/gog-docs-delete.md) - Delete text range from document
+    - [`gog docs (doc) delete <docId> [flags]`](commands/gog-docs-delete.md) - Delete text range from document
     - [`gog docs (doc) delete-tab <docId> [flags]`](commands/gog-docs-delete-tab.md) - Delete a tab from a Google Doc
     - [`gog docs (doc) edit <docId> <find> <replace> [flags]`](commands/gog-docs-edit.md) - Find and replace text in a Google Doc
     - [`gog docs (doc) export (download,dl) <docId> [flags]`](commands/gog-docs-export.md) - Export a Google Doc (pdf|docx|txt|md|html)
@@ -501,7 +502,9 @@ Generated from `gog schema --json`.
     - [`gog sheets (sheet) freeze <spreadsheetId> [flags]`](commands/gog-sheets-freeze.md) - Freeze rows and columns on a sheet
     - [`gog sheets (sheet) get (read,show) <spreadsheetId> <range> [flags]`](commands/gog-sheets-get.md) - Get values from a range
     - [`gog sheets (sheet) insert <spreadsheetId> <sheet> <dimension> <start> [flags]`](commands/gog-sheets-insert.md) - Insert empty rows or columns into a sheet
-    - [`gog sheets (sheet) links (hyperlinks) <spreadsheetId> <range>`](commands/gog-sheets-links.md) - Get cell hyperlinks from a range
+    - [`gog sheets (sheet) links (hyperlinks) <command>`](commands/gog-sheets-links.md) - Get or set cell hyperlinks
+      - [`gog sheets (sheet) links (hyperlinks) get (list,show) <spreadsheetId> <range>`](commands/gog-sheets-links-get.md) - Get cell hyperlinks from a range
+      - [`gog sheets (sheet) links (hyperlinks) set (write) <spreadsheetId> [<cell> [<url> [<text>]]] [flags]`](commands/gog-sheets-links-set.md) - Set cell hyperlinks (rich-text links)
     - [`gog sheets (sheet) merge <spreadsheetId> <range> [flags]`](commands/gog-sheets-merge.md) - Merge cells in a range
     - [`gog sheets (sheet) metadata (info) <spreadsheetId>`](commands/gog-sheets-metadata.md) - Get spreadsheet metadata
     - [`gog sheets (sheet) named-ranges (namedranges,nr) <command>`](commands/gog-sheets-named-ranges.md) - Manage named ranges

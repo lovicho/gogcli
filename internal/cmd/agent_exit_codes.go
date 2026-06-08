@@ -22,6 +22,7 @@ func (c *AgentExitCodesCmd) Run(ctx context.Context) error {
 		"empty_results":     emptyResultsExitCode,
 		"auth_required":     exitCodeAuthRequired,
 		"not_found":         exitCodeNotFound,
+		"orphaned":          exitCodeOrphaned,
 		"permission_denied": exitCodePermissionDenied,
 		"rate_limited":      exitCodeRateLimited,
 		"retryable":         exitCodeRetryable,

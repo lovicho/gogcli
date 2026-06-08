@@ -20,6 +20,7 @@ gog docs (doc) update <docId> [flags]
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `--at` | `string` |  | Anchor by literal text and replace that matched range |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
@@ -34,7 +35,9 @@ gog docs (doc) update <docId> [flags]
 | `--index` | `int64` |  | Insert index (default: end of document) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--markdown` | `bool` |  | Convert markdown to Google Docs formatting |
+| `--match-case` | `bool` |  | Use case-sensitive --at matching |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
+| `--occurrence` | `*int` |  | Use the Nth --at match (1-based; required when --at is ambiguous) |
 | `--pageless` | `bool` |  | Set document to pageless mode |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--replace-range` | `string` |  | Replace UTF-16 Docs API range START:END instead of inserting |

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kong"
 	"google.golang.org/api/docs/v1"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -14,11 +15,14 @@ import (
 )
 
 type DocsInsertPersonCmd struct {
-	DocID string `arg:"" name:"docId" help:"Doc ID"`
-	Email string `name:"email" required:"" help:"Email address for the person chip"`
-	Index *int64 `name:"index" help:"Character index to insert at. Omit or use --at-end for end-of-doc."`
-	AtEnd bool   `name:"at-end" help:"Insert at end-of-doc/tab (mutually exclusive with --index)"`
-	Tab   string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
+	DocID      string `arg:"" name:"docId" help:"Doc ID"`
+	Email      string `name:"email" required:"" help:"Email address for the person chip"`
+	Index      *int64 `name:"index" help:"Character index to insert at. Omit or use --at-end for end-of-doc."`
+	At         string `name:"at" help:"Anchor by literal text, delete the match, and insert the person chip there"`
+	Occurrence *int   `name:"occurrence" help:"Use the Nth --at match (1-based; required when --at is ambiguous)"`
+	MatchCase  bool   `name:"match-case" help:"Use case-sensitive --at matching"`
+	AtEnd      bool   `name:"at-end" help:"Insert at end-of-doc/tab (mutually exclusive with --index)"`
+	Tab        string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
 }
 
 type DocsInsertFileChipCmd struct {
@@ -41,13 +45,18 @@ type DocsInsertDateChipCmd struct {
 const docsDateChipFormatFull = "full"
 
 type docsInsertLocationFlags struct {
-	docID string
-	index *int64
-	atEnd bool
-	tab   string
+	docID      string
+	index      *int64
+	at         string
+	atProvided bool
+	occurrence *int
+	matchCase  bool
+	replaceAt  bool
+	atEnd      bool
+	tab        string
 }
 
-func (c *DocsInsertPersonCmd) Run(ctx context.Context, flags *RootFlags) error {
+func (c *DocsInsertPersonCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlags) error {
 	email := strings.TrimSpace(c.Email)
 	if email == "" {
 		return usage("empty --email")
@@ -56,10 +65,15 @@ func (c *DocsInsertPersonCmd) Run(ctx context.Context, flags *RootFlags) error {
 		PersonProperties: &docs.PersonProperties{Email: email},
 	}}
 	return runDocsSingleInsert(ctx, flags, "docs.insert-person", docsInsertLocationFlags{
-		docID: c.DocID,
-		index: c.Index,
-		atEnd: c.AtEnd,
-		tab:   c.Tab,
+		docID:      c.DocID,
+		index:      c.Index,
+		at:         c.At,
+		atProvided: flagProvided(kctx, "at"),
+		occurrence: c.Occurrence,
+		matchCase:  c.MatchCase,
+		replaceAt:  true,
+		atEnd:      c.AtEnd,
+		tab:        c.Tab,
 	}, req, map[string]any{"email": email})
 }
 
@@ -164,6 +178,12 @@ func runDocsSingleInsert(ctx context.Context, flags *RootFlags, action string, l
 	if loc.index != nil && *loc.index < 1 {
 		return usage("--index must be >= 1 (index 0 is reserved)")
 	}
+	if anchorErr := validateDocsAtAnchorFlags(docsAtAnchorFlags{At: loc.at, AtProvided: loc.atProvided, Occurrence: loc.occurrence, MatchCase: loc.matchCase}); anchorErr != nil {
+		return anchorErr
+	}
+	if loc.at != "" && (loc.atEnd || loc.index != nil) {
+		return usage("--at cannot be combined with --at-end or --index")
+	}
 
 	if err := dryRunDocsSingleInsert(ctx, flags, action, loc, payload); err != nil {
 		return err
@@ -173,12 +193,23 @@ func runDocsSingleInsert(ctx context.Context, flags *RootFlags, action string, l
 	if err != nil {
 		return err
 	}
-	insertIndex, tabID, err := resolveDocsInsertLocation(ctx, svc, docID, loc)
+	insertIndex, tabID, matched, err := resolveDocsInsertLocation(ctx, svc, docID, loc)
 	if err != nil {
 		return err
 	}
 	setDocsInsertRequestLocation(req, insertIndex, tabID)
-	resp, err := svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{Requests: []*docs.Request{req}}).Context(ctx).Do()
+	reqs := make([]*docs.Request, 0, 2)
+	if loc.replaceAt && matched != nil {
+		reqs = append(reqs, &docs.Request{DeleteContentRange: &docs.DeleteContentRangeRequest{
+			Range: &docs.Range{StartIndex: matched.Match.StartIndex, EndIndex: matched.Match.EndIndex, TabId: tabID},
+		}})
+	}
+	reqs = append(reqs, req)
+	batchReq := &docs.BatchUpdateDocumentRequest{Requests: reqs}
+	if matched != nil {
+		batchReq.WriteControl = docsRequiredRevisionWriteControl(matched.RevisionID)
+	}
+	resp, err := svc.Documents.BatchUpdate(docID, batchReq).Context(ctx).Do()
 	if err != nil {
 		if isDocsNotFound(err) {
 			return fmt.Errorf("doc not found or not a Google Doc (id=%s)", docID)
@@ -187,6 +218,10 @@ func runDocsSingleInsert(ctx context.Context, flags *RootFlags, action string, l
 	}
 	if outfmt.IsJSON(ctx) {
 		result := map[string]any{"documentId": resp.DocumentId, "atIndex": insertIndex, "inserted": true}
+		if len(reqs) > 1 {
+			result["requests"] = len(reqs)
+			result["replaced"] = true
+		}
 		if tabID != "" {
 			result["tabId"] = tabID
 		}
@@ -198,6 +233,10 @@ func runDocsSingleInsert(ctx context.Context, flags *RootFlags, action string, l
 	u.Out().Linef("documentId\t%s", resp.DocumentId)
 	u.Out().Linef("atIndex\t%d", insertIndex)
 	u.Out().Linef("inserted\ttrue")
+	if len(reqs) > 1 {
+		u.Out().Linef("requests\t%d", len(reqs))
+		u.Out().Linef("replaced\ttrue")
+	}
 	if tabID != "" {
 		u.Out().Linef("tabId\t%s", tabID)
 	}
@@ -215,35 +254,61 @@ func dryRunDocsSingleInsert(ctx context.Context, flags *RootFlags, action string
 	if loc.index != nil && *loc.index < 1 {
 		return usage("--index must be >= 1 (index 0 is reserved)")
 	}
+	if anchorErr := validateDocsAtAnchorFlags(docsAtAnchorFlags{At: loc.at, AtProvided: loc.atProvided, Occurrence: loc.occurrence, MatchCase: loc.matchCase}); anchorErr != nil {
+		return anchorErr
+	}
+	at := loc.at
+	if at != "" && (loc.atEnd || loc.index != nil) {
+		return usage("--at cannot be combined with --at-end or --index")
+	}
 	dryRunPayload := map[string]any{"documentId": docID, "tab": loc.tab}
 	for k, v := range payload {
 		dryRunPayload[k] = v
 	}
-	if loc.atEnd || loc.index == nil {
+	switch {
+	case at != "":
+		dryRunPayload["atIndex"] = docsAtIndexAnchorStart
+		addDocsAtAnchorDryRunPayload(dryRunPayload, docsAtAnchorFlags{At: at, Occurrence: loc.occurrence, MatchCase: loc.matchCase})
+		if loc.replaceAt {
+			dryRunPayload["replaceAt"] = true
+		}
+	case loc.atEnd || loc.index == nil:
 		dryRunPayload["atIndex"] = docsAtIndexEnd
-	} else {
+	default:
 		dryRunPayload["atIndex"] = *loc.index
 	}
 	return dryRunExit(ctx, flags, action, dryRunPayload)
 }
 
-func resolveDocsInsertLocation(ctx context.Context, svc *docs.Service, docID string, loc docsInsertLocationFlags) (int64, string, error) {
+func resolveDocsInsertLocation(ctx context.Context, svc *docs.Service, docID string, loc docsInsertLocationFlags) (int64, string, *docsResolvedAtAnchor, error) {
+	if loc.at != "" {
+		match, err := resolveDocsAtAnchor(ctx, svc, docID, docsAtAnchorFlags{
+			At:         loc.at,
+			Occurrence: loc.occurrence,
+			MatchCase:  loc.matchCase,
+			Tab:        loc.tab,
+		})
+		if err != nil {
+			return 0, "", nil, err
+		}
+		return match.Match.StartIndex, match.Match.TabID, &match, nil
+	}
 	if loc.atEnd || loc.index == nil {
 		endIndex, tabID, err := docsTargetEndIndexAndTabID(ctx, svc, docID, loc.tab)
 		if err != nil {
-			return 0, "", err
+			return 0, "", nil, err
 		}
-		return docsAppendIndex(endIndex), tabID, nil
+		return docsAppendIndex(endIndex), tabID, nil, nil
 	}
 	tabID := ""
 	if strings.TrimSpace(loc.tab) != "" {
 		resolved, err := resolveDocsTabID(ctx, svc, docID, loc.tab)
 		if err != nil {
-			return 0, "", err
+			return 0, "", nil, err
 		}
 		tabID = resolved
 	}
-	return *loc.index, tabID, nil
+	return *loc.index, tabID, nil, nil
 }
 
 func setDocsInsertRequestLocation(req *docs.Request, index int64, tabID string) {

@@ -566,6 +566,9 @@ type DocsUpdateCmd struct {
 	File         string `name:"file" help:"Text file path ('-' for stdin)"`
 	Index        int64  `name:"index" help:"Insert index (default: end of document)"`
 	ReplaceRange string `name:"replace-range" help:"Replace UTF-16 Docs API range START:END instead of inserting"`
+	At           string `name:"at" help:"Anchor by literal text and replace that matched range"`
+	Occurrence   *int   `name:"occurrence" help:"Use the Nth --at match (1-based; required when --at is ambiguous)"`
+	MatchCase    bool   `name:"match-case" help:"Use case-sensitive --at matching"`
 	Markdown     bool   `name:"markdown" help:"Convert markdown to Google Docs formatting"`
 	Pageless     bool   `name:"pageless" help:"Set document to pageless mode"`
 	Tab          string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
@@ -589,11 +592,9 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 	if text == "" {
 		return usage("empty text")
 	}
-	if flagProvided(kctx, "index") && c.Index <= 0 {
-		return usage("invalid --index (must be >= 1)")
-	}
-	if flagProvided(kctx, "index") && strings.TrimSpace(c.ReplaceRange) != "" {
-		return usage("--index cannot be combined with --replace-range")
+	at, placementErr := c.validatePlacement(kctx)
+	if placementErr != nil {
+		return placementErr
 	}
 
 	replaceStart, replaceEnd, replacing, err := parseDocsReplaceRange(c.ReplaceRange)
@@ -607,24 +608,7 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 	}
 	c.Tab = tab
 
-	var index any = docsAtIndexEnd
-	if replacing {
-		index = replaceStart
-	} else if c.Index > 0 {
-		index = c.Index
-	}
-	dryRunPayload := map[string]any{
-		"document_id": id,
-		"written":     len(text),
-		"index":       index,
-		"markdown":    c.Markdown,
-		"pageless":    c.Pageless,
-		"tab":         c.Tab,
-	}
-	if replacing {
-		dryRunPayload["replaceRange"] = map[string]int64{"start": replaceStart, "end": replaceEnd}
-	}
-	if dryRunErr := dryRunExit(ctx, flags, "docs.update", dryRunPayload); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "docs.update", c.dryRunPayload(id, len(text), replacing, replaceStart, replaceEnd, at)); dryRunErr != nil {
 		return dryRunErr
 	}
 
@@ -634,6 +618,17 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 	}
 
 	insertIndex := c.Index
+	anchor, anchorReplacing, anchorErr := c.resolveAtAnchor(ctx, svc, id, at)
+	if anchorErr != nil {
+		return anchorErr
+	}
+	if anchorReplacing {
+		replaceStart = anchor.Match.StartIndex
+		replaceEnd = anchor.Match.EndIndex
+		replacing = true
+		insertIndex = replaceStart
+		c.Tab = anchor.Match.TabID
+	}
 	switch {
 	case replacing:
 		insertIndex = replaceStart
@@ -668,12 +663,16 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 		cleaned, _ := extractMarkdownImages(text)
 		explicitHeadingAnchors := markdownExplicitHeadingAnchors(cleaned)
 		if replacing {
-			loaded, loadErr := loadDocsTargetDocument(ctx, svc, id, c.Tab)
-			if loadErr != nil {
-				return loadErr
+			loadedDoc := anchorDocumentForMarkdownReplace(anchor)
+			if loadedDoc == nil {
+				loaded, loadErr := loadDocsTargetDocument(ctx, svc, id, c.Tab)
+				if loadErr != nil {
+					return loadErr
+				}
+				c.Tab = loaded.tabID
+				loadedDoc = loaded.full
 			}
-			c.Tab = loaded.tabID
-			replacedRequests, replacedText, replaceErr := replaceDocsMarkdownRange(ctx, svc, loaded.full, replaceStart, replaceEnd, text, c.Tab)
+			replacedRequests, replacedText, replaceErr := replaceDocsMarkdownRange(ctx, svc, loadedDoc, replaceStart, replaceEnd, text, c.Tab)
 			if replaceErr != nil {
 				err = replaceErr
 			} else {
@@ -719,7 +718,11 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 			},
 		})
 		requestCount = len(reqs)
-		resp, err = svc.Documents.BatchUpdate(id, &docs.BatchUpdateDocumentRequest{Requests: reqs}).Context(ctx).Do()
+		batchReq := &docs.BatchUpdateDocumentRequest{Requests: reqs}
+		if anchor != nil {
+			batchReq.WriteControl = docsRequiredRevisionWriteControl(anchor.RevisionID)
+		}
+		resp, err = svc.Documents.BatchUpdate(id, batchReq).Context(ctx).Do()
 		if err != nil {
 			if isDocsNotFound(err) {
 				return fmt.Errorf("doc not found or not a Google Doc (id=%s)", id)
@@ -776,6 +779,71 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 	return nil
 }
 
+func (c *DocsUpdateCmd) validatePlacement(kctx *kong.Context) (string, error) {
+	if flagProvided(kctx, "index") && c.Index <= 0 {
+		return "", usage("invalid --index (must be >= 1)")
+	}
+	if flagProvided(kctx, "index") && strings.TrimSpace(c.ReplaceRange) != "" {
+		return "", usage("--index cannot be combined with --replace-range")
+	}
+	if err := validateDocsAtAnchorFlags(docsAtAnchorFlags{At: c.At, AtProvided: flagProvided(kctx, "at"), Occurrence: c.Occurrence, MatchCase: c.MatchCase}); err != nil {
+		return "", err
+	}
+	at := c.At
+	if at != "" && (flagProvided(kctx, "index") || strings.TrimSpace(c.ReplaceRange) != "") {
+		return "", usage("--at cannot be combined with --index or --replace-range")
+	}
+	return at, nil
+}
+
+func (c *DocsUpdateCmd) dryRunPayload(docID string, written int, replacing bool, replaceStart, replaceEnd int64, at string) map[string]any {
+	var index any = docsAtIndexEnd
+	switch {
+	case replacing:
+		index = replaceStart
+	case at != "":
+		index = docsAtIndexAnchorStart
+	case c.Index > 0:
+		index = c.Index
+	}
+	payload := map[string]any{
+		"document_id": docID,
+		"written":     written,
+		"index":       index,
+		"markdown":    c.Markdown,
+		"pageless":    c.Pageless,
+		"tab":         c.Tab,
+	}
+	if replacing {
+		payload["replaceRange"] = map[string]int64{"start": replaceStart, "end": replaceEnd}
+	}
+	addDocsAtAnchorDryRunPayload(payload, docsAtAnchorFlags{At: at, Occurrence: c.Occurrence, MatchCase: c.MatchCase})
+	return payload
+}
+
+func (c *DocsUpdateCmd) resolveAtAnchor(ctx context.Context, svc *docs.Service, docID, at string) (*docsResolvedAtAnchor, bool, error) {
+	if at == "" {
+		return nil, false, nil
+	}
+	match, err := resolveDocsAtAnchor(ctx, svc, docID, docsAtAnchorFlags{
+		At:         at,
+		Occurrence: c.Occurrence,
+		MatchCase:  c.MatchCase,
+		Tab:        c.Tab,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return &match, true, nil
+}
+
+func anchorDocumentForMarkdownReplace(anchor *docsResolvedAtAnchor) *docs.Document {
+	if anchor == nil {
+		return nil
+	}
+	return anchor.Document
+}
+
 func parseDocsReplaceRange(value string) (start int64, end int64, ok bool, err error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -797,15 +865,18 @@ func parseDocsReplaceRange(value string) (start int64, end int64, ok bool, err e
 }
 
 type DocsInsertCmd struct {
-	DocID   string `arg:"" name:"docId" help:"Doc ID"`
-	Content string `arg:"" optional:"" name:"content" help:"Text to insert (or use --file / stdin)"`
-	Index   *int64 `name:"index" help:"Character index to insert at (1 = beginning). Defaults to end-of-doc when omitted."`
-	File    string `name:"file" short:"f" help:"Read content from file (use - for stdin)"`
-	Tab     string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
-	TabID   string `name:"tab-id" hidden:"" help:"(deprecated) Use --tab"`
+	DocID      string `arg:"" name:"docId" help:"Doc ID"`
+	Content    string `arg:"" optional:"" name:"content" help:"Text to insert (or use --file / stdin)"`
+	Index      *int64 `name:"index" help:"Character index to insert at (1 = beginning). Defaults to end-of-doc when omitted."`
+	At         string `name:"at" help:"Anchor by literal text and insert at the start of the matched range"`
+	Occurrence *int   `name:"occurrence" help:"Use the Nth --at match (1-based; required when --at is ambiguous)"`
+	MatchCase  bool   `name:"match-case" help:"Use case-sensitive --at matching"`
+	File       string `name:"file" short:"f" help:"Read content from file (use - for stdin)"`
+	Tab        string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
+	TabID      string `name:"tab-id" hidden:"" help:"(deprecated) Use --tab"`
 }
 
-func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
+func (c *DocsInsertCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	docID := strings.TrimSpace(c.DocID)
 	if docID == "" {
@@ -821,6 +892,13 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if c.Index != nil && *c.Index < 1 {
 		return usage("--index must be >= 1 (index 0 is reserved)")
 	}
+	if anchorErr := validateDocsAtAnchorFlags(docsAtAnchorFlags{At: c.At, AtProvided: flagProvided(kctx, "at"), Occurrence: c.Occurrence, MatchCase: c.MatchCase}); anchorErr != nil {
+		return anchorErr
+	}
+	at := c.At
+	if at != "" && c.Index != nil {
+		return usage("--at and --index are mutually exclusive")
+	}
 
 	tab, tabErr := resolveTabArg(ctx, c.Tab, c.TabID)
 	if tabErr != nil {
@@ -833,9 +911,13 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 		"inserted":   len(content),
 		"tab":        c.Tab,
 	}
-	if c.Index != nil {
+	switch {
+	case c.Index != nil:
 		dryRunPayload["atIndex"] = *c.Index
-	} else {
+	case at != "":
+		dryRunPayload["atIndex"] = docsAtIndexAnchorStart
+		addDocsAtAnchorDryRunPayload(dryRunPayload, docsAtAnchorFlags{At: at, Occurrence: c.Occurrence, MatchCase: c.MatchCase})
+	default:
 		dryRunPayload["atIndex"] = docsAtIndexEnd
 	}
 	if dryRunErr := dryRunExit(ctx, flags, "docs.insert", dryRunPayload); dryRunErr != nil {
@@ -848,7 +930,22 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	var insertIndex int64
-	if c.Index != nil {
+	var anchor *docsResolvedAtAnchor
+	switch {
+	case at != "":
+		match, anchorErr := resolveDocsAtAnchor(ctx, svc, docID, docsAtAnchorFlags{
+			At:         at,
+			Occurrence: c.Occurrence,
+			MatchCase:  c.MatchCase,
+			Tab:        c.Tab,
+		})
+		if anchorErr != nil {
+			return anchorErr
+		}
+		anchor = &match
+		insertIndex = match.Match.StartIndex
+		c.Tab = match.Match.TabID
+	case c.Index != nil:
 		insertIndex = *c.Index
 		if c.Tab != "" {
 			tabID, tabErr := resolveDocsTabID(ctx, svc, docID, c.Tab)
@@ -857,7 +954,7 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 			}
 			c.Tab = tabID
 		}
-	} else {
+	default:
 		endIndex, tabID, endErr := docsTargetEndIndexAndTabID(ctx, svc, docID, c.Tab)
 		if endErr != nil {
 			return endErr
@@ -866,7 +963,7 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 		insertIndex = docsAppendIndex(endIndex)
 	}
 
-	result, err := svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
+	batchReq := &docs.BatchUpdateDocumentRequest{
 		Requests: []*docs.Request{{
 			InsertText: &docs.InsertTextRequest{
 				Text: content,
@@ -876,7 +973,11 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 				},
 			},
 		}},
-	}).Context(ctx).Do()
+	}
+	if anchor != nil {
+		batchReq.WriteControl = docsRequiredRevisionWriteControl(anchor.RevisionID)
+	}
+	result, err := svc.Documents.BatchUpdate(docID, batchReq).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("inserting text: %w", err)
 	}
@@ -899,23 +1000,37 @@ func (c *DocsInsertCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type DocsDeleteCmd struct {
-	DocID string `arg:"" name:"docId" help:"Doc ID"`
-	Start int64  `name:"start" required:"" help:"Start index (>= 1)"`
-	End   int64  `name:"end" required:"" help:"End index (> start)"`
-	Tab   string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
-	TabID string `name:"tab-id" hidden:"" help:"(deprecated) Use --tab"`
+	DocID      string `arg:"" name:"docId" help:"Doc ID"`
+	Start      *int64 `name:"start" help:"Start index (>= 1; required unless --at is set)"`
+	End        *int64 `name:"end" help:"End index (> start; required unless --at is set)"`
+	At         string `name:"at" help:"Anchor by literal text and delete that matched range"`
+	Occurrence *int   `name:"occurrence" help:"Use the Nth --at match (1-based; required when --at is ambiguous)"`
+	MatchCase  bool   `name:"match-case" help:"Use case-sensitive --at matching"`
+	Tab        string `name:"tab" help:"Target a specific tab by title or ID (see docs list-tabs)"`
+	TabID      string `name:"tab-id" hidden:"" help:"(deprecated) Use --tab"`
 }
 
-func (c *DocsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
+func (c *DocsDeleteCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	docID := strings.TrimSpace(c.DocID)
 	if docID == "" {
 		return usage("empty docId")
 	}
-	if c.Start < 1 {
+	if anchorErr := validateDocsAtAnchorFlags(docsAtAnchorFlags{At: c.At, AtProvided: flagProvided(kctx, "at"), Occurrence: c.Occurrence, MatchCase: c.MatchCase}); anchorErr != nil {
+		return anchorErr
+	}
+	at := c.At
+	hasNumericRange := c.Start != nil || c.End != nil
+	if at != "" && hasNumericRange {
+		return usage("--at cannot be combined with --start or --end")
+	}
+	if at == "" && (c.Start == nil || c.End == nil) {
+		return usage("provide --at or both --start and --end")
+	}
+	if c.Start != nil && *c.Start < 1 {
 		return usage("--start must be >= 1")
 	}
-	if c.End <= c.Start {
+	if c.Start != nil && c.End != nil && *c.End <= *c.Start {
 		return usage("--end must be greater than --start")
 	}
 
@@ -925,13 +1040,15 @@ func (c *DocsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	c.Tab = tab
 
-	if err := dryRunExit(ctx, flags, "docs.delete", map[string]any{
+	dryRunPayload := map[string]any{
 		"document_id": docID,
-		"start_index": c.Start,
-		"end_index":   c.End,
-		"deleted":     c.End - c.Start,
+		"start_index": docsDeleteDryRunStart(c.Start),
+		"end_index":   docsDeleteDryRunEnd(c.End),
+		"deleted":     docsDeleteDryRunDeleted(c.Start, c.End, at),
 		"tab":         c.Tab,
-	}); err != nil {
+	}
+	addDocsAtAnchorDryRunPayload(dryRunPayload, docsAtAnchorFlags{At: at, Occurrence: c.Occurrence, MatchCase: c.MatchCase})
+	if err := dryRunExit(ctx, flags, "docs.delete", dryRunPayload); err != nil {
 		return err
 	}
 
@@ -939,7 +1056,27 @@ func (c *DocsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	if c.Tab != "" {
+	var start, end int64
+	var anchor *docsResolvedAtAnchor
+	if at != "" {
+		match, anchorErr := resolveDocsAtAnchor(ctx, svc, docID, docsAtAnchorFlags{
+			At:         at,
+			Occurrence: c.Occurrence,
+			MatchCase:  c.MatchCase,
+			Tab:        c.Tab,
+		})
+		if anchorErr != nil {
+			return anchorErr
+		}
+		anchor = &match
+		start = match.Match.StartIndex
+		end = match.Match.EndIndex
+		c.Tab = match.Match.TabID
+	} else {
+		start = *c.Start
+		end = *c.End
+	}
+	if at == "" && c.Tab != "" {
 		tabID, tabErr := resolveDocsTabID(ctx, svc, docID, c.Tab)
 		if tabErr != nil {
 			return tabErr
@@ -947,13 +1084,17 @@ func (c *DocsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		c.Tab = tabID
 	}
 
-	result, err := svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
+	batchReq := &docs.BatchUpdateDocumentRequest{
 		Requests: []*docs.Request{{
 			DeleteContentRange: &docs.DeleteContentRangeRequest{
-				Range: &docs.Range{StartIndex: c.Start, EndIndex: c.End, TabId: c.Tab},
+				Range: &docs.Range{StartIndex: start, EndIndex: end, TabId: c.Tab},
 			},
 		}},
-	}).Context(ctx).Do()
+	}
+	if anchor != nil {
+		batchReq.WriteControl = docsRequiredRevisionWriteControl(anchor.RevisionID)
+	}
+	result, err := svc.Documents.BatchUpdate(docID, batchReq).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("deleting content: %w", err)
 	}
@@ -961,9 +1102,9 @@ func (c *DocsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if outfmt.IsJSON(ctx) {
 		payload := map[string]any{
 			"documentId": result.DocumentId,
-			"deleted":    c.End - c.Start,
-			"startIndex": c.Start,
-			"endIndex":   c.End,
+			"deleted":    end - start,
+			"startIndex": start,
+			"endIndex":   end,
 		}
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
@@ -972,12 +1113,36 @@ func (c *DocsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	u.Out().Linef("documentId\t%s", result.DocumentId)
-	u.Out().Linef("deleted\t%d characters", c.End-c.Start)
-	u.Out().Linef("range\t%d-%d", c.Start, c.End)
+	u.Out().Linef("deleted\t%d characters", end-start)
+	u.Out().Linef("range\t%d-%d", start, end)
 	if c.Tab != "" {
 		u.Out().Linef("tabId\t%s", c.Tab)
 	}
 	return nil
+}
+
+func docsDeleteDryRunStart(start *int64) any {
+	if start == nil {
+		return nil
+	}
+	return *start
+}
+
+func docsDeleteDryRunEnd(end *int64) any {
+	if end == nil {
+		return nil
+	}
+	return *end
+}
+
+func docsDeleteDryRunDeleted(start, end *int64, at string) any {
+	if at != "" {
+		return "at:range"
+	}
+	if start == nil || end == nil {
+		return nil
+	}
+	return *end - *start
 }
 
 type DocsClearCmd struct {

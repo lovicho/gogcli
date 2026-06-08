@@ -20,6 +20,7 @@ gog docs (doc) insert-person --email=STRING <docId> [flags]
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `--at` | `string` |  | Anchor by literal text, delete the match, and insert the person chip there |
 | `--at-end` | `bool` |  | Insert at end-of-doc/tab (mutually exclusive with --index) |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
@@ -34,7 +35,9 @@ gog docs (doc) insert-person --email=STRING <docId> [flags]
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
 | `--index` | `*int64` |  | Character index to insert at. Omit or use --at-end for end-of-doc. |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
+| `--match-case` | `bool` |  | Use case-sensitive --at matching |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
+| `--occurrence` | `*int` |  | Use the Nth --at match (1-based; required when --at is ambiguous) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |

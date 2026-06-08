@@ -29,4 +29,10 @@ func TestAgentExitCodes_JSON(t *testing.T) {
 	if doc.ExitCodes["auth_required"] != exitCodeAuthRequired {
 		t.Fatalf("expected auth_required=%d, got %d", exitCodeAuthRequired, doc.ExitCodes["auth_required"])
 	}
+	if doc.ExitCodes["config"] != exitCodeConfig {
+		t.Fatalf("expected config=%d, got %d", exitCodeConfig, doc.ExitCodes["config"])
+	}
+	if doc.ExitCodes["orphaned"] != exitCodeOrphaned {
+		t.Fatalf("expected orphaned=%d, got %d", exitCodeOrphaned, doc.ExitCodes["orphaned"])
+	}
 }

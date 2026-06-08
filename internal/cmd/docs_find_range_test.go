@@ -92,6 +92,21 @@ func TestFindDocsTextRangesTablesAndParagraphIndex(t *testing.T) {
 	}
 }
 
+func TestFindDocsTextRangesAcrossParagraphs(t *testing.T) {
+	doc := docsFindRangeDoc(
+		docsFindRangeParagraph(1, "First paragraph\n"),
+		docsFindRangeParagraph(17, "Second paragraph\n"),
+	)
+
+	matches := findDocsTextRanges(doc, "paragraph Second paragraph", docsTextRangeOptions{NormalizeWhitespace: true})
+	if len(matches) != 1 {
+		t.Fatalf("matches = %#v, want 1", matches)
+	}
+	if got := matches[0]; got.StartIndex != 7 || got.EndIndex != 33 || got.ParagraphIndex != 0 {
+		t.Fatalf("match = %#v, want start=7 end=33 paragraphIndex=0", got)
+	}
+}
+
 func TestDocsFindRangeCmdJSONAllAndTab(t *testing.T) {
 	origDocs := newDocsService
 	t.Cleanup(func() { newDocsService = origDocs })
