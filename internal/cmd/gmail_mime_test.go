@@ -3,6 +3,8 @@ package cmd
 import (
 	"io"
 	"mime/quotedprintable"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -123,6 +125,46 @@ func TestBuildRFC822AlternativeWithAttachment(t *testing.T) {
 	}
 	if !strings.Contains(s, "Content-Type: text/plain") || !strings.Contains(s, "Content-Type: text/html") {
 		t.Fatalf("expected both text/plain and text/html parts: %q", s)
+	}
+}
+
+func TestPrepareMailAttachments(t *testing.T) {
+	dir := t.TempDir()
+	payloadPath := filepath.Join(dir, "report.txt")
+	if err := os.WriteFile(payloadPath, []byte("payload"), 0o600); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+	emptyPath := filepath.Join(dir, "empty.bin")
+	if err := os.WriteFile(emptyPath, nil, 0o600); err != nil {
+		t.Fatalf("write empty attachment: %v", err)
+	}
+
+	prepared, metadata, err := prepareMailAttachments([]mailAttachment{
+		{Path: payloadPath},
+		{Path: emptyPath},
+		{Filename: "preserved.dat", Data: []byte("old"), DataSet: true},
+	})
+	if err != nil {
+		t.Fatalf("prepareMailAttachments: %v", err)
+	}
+	if len(prepared) != 3 || len(metadata) != 3 {
+		t.Fatalf("unexpected attachment counts: prepared=%d metadata=%d", len(prepared), len(metadata))
+	}
+	if string(prepared[0].Data) != "payload" || !prepared[0].DataSet {
+		t.Fatalf("unexpected prepared payload: %#v", prepared[0])
+	}
+	if !prepared[1].DataSet || len(prepared[1].Data) != 0 {
+		t.Fatalf("unexpected prepared empty attachment: %#v", prepared[1])
+	}
+	want := []mailAttachmentMetadata{
+		{Filename: "report.txt", Size: 7},
+		{Filename: "empty.bin", Size: 0},
+		{Filename: "preserved.dat", Size: 3},
+	}
+	for i := range want {
+		if metadata[i] != want[i] {
+			t.Fatalf("metadata[%d] = %#v, want %#v", i, metadata[i], want[i])
+		}
 	}
 }
 

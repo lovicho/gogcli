@@ -21,11 +21,12 @@ type composeFromResult struct {
 }
 
 type gmailMessageResult struct {
-	From       string
-	To         string
-	MessageID  string
-	ThreadID   string
-	TrackingID string
+	From        string
+	To          string
+	MessageID   string
+	ThreadID    string
+	TrackingID  string
+	Attachments []mailAttachmentMetadata
 }
 
 func requireGmailSendService(ctx context.Context, flags *RootFlags) (string, *gmail.Service, error) {
@@ -244,6 +245,9 @@ func gmailMessageResultJSON(r gmailMessageResult, includeTo bool) map[string]any
 	}
 	if r.TrackingID != "" {
 		item["tracking_id"] = r.TrackingID
+	}
+	if len(r.Attachments) > 0 {
+		item["attachments"] = r.Attachments
 	}
 	return item
 }

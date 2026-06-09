@@ -4,6 +4,7 @@
 
 ### Added
 
+- Gmail: report attached filenames and byte sizes in JSON results for send and draft create/update. (#716) — thanks @chrischall.
 - Gmail: add `gmail watch pull` for Pub/Sub pull subscription consumers with hook retry support. (#700) — thanks @joshp123.
 
 ## 0.23.0 - 2026-06-09

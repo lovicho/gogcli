@@ -187,7 +187,10 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	bccRecipients := splitCSV(c.Bcc)
 
-	atts := attachmentsFromPaths(attachPaths)
+	atts, attachmentMetadata, err := prepareMailAttachments(attachmentsFromPaths(attachPaths))
+	if err != nil {
+		return err
+	}
 
 	var trackingCfg *tracking.Config
 	if c.Track {
@@ -213,7 +216,7 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	return writeSendResults(ctx, u, from.header, results)
+	return writeSendResults(ctx, u, from.header, results, attachmentMetadata)
 }
 
 func (c *GmailSendCmd) resolveTrackingConfig(account string, toRecipients, ccRecipients, bccRecipients []string, htmlBody string) (*tracking.Config, error) {
@@ -362,15 +365,16 @@ func sendGmailBatches(ctx context.Context, svc *gmail.Service, opts sendMessageO
 	return results, nil
 }
 
-func writeSendResults(ctx context.Context, u *ui.UI, fromAddr string, results []sendResult) error {
+func writeSendResults(ctx context.Context, u *ui.UI, fromAddr string, results []sendResult, attachments []mailAttachmentMetadata) error {
 	items := make([]gmailMessageResult, 0, len(results))
 	for _, r := range results {
 		items = append(items, gmailMessageResult{
-			From:       fromAddr,
-			To:         r.To,
-			MessageID:  r.MessageID,
-			ThreadID:   r.ThreadID,
-			TrackingID: r.TrackingID,
+			From:        fromAddr,
+			To:          r.To,
+			MessageID:   r.MessageID,
+			ThreadID:    r.ThreadID,
+			TrackingID:  r.TrackingID,
+			Attachments: attachments,
 		})
 	}
 	return writeGmailMessageResults(ctx, u, items)
