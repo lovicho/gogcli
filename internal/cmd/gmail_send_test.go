@@ -331,9 +331,25 @@ func TestGmailSendCmd_RunJSON(t *testing.T) {
 	origNew := newGmailService
 	t.Cleanup(func() { newGmailService = origNew })
 
+	attachmentData := []byte("payload")
+	attachmentPath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(attachmentPath, attachmentData, 0o600); err != nil {
+		t.Fatalf("write attachment: %v", err)
+	}
+
+	var rawSent string
 	svc, cleanup := newGmailServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/gmail/v1")
 		if r.Method == http.MethodPost && path == "/users/me/messages/send" {
+			var msg gmail.Message
+			if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+				t.Fatalf("decode sent message: %v", err)
+			}
+			raw, err := base64.RawURLEncoding.DecodeString(msg.Raw)
+			if err != nil {
+				t.Fatalf("decode raw message: %v", err)
+			}
+			rawSent = string(raw)
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":       "m1",
@@ -356,6 +372,7 @@ func TestGmailSendCmd_RunJSON(t *testing.T) {
 		To:      "a@example.com",
 		Subject: "Hello",
 		Body:    "Body",
+		Attach:  []string{attachmentPath},
 	}
 
 	out := captureStdout(t, func() {
@@ -363,8 +380,22 @@ func TestGmailSendCmd_RunJSON(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 	})
-	if !strings.Contains(out, "\"messageId\"") || !strings.Contains(out, "\"threadId\"") {
-		t.Fatalf("unexpected output: %q", out)
+	var parsed struct {
+		MessageID   string                   `json:"messageId"`
+		ThreadID    string                   `json:"threadId"`
+		Attachments []mailAttachmentMetadata `json:"attachments"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if parsed.MessageID != "m1" || parsed.ThreadID != "t1" {
+		t.Fatalf("unexpected output: %#v", parsed)
+	}
+	if len(parsed.Attachments) != 1 || parsed.Attachments[0].Filename != "report.txt" || parsed.Attachments[0].Size != int64(len(attachmentData)) {
+		t.Fatalf("unexpected attachment metadata: %#v", parsed.Attachments)
+	}
+	if !strings.Contains(rawSent, base64.StdEncoding.EncodeToString(attachmentData)) {
+		t.Fatalf("sent payload does not contain attachment bytes: %q", rawSent)
 	}
 }
 

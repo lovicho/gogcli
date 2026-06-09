@@ -1,9 +1,17 @@
 # Changelog
 
-## 0.22.1 - Unreleased
+## 0.23.1 - Unreleased
 
 ### Added
 
+- Gmail: report attached filenames and byte sizes in JSON results for send and draft create/update. (#716) — thanks @chrischall.
+- Gmail: add `gmail watch pull` for Pub/Sub pull subscription consumers with hook retry support. (#700) — thanks @joshp123.
+
+## 0.23.0 - 2026-06-09
+
+### Added
+
+- CI: enforce a pinned Go dead-code check and remove the unreachable helpers it identified. (#714) — thanks @vincentkoc.
 - Chat: add repeatable `--attach` to `chat messages send` for sending local files with Google Chat messages. (#694) — thanks @omothm.
 - Docs: add `docs comments locate` to resolve comment quotes to Docs API index ranges and report orphaned comments. (#687) — thanks @sebsnyk.
 - Docs: add `docs find-range` to map matched text to Docs API UTF-16 index ranges. (#682) — thanks @sebsnyk.
@@ -11,6 +19,11 @@
 - Docs: add `--link` and `--no-link` to `docs format` for setting or clearing hyperlinks on matched text. (#684) — thanks @sebsnyk.
 - Sheets: add `sheets links set` to write single-cell, multi-link rich-text, and batch hyperlinks. (#713) — thanks @chrischall.
 - Slides: add `slides insert-image` to place a positioned, sized local image on an existing slide. (#695) — thanks @Czaruno.
+
+### Fixed
+
+- Docs: avoid duplicate empty paragraphs around Markdown tables written into a specific tab. (#715) — thanks @sebsnyk.
+- Sheets: prevent accidental table data loss by requiring explicit `--discard-data` for `sheets table delete`, matching the Sheets API's destructive table-delete semantics. (#709) — thanks @chrischall.
 
 ## 0.22.0 - 2026-06-07
 

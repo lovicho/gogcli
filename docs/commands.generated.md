@@ -398,6 +398,7 @@ Generated from `gog schema --json`.
         - [`gog gmail (mail,email) settings vacation get (info,show)`](commands/gog-gmail-settings-vacation-get.md) - Get current vacation responder settings
         - [`gog gmail (mail,email) settings vacation update (edit,set) [flags]`](commands/gog-gmail-settings-vacation-update.md) - Update vacation responder settings
       - [`gog gmail (mail,email) settings watch <command>`](commands/gog-gmail-settings-watch.md) - Manage Gmail watch
+        - [`gog gmail (mail,email) settings watch pull [flags]`](commands/gog-gmail-settings-watch-pull.md) - Run Pub/Sub pull consumer
         - [`gog gmail (mail,email) settings watch renew (update) [flags]`](commands/gog-gmail-settings-watch-renew.md) - Renew Gmail watch using stored config
         - [`gog gmail (mail,email) settings watch serve [flags]`](commands/gog-gmail-settings-watch-serve.md) - Run Pub/Sub push handler
         - [`gog gmail (mail,email) settings watch start (begin) [flags]`](commands/gog-gmail-settings-watch-start.md) - Start Gmail watch for Pub/Sub
@@ -525,7 +526,7 @@ Generated from `gog schema --json`.
       - [`gog sheets (sheet) table (tables) append (add-row,add-rows) <spreadsheetId> <tableId> [<values> ...] [flags]`](commands/gog-sheets-table-append.md) - Append rows to a table
       - [`gog sheets (sheet) table (tables) clear (clear-rows) <spreadsheetId> <tableId>`](commands/gog-sheets-table-clear.md) - Clear table data rows
       - [`gog sheets (sheet) table (tables) create (add,new) --name=STRING --columns-json=STRING <spreadsheetId> <range>`](commands/gog-sheets-table-create.md) - Create a table
-      - [`gog sheets (sheet) table (tables) delete (rm,remove,del) <spreadsheetId> <tableId>`](commands/gog-sheets-table-delete.md) - Delete a table
+      - [`gog sheets (sheet) table (tables) delete (rm,remove,del) <spreadsheetId> <tableId> [flags]`](commands/gog-sheets-table-delete.md) - Delete a table
       - [`gog sheets (sheet) table (tables) get (show,info) <spreadsheetId> <tableId>`](commands/gog-sheets-table-get.md) - Get a table
       - [`gog sheets (sheet) table (tables) list <spreadsheetId>`](commands/gog-sheets-table-list.md) - List tables in a spreadsheet
     - [`gog sheets (sheet) unmerge <spreadsheetId> <range>`](commands/gog-sheets-unmerge.md) - Unmerge cells in a range

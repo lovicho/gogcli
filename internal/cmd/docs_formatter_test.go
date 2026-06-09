@@ -45,6 +45,43 @@ func TestMarkdownToDocsRequests_TableStartIndexUsesBase(t *testing.T) {
 	}
 }
 
+func TestMarkdownToDocsRequests_TableConsumesAdjacentBlankLines(t *testing.T) {
+	elements := ParseMarkdown(strings.Join([]string{
+		"# Title",
+		"",
+		"| col-a | col-b |",
+		"| :--- | :--- |",
+		"| 1 | 2 |",
+		"",
+		"## Next section",
+		"",
+		"Paragraph after the table.",
+	}, "\n"))
+
+	_, text, tables := MarkdownToDocsRequests(elements, 1, "t.0")
+
+	wantText := "Title\n\nNext section\n\nParagraph after the table.\n"
+	if text != wantText {
+		t.Fatalf("text = %q, want %q", text, wantText)
+	}
+	if len(tables) != 1 {
+		t.Fatalf("tables = %d, want 1", len(tables))
+	}
+	if tables[0].StartIndex != 7 {
+		t.Fatalf("table start index = %d, want 7", tables[0].StartIndex)
+	}
+}
+
+func TestMarkdownToDocsRequests_PreservesNonTableBlankLines(t *testing.T) {
+	_, text, tables := MarkdownToDocsRequests(ParseMarkdown("First\n\nSecond"), 1, "")
+	if text != "First\n\nSecond\n" {
+		t.Fatalf("text = %q, want preserved body paragraph gap", text)
+	}
+	if len(tables) != 0 {
+		t.Fatalf("unexpected tables: %d", len(tables))
+	}
+}
+
 func TestMarkdownToDocsRequests_Strikethrough(t *testing.T) {
 	elements := []MarkdownElement{{Type: MDParagraph, Content: "~~struck out~~ vs **bold**"}}
 	requests, text, tables := MarkdownToDocsRequests(elements, 10, "t.second")

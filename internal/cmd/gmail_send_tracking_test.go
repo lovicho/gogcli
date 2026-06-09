@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -83,11 +83,24 @@ func TestWriteSendResults_JSONMultiple(t *testing.T) {
 		if err := writeSendResults(ctx, u, "from@example.com", []sendResult{
 			{MessageID: "m1", ThreadID: "t1", To: "a@example.com"},
 			{MessageID: "m2", ThreadID: "t2", To: "b@example.com"},
-		}); err != nil {
+		}, []mailAttachmentMetadata{{Filename: "report.pdf", Size: 42}}); err != nil {
 			t.Fatalf("writeSendResults: %v", err)
 		}
 	})
-	if !strings.Contains(out, "\"messages\"") {
-		t.Fatalf("unexpected json output: %q", out)
+	var parsed struct {
+		Messages []struct {
+			Attachments []mailAttachmentMetadata `json:"attachments"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if len(parsed.Messages) != 2 {
+		t.Fatalf("unexpected messages: %#v", parsed.Messages)
+	}
+	for i, message := range parsed.Messages {
+		if len(message.Attachments) != 1 || message.Attachments[0].Filename != "report.pdf" || message.Attachments[0].Size != 42 {
+			t.Fatalf("messages[%d] attachments = %#v", i, message.Attachments)
+		}
 	}
 }

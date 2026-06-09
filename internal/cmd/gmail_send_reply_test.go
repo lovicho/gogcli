@@ -145,7 +145,7 @@ func TestWriteSendResults_JSON(t *testing.T) {
 	out := captureStdout(t, func() {
 		if err := writeSendResults(ctx, u, "from@example.com", []sendResult{
 			{MessageID: "m1", ThreadID: "t1", TrackingID: "trk"},
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatalf("writeSendResults: %v", err)
 		}
 	})

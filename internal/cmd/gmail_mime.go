@@ -24,6 +24,11 @@ type mailAttachment struct {
 	DataSet  bool
 }
 
+type mailAttachmentMetadata struct {
+	Filename string `json:"filename"`
+	Size     int64  `json:"size"`
+}
+
 type rfc822Config struct {
 	allowMissingTo bool
 }
@@ -126,6 +131,11 @@ func buildRFC822(opts mailOptions, cfg *rfc822Config) ([]byte, error) {
 	hasPlain := strings.TrimSpace(plainBody) != ""
 	hasHTML := strings.TrimSpace(htmlBody) != ""
 
+	attachments, _, prepareErr := prepareMailAttachments(opts.Attachments)
+	if prepareErr != nil {
+		return nil, prepareErr
+	}
+
 	if len(opts.Attachments) == 0 {
 		switch {
 		case hasPlain && hasHTML:
@@ -186,24 +196,7 @@ func buildRFC822(opts mailOptions, cfg *rfc822Config) ([]byte, error) {
 	}
 
 	// Attachments
-	for _, a := range opts.Attachments {
-		if a.Filename == "" {
-			a.Filename = filepath.Base(a.Path)
-		}
-		if a.MIMEType == "" {
-			a.MIMEType = mime.TypeByExtension(strings.ToLower(filepath.Ext(a.Filename)))
-			if a.MIMEType == "" {
-				a.MIMEType = "application/octet-stream"
-			}
-		}
-		if len(a.Data) == 0 && !a.DataSet {
-			data, err := os.ReadFile(a.Path)
-			if err != nil {
-				return nil, err
-			}
-			a.Data = data
-		}
-
+	for _, a := range attachments {
 		fmt.Fprintf(&b, "\r\n--%s\r\n", mixedBoundary)
 		fmt.Fprintf(&b, "Content-Type: %s\r\n", a.MIMEType)
 		b.WriteString("Content-Transfer-Encoding: base64\r\n")
@@ -214,6 +207,41 @@ func buildRFC822(opts mailOptions, cfg *rfc822Config) ([]byte, error) {
 
 	fmt.Fprintf(&b, "--%s--\r\n", mixedBoundary)
 	return b.Bytes(), nil
+}
+
+func prepareMailAttachments(attachments []mailAttachment) ([]mailAttachment, []mailAttachmentMetadata, error) {
+	if len(attachments) == 0 {
+		return nil, nil, nil
+	}
+
+	prepared := make([]mailAttachment, 0, len(attachments))
+	metadata := make([]mailAttachmentMetadata, 0, len(attachments))
+	for _, attachment := range attachments {
+		if attachment.Filename == "" {
+			attachment.Filename = filepath.Base(attachment.Path)
+		}
+		if attachment.MIMEType == "" {
+			attachment.MIMEType = mime.TypeByExtension(strings.ToLower(filepath.Ext(attachment.Filename)))
+			if attachment.MIMEType == "" {
+				attachment.MIMEType = "application/octet-stream"
+			}
+		}
+		if len(attachment.Data) == 0 && !attachment.DataSet {
+			data, err := os.ReadFile(attachment.Path)
+			if err != nil {
+				return nil, nil, err
+			}
+			attachment.Data = data
+			attachment.DataSet = true
+		}
+
+		prepared = append(prepared, attachment)
+		metadata = append(metadata, mailAttachmentMetadata{
+			Filename: attachment.Filename,
+			Size:     int64(len(attachment.Data)),
+		})
+	}
+	return prepared, metadata, nil
 }
 
 func mailDateLocation() (*time.Location, error) {

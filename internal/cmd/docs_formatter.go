@@ -311,7 +311,13 @@ func MarkdownToDocsRequests(elements []MarkdownElement, baseIndex int64, tabID s
 			}
 
 		case MDEmptyLine:
-			// Add empty line
+			// InsertTable supplies the paragraph before a native table, while
+			// the table placeholder supplies the paragraph after it. Emitting
+			// the source blank line too would double both gaps.
+			if (i > 0 && elements[i-1].Type == MDTable) ||
+				(i+1 < len(elements) && elements[i+1].Type == MDTable) {
+				continue
+			}
 			plainText.WriteString("\n")
 			charOffset += utf16Len("\n")
 

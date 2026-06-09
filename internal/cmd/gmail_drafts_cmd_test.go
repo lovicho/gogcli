@@ -510,7 +510,7 @@ func TestGmailDraftsCreateCmd_WithFromAndReply(t *testing.T) {
 	ctx := ui.WithUI(context.Background(), u)
 	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
 
-	_ = captureStdout(t, func() {
+	jsonOut := captureStdout(t, func() {
 		if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
 			"--to", "a@example.com",
 			"--subject", "S",
@@ -522,6 +522,15 @@ func TestGmailDraftsCreateCmd_WithFromAndReply(t *testing.T) {
 			t.Fatalf("execute: %v", err)
 		}
 	})
+	var parsed struct {
+		Attachments []mailAttachmentMetadata `json:"attachments"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if len(parsed.Attachments) != 1 || parsed.Attachments[0].Filename != "note.txt" || parsed.Attachments[0].Size != 5 {
+		t.Fatalf("unexpected attachment metadata: %#v", parsed.Attachments)
+	}
 }
 
 func TestGmailDraftsCreateCmd_WithQuote(t *testing.T) {
@@ -852,14 +861,18 @@ func TestGmailDraftsUpdateCmd_JSON(t *testing.T) {
 	})
 
 	var parsed struct {
-		DraftID  string `json:"draftId"`
-		ThreadID string `json:"threadId"`
+		DraftID     string                   `json:"draftId"`
+		ThreadID    string                   `json:"threadId"`
+		Attachments []mailAttachmentMetadata `json:"attachments"`
 	}
 	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if parsed.DraftID != "d1" || parsed.ThreadID != "t1" {
 		t.Fatalf("unexpected json: %#v", parsed)
+	}
+	if len(parsed.Attachments) != 1 || parsed.Attachments[0].Filename != "note.txt" || parsed.Attachments[0].Size != int64(len(attData)) {
+		t.Fatalf("unexpected attachment metadata: %#v", parsed.Attachments)
 	}
 }
 
@@ -1645,7 +1658,7 @@ func draftUpdateAttachmentServer(t *testing.T, posted *gmail.Draft, attBytesHit 
 	}))
 }
 
-func runDraftUpdate(t *testing.T, srv *httptest.Server, args []string) {
+func runDraftUpdate(t *testing.T, srv *httptest.Server, args []string) string {
 	t.Helper()
 	origNew := newGmailService
 	t.Cleanup(func() { newGmailService = origNew })
@@ -1661,7 +1674,7 @@ func runDraftUpdate(t *testing.T, srv *httptest.Server, args []string) {
 		t.Fatalf("ui.New: %v", uiErr)
 	}
 	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-	_ = captureStdout(t, func() {
+	return captureStdout(t, func() {
 		if runErr := runKong(t, &GmailDraftsUpdateCmd{}, args, ctx, flags); runErr != nil {
 			t.Fatalf("execute: %v", runErr)
 		}
@@ -1675,7 +1688,7 @@ func TestGmailDraftsUpdateCmd_PreservesAttachmentsWhenOmitted(t *testing.T) {
 	srv := draftUpdateAttachmentServer(t, &posted, &attBytesHit)
 	defer srv.Close()
 
-	runDraftUpdate(t, srv, []string{"d1", "--to", "keep@example.com", "--subject", "S", "--body", "new body"})
+	jsonOut := runDraftUpdate(t, srv, []string{"d1", "--to", "keep@example.com", "--subject", "S", "--body", "new body"})
 
 	if !attBytesHit {
 		t.Fatal("expected attachment bytes to be fetched for preservation")
@@ -1703,6 +1716,26 @@ func TestGmailDraftsUpdateCmd_PreservesAttachmentsWhenOmitted(t *testing.T) {
 	if !strings.Contains(s, `filename="zero.txt"`) {
 		t.Fatalf("zero-byte inline attachment filename missing from rebuilt draft:\n%s", s)
 	}
+	var parsed struct {
+		Attachments []mailAttachmentMetadata `json:"attachments"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	want := []mailAttachmentMetadata{
+		{Filename: "report.pdf", Size: 5},
+		{Filename: "empty.bin", Size: 0},
+		{Filename: "inline.txt", Size: 6},
+		{Filename: "zero.txt", Size: 0},
+	}
+	if len(parsed.Attachments) != len(want) {
+		t.Fatalf("unexpected attachment metadata: %#v", parsed.Attachments)
+	}
+	for i := range want {
+		if parsed.Attachments[i] != want[i] {
+			t.Fatalf("attachments[%d] = %#v, want %#v", i, parsed.Attachments[i], want[i])
+		}
+	}
 }
 
 // --clear-attachments drops the draft's existing attachments and skips the byte fetch.
@@ -1712,7 +1745,7 @@ func TestGmailDraftsUpdateCmd_ClearAttachmentsRemovesThem(t *testing.T) {
 	srv := draftUpdateAttachmentServer(t, &posted, &attBytesHit)
 	defer srv.Close()
 
-	runDraftUpdate(t, srv, []string{"d1", "--to", "keep@example.com", "--subject", "S", "--body", "new body", "--clear-attachments"})
+	jsonOut := runDraftUpdate(t, srv, []string{"d1", "--to", "keep@example.com", "--subject", "S", "--body", "new body", "--clear-attachments"})
 
 	if attBytesHit {
 		t.Fatal("did not expect attachment bytes to be fetched when clearing")
@@ -1723,6 +1756,13 @@ func TestGmailDraftsUpdateCmd_ClearAttachmentsRemovesThem(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "report.pdf") {
 		t.Fatalf("attachment should have been cleared:\n%s", string(raw))
+	}
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if _, ok := parsed["attachments"]; ok {
+		t.Fatalf("attachments should be omitted after clear: %s", jsonOut)
 	}
 }
 

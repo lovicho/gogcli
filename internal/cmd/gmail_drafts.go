@@ -294,19 +294,23 @@ func (c draftComposeInput) validate() error {
 	return nil
 }
 
-func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, input draftComposeInput) (*gmail.Message, string, error) {
+func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, input draftComposeInput) (*gmail.Message, string, []mailAttachmentMetadata, error) {
 	from, err := resolveComposeSender(ctx, svc, account, input.From)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
 	info, body, htmlBody, err := prepareComposeReply(ctx, svc, input.ReplyToMessageID, input.ReplyToThreadID, input.Quote, input.Body, input.BodyHTML)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 	threadID := info.ThreadID
 	atts := attachmentsFromPaths(input.Attach)
 	atts = append(atts, input.PrebuiltAttachments...)
+	atts, attachmentMetadata, err := prepareMailAttachments(atts)
+	if err != nil {
+		return nil, "", nil, err
+	}
 	subject := input.Subject
 	if strings.TrimSpace(subject) == "" {
 		subject = autoReplySubject("", info.Subject)
@@ -326,10 +330,10 @@ func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, 
 		Bcc: splitCSV(input.Bcc),
 	}, &rfc822Config{allowMissingTo: true})
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
 	}
 
-	return msg, threadID, nil
+	return msg, threadID, attachmentMetadata, nil
 }
 
 // carryForwardDraftAttachments fetches the bytes of an existing draft message's
@@ -406,16 +410,20 @@ func fetchDraftAttachmentBytes(ctx context.Context, svc *gmail.Service, messageI
 	return decodeBase64URLBytes(body.Data)
 }
 
-func writeDraftResult(ctx context.Context, u *ui.UI, draft *gmail.Draft, threadID string) error {
+func writeDraftResult(ctx context.Context, u *ui.UI, draft *gmail.Draft, threadID string, attachments []mailAttachmentMetadata) error {
 	if threadID == "" && draft != nil && draft.Message != nil {
 		threadID = draft.Message.ThreadId
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		result := map[string]any{
 			"draftId":  draft.Id,
 			"message":  draft.Message,
 			"threadId": threadID,
-		})
+		}
+		if len(attachments) > 0 {
+			result["attachments"] = attachments
+		}
+		return outfmt.WriteJSON(ctx, os.Stdout, result)
 	}
 	u.Out().Linef("draft_id\t%s", draft.Id)
 	if draft.Message != nil && draft.Message.Id != "" {
@@ -578,7 +586,7 @@ func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	msg, threadID, err := buildDraftMessage(ctx, svc, account, input)
+	msg, threadID, attachmentMetadata, err := buildDraftMessage(ctx, svc, account, input)
 	if err != nil {
 		return err
 	}
@@ -587,7 +595,7 @@ func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if err != nil {
 		return err
 	}
-	return writeDraftResult(ctx, u, draft, threadID)
+	return writeDraftResult(ctx, u, draft, threadID, attachmentMetadata)
 }
 
 type GmailDraftsUpdateCmd struct {
@@ -750,7 +758,7 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	input.ReplyToMessageID = replyToMessageID
 	input.ReplyToThreadID = replyToThreadID
 
-	msg, threadID, err := buildDraftMessage(ctx, svc, account, input)
+	msg, threadID, attachmentMetadata, err := buildDraftMessage(ctx, svc, account, input)
 	if err != nil {
 		return err
 	}
@@ -759,5 +767,5 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if err != nil {
 		return err
 	}
-	return writeDraftResult(ctx, u, draft, threadID)
+	return writeDraftResult(ctx, u, draft, threadID, attachmentMetadata)
 }

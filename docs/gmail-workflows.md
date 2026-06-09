@@ -66,7 +66,19 @@ For account-specific send blocking, use the no-send config commands:
 - [`gog config no-send list`](commands/gog-config-no-send-list.md)
 - [`gog config no-send remove`](commands/gog-config-no-send-remove.md)
 
-## Watches and Push
+## Attachment Confirmation
+
+`gmail send --json` and `gmail drafts create|update --json` include an
+`attachments` array when the resulting message contains attachments:
+
+```json
+{"attachments":[{"filename":"report.pdf","size":2411233}]}
+```
+
+Sizes are reported in bytes. Draft updates report preserved attachments when
+`--attach` is omitted; `--clear-attachments` removes them and omits the field.
+
+## Watches and Pub/Sub
 
 Gmail watch/PubSub workflows are documented in [Gmail watch](watch.md).
 
@@ -74,6 +86,7 @@ Key command pages:
 
 - [`gog gmail watch start`](commands/gog-gmail-settings-watch-start.md)
 - [`gog gmail watch serve`](commands/gog-gmail-settings-watch-serve.md)
+- [`gog gmail watch pull`](commands/gog-gmail-settings-watch-pull.md)
 - [`gog gmail watch renew`](commands/gog-gmail-settings-watch-renew.md)
 - [`gog gmail history`](commands/gog-gmail-history.md)
 

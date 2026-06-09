@@ -16,6 +16,7 @@ gog gmail (mail,email) settings watch <command>
 
 ## Subcommands
 
+- [gog gmail settings watch pull](gog-gmail-settings-watch-pull.md) - Run Pub/Sub pull consumer
 - [gog gmail settings watch renew](gog-gmail-settings-watch-renew.md) - Renew Gmail watch using stored config
 - [gog gmail settings watch serve](gog-gmail-settings-watch-serve.md) - Run Pub/Sub push handler
 - [gog gmail settings watch start](gog-gmail-settings-watch-start.md) - Start Gmail watch for Pub/Sub
