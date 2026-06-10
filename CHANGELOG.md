@@ -6,6 +6,12 @@
 
 - Gmail: report attached filenames and byte sizes in JSON results for send and draft create/update. (#716) — thanks @chrischall.
 - Gmail: add `gmail watch pull` for Pub/Sub pull subscription consumers with hook retry support. (#700) — thanks @joshp123.
+- Docs: add `--tab` and `--all-tabs` to `docs raw` for inspecting specific or complete multi-tab document content. (#697) — thanks @sebsnyk.
+
+### Fixed
+
+- Docs: avoid duplicate empty paragraphs adjacent to Markdown headings while preserving body paragraph spacing. (#717, #720) — thanks @TurboTheTurtle.
+- Auth: repair duplicate macOS Keychain writes for legacy and subject token aliases without weakening primary token persistence. (#718, #721) — thanks @TurboTheTurtle.
 
 ## 0.23.0 - 2026-06-09
 
