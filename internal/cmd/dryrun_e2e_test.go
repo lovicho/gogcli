@@ -112,6 +112,21 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			op:   "docs.delete-tab",
 		},
 		{
+			name: "docs named range create",
+			args: []string{"docs", "named-range", "create", "doc123", "--name", "Intro", "--start", "1", "--end", "5"},
+			op:   "docs.named-range.create",
+		},
+		{
+			name: "docs named range replace",
+			args: []string{"docs", "named-range", "replace", "doc123", "nr123", "--text", "hello"},
+			op:   "docs.named-range.replace",
+		},
+		{
+			name: "docs named range delete",
+			args: []string{"docs", "named-range", "delete", "doc123", "nr123"},
+			op:   "docs.named-range.delete",
+		},
+		{
 			name: "docs export tab",
 			args: []string{"docs", "export", "doc123", "--tab", "Tab 1", "--format", "pdf", "--out", "/tmp/gog-dryrun-tab.pdf"},
 			op:   "docs.tab-export",
@@ -565,6 +580,16 @@ func TestDryRunE2E_MutatingCommandsSkipAuthAndAPI(t *testing.T) {
 			name: "sheets conditional clear all",
 			args: []string{"sheets", "conditional-format", "clear", "sheet123", "--sheet", "Sheet1", "--all"},
 			op:   "sheets.conditional-format.clear",
+		},
+		{
+			name: "sheets validation set",
+			args: []string{"sheets", "validation", "set", "sheet123", "Sheet1!A1:A10", "--type", "ONE_OF_LIST", "--value", "one", "--value", "two"},
+			op:   "sheets.validation.set",
+		},
+		{
+			name: "sheets validation clear",
+			args: []string{"sheets", "validation", "clear", "sheet123", "Sheet1!A1:A10"},
+			op:   "sheets.validation.clear",
 		},
 		{
 			name: "sheets copy",
