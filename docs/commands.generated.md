@@ -266,7 +266,15 @@ Generated from `gog schema --json`.
     - [`gog docs (doc) rename-tab <docId> [flags]`](commands/gog-docs-rename-tab.md) - Rename a tab in a Google Doc
     - [`gog docs (doc) sed <docId> [<expression>] [flags]`](commands/gog-docs-sed.md) - Regex find/replace (sed-style: s/pattern/replacement/g)
     - [`gog docs (doc) structure (struct) <docId> [flags]`](commands/gog-docs-structure.md) - Show document structure with numbered paragraphs
+    - [`gog docs (doc) table-column <command>`](commands/gog-docs-table-column.md) - Insert or delete native table columns
+      - [`gog docs (doc) table-column delete (rm,remove,del) --col=INT <docId> [flags]`](commands/gog-docs-table-column-delete.md) - Delete a native table column
+      - [`gog docs (doc) table-column insert (add,append) <docId> [flags]`](commands/gog-docs-table-column-insert.md) - Insert a native table column
     - [`gog docs (doc) table-column-width (table-width,column-width) <docId> [flags]`](commands/gog-docs-table-column-width.md) - Set or reset native table column widths
+    - [`gog docs (doc) table-merge --range=STRING <docId> [flags]`](commands/gog-docs-table-merge.md) - Merge a native table cell range
+    - [`gog docs (doc) table-row <command>`](commands/gog-docs-table-row.md) - Insert or delete native table rows
+      - [`gog docs (doc) table-row delete (rm,remove,del) --row=INT <docId> [flags]`](commands/gog-docs-table-row-delete.md) - Delete a native table row
+      - [`gog docs (doc) table-row insert (add,append) <docId> [flags]`](commands/gog-docs-table-row-insert.md) - Insert a native table row
+    - [`gog docs (doc) table-unmerge (table-split) --cell=STRING <docId> [flags]`](commands/gog-docs-table-unmerge.md) - Unmerge the region containing a native table cell
     - [`gog docs (doc) tables <command>`](commands/gog-docs-tables.md) - List native tables
       - [`gog docs (doc) tables list (ls) <docId> [flags]`](commands/gog-docs-tables-list.md) - List native tables in document order
     - [`gog docs (doc) tabs <command>`](commands/gog-docs-tabs.md) - Manage Google Doc tabs
@@ -509,6 +517,7 @@ Generated from `gog schema --json`.
     - [`gog sheets (sheet) copy (cp,duplicate) <spreadsheetId> <title> [flags]`](commands/gog-sheets-copy.md) - Copy a Google Sheet
     - [`gog sheets (sheet) copy-paste (fill,copy-range) <spreadsheetId> <source> <dest> [flags]`](commands/gog-sheets-copy-paste.md) - Copy a range's values/formulas/format to another range (tiles to fill down/across)
     - [`gog sheets (sheet) create (new) <title> [flags]`](commands/gog-sheets-create.md) - Create a new spreadsheet
+    - [`gog sheets (sheet) delete-dimension (delete-dim) --dimension=STRING <spreadsheetId> <rangeOrSheet> [flags]`](commands/gog-sheets-delete-dimension.md) - Delete rows or columns while preserving intersecting tables
     - [`gog sheets (sheet) delete-tab (delete-sheet) <spreadsheetId> <tabName>`](commands/gog-sheets-delete-tab.md) - Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)
     - [`gog sheets (sheet) export (download,dl) <spreadsheetId> [flags]`](commands/gog-sheets-export.md) - Export a Google Sheet (pdf|xlsx|csv) via Drive
     - [`gog sheets (sheet) find-replace <spreadsheetId> <find> <replace> [flags]`](commands/gog-sheets-find-replace.md) - Find and replace text across a spreadsheet
