@@ -77,7 +77,7 @@ func TestDocsWrite_MarkdownReplaceUsesDriveUpdate(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	mdFile := filepath.Join(tmpDir, "test.md")
-	markdown := "# Hello\n\n- item\n"
+	markdown := "# Hello\n\n- item\n\n| label | content |\n|---|---|\n| code | `doThing()` |\n"
 	if err := os.WriteFile(mdFile, []byte(markdown), 0o600); err != nil {
 		t.Fatalf("write markdown temp file: %v", err)
 	}
@@ -90,6 +90,9 @@ func TestDocsWrite_MarkdownReplaceUsesDriveUpdate(t *testing.T) {
 	}
 	if !strings.Contains(uploadBody, "# Hello") {
 		t.Fatalf("expected upload body to contain markdown content, got: %q", uploadBody)
+	}
+	if !strings.Contains(uploadBody, "| code | `doThing()` |") {
+		t.Fatalf("expected upload body to preserve table-cell inline code, got: %q", uploadBody)
 	}
 }
 
@@ -792,13 +795,18 @@ func TestDocsWrite_MarkdownAppendStartsStyledBlocksOnFreshParagraph(t *testing.T
 	}
 	reqs := batchRequests[0]
 	if len(reqs) != 4 {
-		t.Fatalf("expected insert, bullet, code font, and code shading requests, got %#v", reqs)
+		t.Fatalf("expected insert, bullet, code text style, and code shading requests, got %#v", reqs)
 	}
 	if got := reqs[0].InsertText; got == nil || got.Location.Index != 9 || got.Text != "\nItem\n\nline 1"+docsSoftLineBreak+"line 2\n" {
 		t.Fatalf("unexpected markdown insert: %#v", got)
 	}
 	if got := reqs[1].CreateParagraphBullets; got == nil || got.Range.StartIndex != 10 || got.Range.EndIndex != 15 {
 		t.Fatalf("unexpected bullet request: %#v", got)
+	}
+	if got := reqs[2].UpdateTextStyle; got == nil || got.Range.StartIndex != 16 || got.Range.EndIndex != 30 {
+		t.Fatalf("unexpected code text style request: %#v", got)
+	} else {
+		assertFencedCodeTextStyle(t, got)
 	}
 	if got := reqs[3].UpdateParagraphStyle; got == nil || got.Range.StartIndex != 16 || got.Range.EndIndex != 30 {
 		t.Fatalf("unexpected code shading request: %#v", got)

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Calendar: add repeatable `--attachment` to `calendar update` for replacing or clearing event attachments. (#738) — thanks @TreyLawrence.
 - Sheets: add `sheets validation` get/set/clear commands for dropdown, checkbox, number, date, range, and custom-formula rules, and preserve table-managed dropdowns during validation-only copy/paste. (#710) — thanks @chrischall.
 - Sheets: add table-aware `sheets delete-dimension` for deleting row or column spans while preserving intersecting table objects and remaining data. (#711) — thanks @chrischall.
 - Docs: add direct `docs table-row`, `docs table-column`, `docs table-merge`, and `docs table-unmerge` commands with index, header-text, all-table, and tab-aware selection. (#686) — thanks @sebsnyk.
@@ -12,9 +13,14 @@
 - Gmail: add `gmail watch pull` for Pub/Sub pull subscription consumers with hook retry support. (#700) — thanks @joshp123.
 - Docs: add `--tab` and `--all-tabs` to `docs raw` for inspecting specific or complete multi-tab document content. (#697) — thanks @sebsnyk.
 - Docs: add tab-aware table, image, heading, and paragraph enumerators with structured and plain output. (#719) — thanks @sebsnyk.
+- Docs: style locally rendered fenced Markdown blocks with Roboto Mono, dark-green text, and existing paragraph shading. (#676, #724) — thanks @TurboTheTurtle.
 
 ### Fixed
 
+- Docs: reset inherited text styles before applying Markdown find-replace formatting so leading bold spans and later inline styles stay paired correctly. (#735) — thanks @sebsnyk.
+- Docs: accept leading-dash Markdown list values in `docs cell-update --content` and reject nonempty Markdown that produces no editable cell text. (#733) — thanks @sebsnyk.
+- Docs: keep inline Markdown find-replace fragments inside their existing paragraph unless the replacement explicitly ends with a newline. (#736) — thanks @sebsnyk.
+- Docs: render HTML `<br>` variants as line breaks inside Markdown table cells while preserving protected literals. (#730) — thanks @sebsnyk.
 - Docs: avoid duplicate empty paragraphs adjacent to Markdown headings while preserving body paragraph spacing. (#717, #720) — thanks @TurboTheTurtle.
 - Auth: repair duplicate macOS Keychain writes for legacy and subject token aliases without weakening primary token persistence. (#718, #721) — thanks @TurboTheTurtle.
 
