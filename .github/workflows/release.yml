@@ -107,38 +107,119 @@ jobs:
 
           request_id="gogcli-${RELEASE_TAG}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           expected_title="Update gogcli for ${RELEASE_TAG} (${request_id})"
+          version="${RELEASE_TAG#v}"
+          formula_url="https://raw.githubusercontent.com/openclaw/homebrew-tap/main/Formula/gogcli.rb"
+          checksums_url="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/checksums.txt"
+          checksums="$(curl -fsSL "$checksums_url")"
 
-          gh workflow run update-formula.yml \
-            --repo openclaw/homebrew-tap \
-            --ref main \
-            -f formula=gogcli \
-            -f tag="$RELEASE_TAG" \
-            -f repository=${{ github.repository }} \
-            -f artifact_template="{formula}_{version}_{target}.tar.gz" \
-            -f request_id="$request_id"
+          sha_for_asset() {
+            awk -v name="$1" '$2 == name {print $1}' <<<"$checksums"
+          }
 
-          run_id=""
-          for _ in {1..30}; do
-            run_id=$(gh run list \
-              --repo openclaw/homebrew-tap \
-              --workflow update-formula.yml \
-              --branch main \
-              --event workflow_dispatch \
-              --limit 20 \
-              --json databaseId,displayTitle \
-              --jq ".[] | select(.displayTitle == \"$expected_title\") | .databaseId" | head -n1)
-            if [ -n "$run_id" ]; then
-              break
-            fi
-            sleep 5
-          done
+          darwin_amd64_sha="$(sha_for_asset "gogcli_${version}_darwin_amd64.tar.gz")"
+          darwin_arm64_sha="$(sha_for_asset "gogcli_${version}_darwin_arm64.tar.gz")"
+          linux_amd64_sha="$(sha_for_asset "gogcli_${version}_linux_amd64.tar.gz")"
+          linux_arm64_sha="$(sha_for_asset "gogcli_${version}_linux_arm64.tar.gz")"
 
-          if [ -z "$run_id" ]; then
-            echo "::error::Could not find tap workflow run with title: $expected_title"
+          if [ -z "$darwin_amd64_sha" ] || [ -z "$darwin_arm64_sha" ] ||
+             [ -z "$linux_amd64_sha" ] || [ -z "$linux_arm64_sha" ]; then
+            echo "::error::Missing expected checksums for ${RELEASE_TAG}"
             exit 1
           fi
 
-          gh run watch "$run_id" \
-            --repo openclaw/homebrew-tap \
-            --exit-status \
-            --interval 10
+          dispatch_output="$(
+            gh workflow run update-formula.yml \
+              --repo openclaw/homebrew-tap \
+              --ref main \
+              -f formula=gogcli \
+              -f tag="$RELEASE_TAG" \
+              -f repository=${{ github.repository }} \
+              -f artifact_template="{formula}_{version}_{target}.tar.gz" \
+              -f request_id="$request_id"
+          )"
+          run_url="$(
+            grep -Eo 'https://github.com/openclaw/homebrew-tap/actions/runs/[0-9]+' \
+              <<<"$dispatch_output" | tail -n1 || true
+          )"
+
+          run_id=""
+          if [[ "$run_url" =~ ^https://github.com/openclaw/homebrew-tap/actions/runs/[0-9]+$ ]]; then
+            run_id="${run_url##*/}"
+          fi
+
+          tap_succeeded=false
+
+          formula_sha_for_asset() {
+            local remainder="${formula#*"$1"}"
+            remainder="${remainder#*sha256 \"}"
+            printf '%s\n' "${remainder%%\"*}"
+          }
+
+          for attempt in {1..90}; do
+            sleep_seconds=5
+            formula="$(curl -fsSL "${formula_url}?request_id=${request_id}&attempt=${attempt}" || true)"
+
+            if [ -z "$run_id" ]; then
+              : > /tmp/tap-run-status-error
+              run_id="$(
+                gh run list \
+                  --repo openclaw/homebrew-tap \
+                  --workflow update-formula.yml \
+                  --branch main \
+                  --event workflow_dispatch \
+                  --limit 20 \
+                  --json databaseId,displayTitle \
+                  --jq ".[] | select(.displayTitle == \"$expected_title\") | .databaseId" \
+                  2>/tmp/tap-run-status-error | head -n1 || true
+              )"
+
+              if [ -z "$run_id" ] && [ -s /tmp/tap-run-status-error ]; then
+                sleep_seconds=60
+                if [ "$attempt" -eq 1 ]; then
+                  cat /tmp/tap-run-status-error >&2
+                  echo "Tap workflow lookup unavailable; retrying until the API quota resets."
+                fi
+              fi
+            fi
+
+            if [ -n "$run_id" ] && ! "$tap_succeeded"; then
+              : > /tmp/tap-run-status-error
+              run_state="$(
+                gh api "repos/openclaw/homebrew-tap/actions/runs/${run_id}" \
+                  --jq '[.status, (.conclusion // "")] | @tsv' \
+                  2>/tmp/tap-run-status-error || true
+              )"
+
+              if [ -z "$run_state" ]; then
+                sleep_seconds=60
+                if [ "$attempt" -eq 1 ]; then
+                  cat /tmp/tap-run-status-error >&2
+                  echo "Tap workflow status unavailable; retrying until the API quota resets."
+                fi
+              else
+                IFS=$'\t' read -r run_status run_conclusion <<<"$run_state"
+                if [ "$run_status" = "completed" ]; then
+                  if [ "$run_conclusion" != "success" ]; then
+                    echo "::error::Homebrew tap workflow ended with conclusion: ${run_conclusion}"
+                    exit 1
+                  fi
+                  tap_succeeded=true
+                fi
+              fi
+            fi
+
+            if "$tap_succeeded" &&
+               grep -Fq "version \"${version}\"" <<<"$formula" &&
+               [ "$(formula_sha_for_asset "gogcli_${version}_darwin_amd64.tar.gz")" = "$darwin_amd64_sha" ] &&
+               [ "$(formula_sha_for_asset "gogcli_${version}_darwin_arm64.tar.gz")" = "$darwin_arm64_sha" ] &&
+               [ "$(formula_sha_for_asset "gogcli_${version}_linux_amd64.tar.gz")" = "$linux_amd64_sha" ] &&
+               [ "$(formula_sha_for_asset "gogcli_${version}_linux_arm64.tar.gz")" = "$linux_arm64_sha" ]; then
+              echo "Homebrew formula updated for ${RELEASE_TAG}"
+              exit 0
+            fi
+
+            sleep "$sleep_seconds"
+          done
+
+          echo "::error::Homebrew formula did not update for ${RELEASE_TAG}"
+          exit 1

@@ -69,6 +69,13 @@ Generated from `gog schema --json`.
     - [`gog backup push [flags]`](commands/gog-backup-push.md) - Export services into encrypted backup shards
     - [`gog backup status [flags]`](commands/gog-backup-status.md) - Inspect backup manifest without decrypting shards
     - [`gog backup verify [flags]`](commands/gog-backup-verify.md) - Decrypt and verify all backup shards
+  - [`gog batch <command> [flags]`](commands/gog-batch.md) - Build and submit persisted Google Docs request batches
+    - [`gog batch abort (rm,delete) <batchId>`](commands/gog-batch-abort.md) - Delete a request batch without submitting
+    - [`gog batch begin --doc=STRING [flags]`](commands/gog-batch-begin.md) - Begin a persisted request batch
+    - [`gog batch end (submit) <batchId> [flags]`](commands/gog-batch-end.md) - Submit and remove a request batch
+    - [`gog batch list (ls)`](commands/gog-batch-list.md) - List persisted request batches
+    - [`gog batch prune [flags]`](commands/gog-batch-prune.md) - Delete stale request batches
+    - [`gog batch show <batchId>`](commands/gog-batch-show.md) - Show a persisted request batch
   - [`gog calendar (cal) <command> [flags]`](commands/gog-calendar.md) - Google Calendar
     - [`gog calendar (cal) acl (permissions,perms) <calendarId> [flags]`](commands/gog-calendar-acl.md) - List calendar ACL
     - [`gog calendar (cal) alias <command>`](commands/gog-calendar-alias.md) - Manage calendar aliases
@@ -249,7 +256,7 @@ Generated from `gog schema --json`.
     - [`gog docs (doc) insert <docId> [<content>] [flags]`](commands/gog-docs-insert.md) - Insert text at a specific position
     - [`gog docs (doc) insert-date-chip --date=STRING <docId> [flags]`](commands/gog-docs-insert-date-chip.md) - Insert a native date smart chip
     - [`gog docs (doc) insert-file-chip (insert-rich-link) --file-id=STRING <docId> [flags]`](commands/gog-docs-insert-file-chip.md) - Insert a native Drive file smart chip
-    - [`gog docs (doc) insert-image --file=STRING <docId> [flags]`](commands/gog-docs-insert-image.md) - Upload a local image and insert it into a Google Doc
+    - [`gog docs (doc) insert-image <docId> [flags]`](commands/gog-docs-insert-image.md) - Insert a public image URL or upload a local image into a Google Doc
     - [`gog docs (doc) insert-page-break (page-break,pb) <docId> [flags]`](commands/gog-docs-insert-page-break.md) - Insert a page break at a specific position (or end-of-doc with --at-end)
     - [`gog docs (doc) insert-person --email=STRING <docId> [flags]`](commands/gog-docs-insert-person.md) - Insert a native person smart chip
     - [`gog docs (doc) insert-table --rows=INT --cols=INT <docId> [flags]`](commands/gog-docs-insert-table.md) - Insert a native table at a specific position (or end-of-doc with --at-end), optionally populated via --values-json
@@ -328,6 +335,9 @@ Generated from `gog schema --json`.
     - [`gog drive (drv) permissions <fileId> [flags]`](commands/gog-drive-permissions.md) - List permissions on a file
     - [`gog drive (drv) raw <fileId> [flags]`](commands/gog-drive-raw.md) - Dump raw Google Drive API response as JSON (Files.Get; lossless; for scripting and LLM consumption)
     - [`gog drive (drv) rename <fileId> <newName>`](commands/gog-drive-rename.md) - Rename a file or folder
+    - [`gog drive (drv) revisions (revision) <command>`](commands/gog-drive-revisions.md) - List and inspect file revisions
+      - [`gog drive (drv) revisions (revision) get <fileId> <revisionId>`](commands/gog-drive-revisions-get.md) - Get revision metadata
+      - [`gog drive (drv) revisions (revision) list (ls) <fileId> [flags]`](commands/gog-drive-revisions-list.md) - List revisions for a file
     - [`gog drive (drv) search <query> ... [flags]`](commands/gog-drive-search.md) - Full-text search across Drive
     - [`gog drive (drv) share <fileId> [flags]`](commands/gog-drive-share.md) - Share a file or folder
     - [`gog drive (drv) tree [flags]`](commands/gog-drive-tree.md) - Print a read-only folder tree
@@ -475,10 +485,17 @@ Generated from `gog schema --json`.
     - [`gog people (person) raw <userId> [flags]`](commands/gog-people-raw.md) - Dump raw People API response as JSON (People.Get; lossless; for scripting and LLM consumption)
     - [`gog people (person) relations [<userId>] [flags]`](commands/gog-people-relations.md) - Get user relations
     - [`gog people (person) search (find,query) <query> ... [flags]`](commands/gog-people-search.md) - Search the Workspace directory
-  - [`gog photos (photo) <command> [flags]`](commands/gog-photos.md) - Google Photos Library API (app-created media)
+  - [`gog photos (photo) <command> [flags]`](commands/gog-photos.md) - Google Photos Library and Picker APIs
     - [`gog photos (photo) download (dl) <mediaItemId> [flags]`](commands/gog-photos-download.md) - Download an app-created media item
     - [`gog photos (photo) get (info,show) <mediaItemId>`](commands/gog-photos-get.md) - Get an app-created media item
     - [`gog photos (photo) list (ls) [flags]`](commands/gog-photos-list.md) - List app-created media items
+    - [`gog photos (photo) picker <command>`](commands/gog-photos-picker.md) - Access user-selected media with the Photos Picker API
+      - [`gog photos (photo) picker create (new,start) [flags]`](commands/gog-photos-picker-create.md) - Create a photo-picking session
+      - [`gog photos (photo) picker delete (rm,close) <sessionId>`](commands/gog-photos-picker-delete.md) - Delete a photo-picking session
+      - [`gog photos (photo) picker download (dl) <sessionId> <mediaItemId> [flags]`](commands/gog-photos-picker-download.md) - Download selected media bytes
+      - [`gog photos (photo) picker get (info,show) <sessionId>`](commands/gog-photos-picker-get.md) - Get a photo-picking session
+      - [`gog photos (photo) picker list (ls,items) <sessionId> [flags]`](commands/gog-photos-picker-list.md) - List media selected in a session
+      - [`gog photos (photo) picker wait (poll) <sessionId> [flags]`](commands/gog-photos-picker-wait.md) - Wait until the user finishes picking media
     - [`gog photos (photo) search (find) [flags]`](commands/gog-photos-search.md) - Search app-created media items
   - [`gog schema (help-json,helpjson) [<command> ...] [flags]`](commands/gog-schema.md) - Machine-readable command/flag schema
   - [`gog search (find) <query> ... [flags]`](commands/gog-search.md) - Search Drive files (alias for 'drive search')

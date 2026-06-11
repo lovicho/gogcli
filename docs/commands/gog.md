@@ -22,6 +22,7 @@ gog <command> [flags]
 - [gog appscript](gog-appscript.md) - Google Apps Script
 - [gog auth](gog-auth.md) - Auth and credentials
 - [gog backup](gog-backup.md) - Encrypted Google account backups
+- [gog batch](gog-batch.md) - Build and submit persisted Google Docs request batches
 - [gog calendar](gog-calendar.md) - Google Calendar
 - [gog chat](gog-chat.md) - Google Chat
 - [gog classroom](gog-classroom.md) - Google Classroom
@@ -45,7 +46,7 @@ gog <command> [flags]
 - [gog meet](gog-meet.md) - Google Meet
 - [gog open](gog-open.md) - Print a best-effort web URL for a Google URL/ID (offline)
 - [gog people](gog-people.md) - Google People
-- [gog photos](gog-photos.md) - Google Photos Library API (app-created media)
+- [gog photos](gog-photos.md) - Google Photos Library and Picker APIs
 - [gog schema](gog-schema.md) - Machine-readable command/flag schema
 - [gog search](gog-search.md) - Search Drive files (alias for 'drive search')
 - [gog searchconsole](gog-searchconsole.md) - Google Search Console

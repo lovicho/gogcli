@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.23.1 - Unreleased
+## 0.24.1 - Unreleased
+
+### Added
+
+- Photos: add an explicit-opt-in Google Photos Picker workflow for creating selection sessions, waiting for completion, listing chosen media, and downloading selected files. (#754)
+- Docs: add persisted, revision-locked request batches for composing supported mutations locally and submitting them atomically, with explicit split and partial-recovery modes. (#755)
+
+## 0.24.0 - 2026-06-11
 
 ### Added
 
@@ -14,9 +21,14 @@
 - Docs: add `--tab` and `--all-tabs` to `docs raw` for inspecting specific or complete multi-tab document content. (#697) — thanks @sebsnyk.
 - Docs: add tab-aware table, image, heading, and paragraph enumerators with structured and plain output. (#719) — thanks @sebsnyk.
 - Docs: style locally rendered fenced Markdown blocks with Roboto Mono, dark-green text, and existing paragraph shading. (#676, #724) — thanks @TurboTheTurtle.
+- Docs: add `docs insert-image --url` for inserting public HTTPS images directly without Drive upload or temporary public sharing. (#675) — thanks @sebsnyk.
+- Docs: expose paragraph emptiness and text-run ranges, styles, and links in `docs paragraphs list --json`. (#734) — thanks @sebsnyk.
+- Docs: add opt-in `--check-orphans` to Markdown replacement writes so open comments whose quoted text would disappear block the mutation with orphaned exit code 11. (#691) — thanks @sebsnyk.
+- Drive: add `drive revisions list|get` for paged revision metadata and provider export links. (#672) — thanks @aaroneden.
 
 ### Fixed
 
+- Auth: bind browser, manual, remote, and account-manager OAuth exchanges with S256 PKCE; unfinished pre-PKCE manual flows must restart at step 1. (#693, #725) — thanks @TurboTheTurtle.
 - Docs: reset inherited text styles before applying Markdown find-replace formatting so leading bold spans and later inline styles stay paired correctly. (#735) — thanks @sebsnyk.
 - Docs: accept leading-dash Markdown list values in `docs cell-update --content` and reject nonempty Markdown that produces no editable cell text. (#733) — thanks @sebsnyk.
 - Docs: keep inline Markdown find-replace fragments inside their existing paragraph unless the replacement explicitly ends with a newline. (#736) — thanks @sebsnyk.

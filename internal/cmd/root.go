@@ -68,6 +68,7 @@ type CLI struct {
 
 	Auth          AuthCmd               `cmd:"" help:"Auth and credentials"`
 	Backup        BackupCmd             `cmd:"" help:"Encrypted Google account backups"`
+	Batch         BatchCmd              `cmd:"" help:"Build and submit persisted Google Docs request batches"`
 	Groups        GroupsCmd             `cmd:"" aliases:"group" help:"Google Groups"`
 	Admin         AdminCmd              `cmd:"" help:"Google Workspace Admin (Directory API) - requires domain-wide delegation"`
 	Drive         DriveCmd              `cmd:"" aliases:"drv" help:"Google Drive"`
@@ -92,7 +93,7 @@ type CLI struct {
 	Analytics     AnalyticsCmd          `cmd:"" aliases:"ga" help:"Google Analytics"`
 	SearchConsole SearchConsoleCmd      `cmd:"" name:"searchconsole" aliases:"gsc,search-console,webmasters" help:"Google Search Console"`
 	YouTube       YouTubeCmd            `cmd:"" name:"youtube" aliases:"yt" help:"YouTube Data API (search, activities, videos, playlists, comments, channels)"`
-	Photos        PhotosCmd             `cmd:"" name:"photos" aliases:"photo" help:"Google Photos Library API (app-created media)"`
+	Photos        PhotosCmd             `cmd:"" name:"photos" aliases:"photo" help:"Google Photos Library and Picker APIs"`
 	Config        ConfigCmd             `cmd:"" help:"Manage configuration"`
 	ExitCodes     AgentExitCodesCmd     `cmd:"" name:"exit-codes" aliases:"exitcodes" help:"Print stable exit codes (alias for 'agent exit-codes')"`
 	Agent         AgentCmd              `cmd:"" help:"Agent-friendly helpers"`

@@ -106,6 +106,7 @@ Useful Google setup links:
 - [Places API (New)](https://console.cloud.google.com/apis/api/places.googleapis.com)
 - [Drive Labels API](https://console.cloud.google.com/apis/api/drivelabels.googleapis.com)
 - [Photos Library API](https://console.cloud.google.com/apis/api/photoslibrary.googleapis.com)
+- [Photos Picker API](https://console.cloud.google.com/apis/library/photospicker.googleapis.com)
 - [Google Analytics Admin API](https://console.cloud.google.com/apis/api/analyticsadmin.googleapis.com)
 - [Google Analytics Data API](https://console.cloud.google.com/apis/api/analyticsdata.googleapis.com)
 - [Google Search Console API](https://console.cloud.google.com/apis/api/searchconsole.googleapis.com)
@@ -167,6 +168,10 @@ gog calendar create primary --summary "Coffee" \
   --to "2026-05-06T10:30:00+02:00" \
   --location-search "Elysian Coffee Vancouver"
 gog calendar update primary <eventId> --with-meet
+gog calendar update primary <eventId> \
+  --attachment 'https://drive.google.com/open?id=<fileId>'
+# Repeated --attachment values replace all attachments; an empty value clears them.
+gog calendar update primary <eventId> --attachment ''
 gog zoom auth setup
 gog calendar create primary --summary "Client sync" \
   --from "2026-05-06T11:00:00+02:00" \
@@ -181,6 +186,7 @@ gog calendar appointments
 Docs: [Drive audits](docs/drive-audits.md), [raw API dumps](docs/raw-api.md),
 [`gog drive`](docs/commands/gog-drive.md),
 [`drive changes`](docs/commands/gog-drive-changes.md),
+[`drive revisions`](docs/commands/gog-drive-revisions.md),
 [`drive activity`](docs/commands/gog-drive-activity.md).
 
 ```bash
@@ -203,7 +209,12 @@ gog drive get <fileId> --fields 'id,name,mimeType,size,owners,emailAddress' --js
 # Track changes and audit activity.
 gog drive changes start-token
 gog drive changes list --token <token> --json
+gog drive revisions list <fileId> --all --json
+gog drive revisions get <fileId> <revisionId> --json
 gog drive activity query --file <fileId> --actions edit,share --from 2026-01-01T00:00:00Z --json
+
+# The Drive API exposes revision metadata and provider export links. For native
+# Docs Editors files, it does not expose complete editor history or historical bodies.
 
 # Lossless raw API JSON.
 gog drive raw <fileId> --pretty
@@ -229,7 +240,8 @@ Place ID/lat,lng value to avoid splitting it.
 
 ### Photos
 
-Docs: [`gog photos`](docs/commands/gog-photos.md).
+Docs: [`gog photos`](docs/commands/gog-photos.md) and
+[Photos Picker workflows](docs/photos-picker.md).
 
 Google Photos Library API access is limited to app-created media through
 `photoslibrary.readonly.appcreateddata`, and the Photos Library API must be
@@ -239,6 +251,19 @@ enabled on the OAuth project used for `gog auth add`.
 gog photos list --json
 gog photos search --media-type PHOTO --from 2026-01-01 --to 2026-01-31 --json
 gog photos download <mediaItemId> --out photo.jpg
+```
+
+For user-selected private media, enable the Photos Picker API and authorize its
+separate explicit-opt-in service. It is not included in the default `user`
+service set.
+
+```bash
+gog auth add you@gmail.com --services photospicker
+gog photos picker create --max-items 20 --open --json
+gog photos picker wait <sessionId> --json
+gog photos picker list <sessionId> --all --json
+gog photos picker download <sessionId> <mediaItemId> --out photo.jpg
+gog photos picker delete <sessionId>
 ```
 
 ### Contacts
@@ -259,6 +284,7 @@ gog contacts dedupe --match email,phone,name --dry-run
 ### Docs
 
 Docs: [Google Docs editing](docs/docs-editing.md),
+[atomic Docs request batches](docs/docs-batch.md),
 [sed-style document edits](docs/sedmat.md),
 [`gog docs`](docs/commands/gog-docs.md).
 
@@ -267,6 +293,8 @@ gog docs write <docId> --append --markdown --text '## Status'
 gog docs format <docId> --match Status --bold --font-size 18
 gog docs insert-page-break <docId> --at-end
 gog docs insert-table <docId> --rows 3 --cols 2 --at-end
+gog docs named-range create <docId> --name Status --at "Ready"
+gog docs insert-image <docId> --url https://example.com/chart.png --at end
 gog docs add-tab <docId> --title "Notes"
 gog docs tabs add <docId> --title "Notes"
 gog docs find-replace <docId> old new --tab "Notes" --dry-run
@@ -286,6 +314,8 @@ gog sheets batch-update <spreadsheetId> --data-json @updates.json --json
 gog sheets table list <spreadsheetId>
 gog sheets table append <spreadsheetId> Tasks 'Ship README|done'
 gog sheets table clear <spreadsheetId> Tasks
+gog sheets validation set <spreadsheetId> 'Sheet1!B2:B100' \
+  --type ONE_OF_LIST --value Open --value Done
 gog sheets conditional-format add <spreadsheetId> 'Sheet1!A2:A100' \
   --type text-contains \
   --expr blocked \
@@ -586,6 +616,7 @@ Generated service scope table:
 | admin | no | Admin SDK Directory API | `https://www.googleapis.com/auth/admin.directory.user`<br>`https://www.googleapis.com/auth/admin.directory.group`<br>`https://www.googleapis.com/auth/admin.directory.group.member` | Workspace only; service account with domain-wide delegation required |
 | youtube | yes | YouTube Data API v3 | `https://www.googleapis.com/auth/youtube.readonly` | Most read operations also work with API key only (config youtube_api_key or GOG_YOUTUBE_API_KEY) |
 | photos | yes | Photos Library API | `https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata` | Read-only app-created media only after Google Photos Library API scope changes |
+| photospicker | no | Photos Picker API | `https://www.googleapis.com/auth/photospicker.mediaitems.readonly` | Consumer OAuth; explicit opt-in with --services photospicker; selected media only |
 <!-- auth-services:end -->
 
 Regenerate the table with:
@@ -603,6 +634,7 @@ go run scripts/gen-auth-services-md.go
 - [Gmail workflows](docs/gmail-workflows.md) — <https://gogcli.sh/gmail-workflows.html>
 - [Gmail watch](docs/watch.md) — <https://gogcli.sh/watch.html>
 - [Drive audits](docs/drive-audits.md) — <https://gogcli.sh/drive-audits.html>
+- [Photos Picker](docs/photos-picker.md) — <https://gogcli.sh/photos-picker.html>
 - [Docs editing](docs/docs-editing.md) — <https://gogcli.sh/docs-editing.html>
 - [Sheets tables](docs/sheets-tables.md) and [Sheets formatting](docs/sheets-formatting.md)
 - [Safety profiles](docs/safety-profiles.md) — command guards and baked safe binaries

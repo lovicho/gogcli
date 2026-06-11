@@ -35,6 +35,7 @@ gog drive (drv) <command> [flags]
 - [gog drive permissions](gog-drive-permissions.md) - List permissions on a file
 - [gog drive raw](gog-drive-raw.md) - Dump raw Google Drive API response as JSON (Files.Get; lossless; for scripting and LLM consumption)
 - [gog drive rename](gog-drive-rename.md) - Rename a file or folder
+- [gog drive revisions](gog-drive-revisions.md) - List and inspect file revisions
 - [gog drive search](gog-drive-search.md) - Full-text search across Drive
 - [gog drive share](gog-drive-share.md) - Share a file or folder
 - [gog drive tree](gog-drive-tree.md) - Print a read-only folder tree

@@ -15,6 +15,7 @@ Build a single, clean, modern Go CLI that talks to:
 - Google Forms API
 - Google Maps Places API
 - Google Photos Library API
+- Google Photos Picker API
 - Apps Script API
 - Google Tasks API
 - Cloud Identity API (Groups)
@@ -131,6 +132,10 @@ Implementation: `internal/secrets/store.go`.
 - Supports a remote/server-friendly 2-step manual flow:
   - Step 1 prints an auth URL (`gog auth add ... --remote --step 1`)
   - Step 2 exchanges the pasted redirect URL and requires `state` validation (`--remote --step 2 --auth-url ...`)
+  - Browser, manual, remote, and account-manager flows bind authorization
+    requests and token exchanges with S256 PKCE.
+  - Remote steps must share the same config home and OAuth client. Unfinished
+    pre-v0.24.0 flows must restart at step 1.
 - Refresh token issuance:
   - requests `access_type=offline`
   - supports `--force-consent` to force the consent prompt when Google doesn't return a refresh token
@@ -151,7 +156,7 @@ Scope selection note:
   - `credentials-<client>.json` (OAuth client id/secret; named clients)
 - State:
   - `state/gmail-watch/<account>.json` (Gmail watch state)
-  - `oauth-manual-state-<state>.json` (temporary manual OAuth state cache; expires quickly; no tokens)
+  - `oauth-manual-state-<state>.json` (temporary manual OAuth state and PKCE verifier cache; expires quickly; no tokens)
 - Secrets:
   - refresh tokens in keyring
 
@@ -189,7 +194,7 @@ Flag aliases:
 - `gog auth credentials list`
 - `gog auth credentials remove [<client>|all]`
 - `gog --client <name> auth credentials <credentials.json|->`
-- `gog auth add <email> [--services user|all-user|all|gmail,calendar,chat,classroom,drive,driveactivity,drivelabels,docs,slides,contacts,tasks,sheets,people,forms,sites,meet,photos,appscript,analytics,searchconsole,ads,youtube] [--readonly] [--drive-scope full|readonly|file] [--gmail-scope full|readonly] [--extra-scopes CSV] [--manual] [--remote] [--step 1|2] [--auth-url URL] [--listen-addr HOST[:PORT]] [--redirect-host HOST] [--timeout DURATION] [--force-consent]`
+- `gog auth add <email> [--services user|all-user|all|gmail,calendar,chat,classroom,drive,driveactivity,drivelabels,docs,slides,contacts,tasks,sheets,people,forms,sites,meet,photos,photospicker,appscript,analytics,searchconsole,ads,youtube] [--readonly] [--drive-scope full|readonly|file] [--gmail-scope full|readonly] [--extra-scopes CSV] [--manual] [--remote] [--step 1|2] [--auth-url URL] [--listen-addr HOST[:PORT]] [--redirect-host HOST] [--timeout DURATION] [--force-consent]`
 - `gog auth services [--markdown]`
 - `gog auth manage [--services ...] [--listen-addr HOST[:PORT]] [--redirect-host HOST]`
 - `gog auth keep <email> --key <service-account.json>` (Google Keep; Workspace only)
@@ -261,6 +266,12 @@ Flag aliases:
 - `gog photos search [--album ALBUM_ID] [--media-type PHOTO|VIDEO|ALL_MEDIA] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--include-archived] [--max N] [--page TOKEN]`
 - `gog photos get <mediaItemId>`
 - `gog photos download <mediaItemId> [--out PATH|-] [--video]`
+- `gog photos picker create [--max-items N] [--open]`
+- `gog photos picker get <sessionId>`
+- `gog photos picker wait <sessionId> [--timeout DURATION]`
+- `gog photos picker list <sessionId> [--max N] [--page TOKEN] [--all]`
+- `gog photos picker download <sessionId> <mediaItemId> [--out PATH|-] [--overwrite]`
+- `gog photos picker delete <sessionId>`
 - `gog time now [--timezone TZ]`
 - `gog classroom courses [--state ...] [--max N] [--page TOKEN]`
 - `gog classroom courses get <courseId>`
@@ -449,6 +460,7 @@ We store a single refresh token per Google account email.
 - People:
   - `profile` (OIDC)
 - Photos: `https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata`
+- Photos Picker: `https://www.googleapis.com/auth/photospicker.mediaitems.readonly` (explicit opt-in)
 
 ## Output formats
 

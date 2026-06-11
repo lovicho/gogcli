@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 615.
+Generated pages: 632.
 
 ## Top-level Commands
 
@@ -12,6 +12,7 @@ Generated pages: 615.
 - [gog appscript](gog-appscript.md) - Google Apps Script
 - [gog auth](gog-auth.md) - Auth and credentials
 - [gog backup](gog-backup.md) - Encrypted Google account backups
+- [gog batch](gog-batch.md) - Build and submit persisted Google Docs request batches
 - [gog calendar](gog-calendar.md) - Google Calendar
 - [gog chat](gog-chat.md) - Google Chat
 - [gog classroom](gog-classroom.md) - Google Classroom
@@ -35,7 +36,7 @@ Generated pages: 615.
 - [gog meet](gog-meet.md) - Google Meet
 - [gog open](gog-open.md) - Print a best-effort web URL for a Google URL/ID (offline)
 - [gog people](gog-people.md) - Google People
-- [gog photos](gog-photos.md) - Google Photos Library API (app-created media)
+- [gog photos](gog-photos.md) - Google Photos Library and Picker APIs
 - [gog schema](gog-schema.md) - Machine-readable command/flag schema
 - [gog search](gog-search.md) - Search Drive files (alias for 'drive search')
 - [gog searchconsole](gog-searchconsole.md) - Google Search Console
@@ -121,6 +122,13 @@ Generated pages: 615.
     - [gog backup push](gog-backup-push.md) - Export services into encrypted backup shards
     - [gog backup status](gog-backup-status.md) - Inspect backup manifest without decrypting shards
     - [gog backup verify](gog-backup-verify.md) - Decrypt and verify all backup shards
+  - [gog batch](gog-batch.md) - Build and submit persisted Google Docs request batches
+    - [gog batch abort](gog-batch-abort.md) - Delete a request batch without submitting
+    - [gog batch begin](gog-batch-begin.md) - Begin a persisted request batch
+    - [gog batch end](gog-batch-end.md) - Submit and remove a request batch
+    - [gog batch list](gog-batch-list.md) - List persisted request batches
+    - [gog batch prune](gog-batch-prune.md) - Delete stale request batches
+    - [gog batch show](gog-batch-show.md) - Show a persisted request batch
   - [gog calendar](gog-calendar.md) - Google Calendar
     - [gog calendar acl](gog-calendar-acl.md) - List calendar ACL
     - [gog calendar alias](gog-calendar-alias.md) - Manage calendar aliases
@@ -301,7 +309,7 @@ Generated pages: 615.
     - [gog docs insert](gog-docs-insert.md) - Insert text at a specific position
     - [gog docs insert-date-chip](gog-docs-insert-date-chip.md) - Insert a native date smart chip
     - [gog docs insert-file-chip](gog-docs-insert-file-chip.md) - Insert a native Drive file smart chip
-    - [gog docs insert-image](gog-docs-insert-image.md) - Upload a local image and insert it into a Google Doc
+    - [gog docs insert-image](gog-docs-insert-image.md) - Insert a public image URL or upload a local image into a Google Doc
     - [gog docs insert-page-break](gog-docs-insert-page-break.md) - Insert a page break at a specific position (or end-of-doc with --at-end)
     - [gog docs insert-person](gog-docs-insert-person.md) - Insert a native person smart chip
     - [gog docs insert-table](gog-docs-insert-table.md) - Insert a native table at a specific position (or end-of-doc with --at-end), optionally populated via --values-json
@@ -380,6 +388,9 @@ Generated pages: 615.
     - [gog drive permissions](gog-drive-permissions.md) - List permissions on a file
     - [gog drive raw](gog-drive-raw.md) - Dump raw Google Drive API response as JSON (Files.Get; lossless; for scripting and LLM consumption)
     - [gog drive rename](gog-drive-rename.md) - Rename a file or folder
+    - [gog drive revisions](gog-drive-revisions.md) - List and inspect file revisions
+      - [gog drive revisions get](gog-drive-revisions-get.md) - Get revision metadata
+      - [gog drive revisions list](gog-drive-revisions-list.md) - List revisions for a file
     - [gog drive search](gog-drive-search.md) - Full-text search across Drive
     - [gog drive share](gog-drive-share.md) - Share a file or folder
     - [gog drive tree](gog-drive-tree.md) - Print a read-only folder tree
@@ -527,10 +538,17 @@ Generated pages: 615.
     - [gog people raw](gog-people-raw.md) - Dump raw People API response as JSON (People.Get; lossless; for scripting and LLM consumption)
     - [gog people relations](gog-people-relations.md) - Get user relations
     - [gog people search](gog-people-search.md) - Search the Workspace directory
-  - [gog photos](gog-photos.md) - Google Photos Library API (app-created media)
+  - [gog photos](gog-photos.md) - Google Photos Library and Picker APIs
     - [gog photos download](gog-photos-download.md) - Download an app-created media item
     - [gog photos get](gog-photos-get.md) - Get an app-created media item
     - [gog photos list](gog-photos-list.md) - List app-created media items
+    - [gog photos picker](gog-photos-picker.md) - Access user-selected media with the Photos Picker API
+      - [gog photos picker create](gog-photos-picker-create.md) - Create a photo-picking session
+      - [gog photos picker delete](gog-photos-picker-delete.md) - Delete a photo-picking session
+      - [gog photos picker download](gog-photos-picker-download.md) - Download selected media bytes
+      - [gog photos picker get](gog-photos-picker-get.md) - Get a photo-picking session
+      - [gog photos picker list](gog-photos-picker-list.md) - List media selected in a session
+      - [gog photos picker wait](gog-photos-picker-wait.md) - Wait until the user finishes picking media
     - [gog photos search](gog-photos-search.md) - Search app-created media items
   - [gog schema](gog-schema.md) - Machine-readable command/flag schema
   - [gog search](gog-search.md) - Search Drive files (alias for 'drive search')
