@@ -10,12 +10,9 @@ import (
 	keepapi "google.golang.org/api/keep/v1"
 
 	"github.com/steipete/gogcli/internal/config"
-	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
-
-var newKeepServiceWithSA = googleapi.NewKeepWithServiceAccount
 
 type KeepCmd struct {
 	ServiceAccount string `name:"service-account" help:"Path to service account JSON file"`

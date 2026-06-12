@@ -52,7 +52,7 @@ func newDefaultRuntime() *app.Runtime {
 			Drive:           googleapi.NewDrive,
 			Forms:           googleapi.NewForms,
 			Gmail:           googleapi.NewGmail,
-			Keep:            newKeepServiceWithSA,
+			Keep:            googleapi.NewKeepWithServiceAccount,
 			PeopleContacts:  googleapi.NewPeopleContacts,
 			PeopleDirectory: googleapi.NewPeopleDirectory,
 			PeopleOther:     googleapi.NewPeopleOtherContacts,
@@ -253,7 +253,7 @@ func keepServiceWithServiceAccount(ctx context.Context, path, impersonate string
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Keep != nil {
 		return runtime.Services.Keep(ctx, path, impersonate)
 	}
-	return newKeepServiceWithSA(ctx, path, impersonate)
+	return googleapi.NewKeepWithServiceAccount(ctx, path, impersonate)
 }
 
 func photosService(ctx context.Context, account string) (*googleapi.PhotosClient, error) {
