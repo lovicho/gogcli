@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -32,6 +34,21 @@ func TestMCPEnabledToolsAllowWriteAndFilter(t *testing.T) {
 	}
 	if hasMCPTool(tools, "gmail_search") {
 		t.Fatalf("gmail tool leaked through docs filter: %#v", toolNames(tools))
+	}
+}
+
+func TestMCPListToolsUsesRuntimeStdout(t *testing.T) {
+	var output bytes.Buffer
+	err := (&McpCmd{
+		ListTools:      true,
+		TimeoutSeconds: 60,
+		MaxOutputBytes: 1024,
+	}).Run(newCmdRuntimeOutputContext(t, &output, io.Discard), &RootFlags{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := output.String(); !strings.Contains(got, `"tools"`) || !strings.Contains(got, `"gmail_search"`) {
+		t.Fatalf("unexpected tool list: %s", got)
 	}
 }
 

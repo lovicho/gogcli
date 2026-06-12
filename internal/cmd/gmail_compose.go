@@ -167,12 +167,16 @@ func prepareComposeReply(ctx context.Context, svc *gmail.Service, replyToMessage
 	return info, plainBody, htmlBody, nil
 }
 
-func buildGmailMessage(opts sendMessageOptions, batch sendBatch, cfg *rfc822Config) (*gmail.Message, error) {
+func buildGmailMessage(ctx context.Context, opts sendMessageOptions, batch sendBatch, cfg *rfc822Config) (*gmail.Message, error) {
 	reply := replyInfo{}
 	if opts.ReplyInfo != nil {
 		reply = *opts.ReplyInfo
 	}
 
+	rfc822Cfg := rfc822Config{diagnostics: stderrWriter(ctx)}
+	if cfg != nil {
+		rfc822Cfg.allowMissingTo = cfg.allowMissingTo
+	}
 	raw, err := buildRFC822(mailOptions{
 		From:              opts.FromAddr,
 		To:                batch.To,
@@ -186,7 +190,7 @@ func buildGmailMessage(opts sendMessageOptions, batch sendBatch, cfg *rfc822Conf
 		References:        reply.References,
 		AdditionalHeaders: opts.Headers,
 		Attachments:       opts.Attachments,
-	}, cfg)
+	}, &rfc822Cfg)
 	if err != nil {
 		return nil, err
 	}

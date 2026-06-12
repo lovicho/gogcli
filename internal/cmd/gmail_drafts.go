@@ -315,7 +315,7 @@ func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, 
 		subject = autoReplySubject("", info.Subject)
 	}
 
-	msg, err := buildGmailMessage(sendMessageOptions{
+	msg, err := buildGmailMessage(ctx, sendMessageOptions{
 		FromAddr:    from.header,
 		ReplyTo:     input.ReplyTo,
 		Subject:     subject,

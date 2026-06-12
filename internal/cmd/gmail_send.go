@@ -340,7 +340,7 @@ func sendGmailBatches(ctx context.Context, svc *gmail.Service, opts sendMessageO
 
 		messageOpts := opts
 		messageOpts.BodyHTML = htmlBody
-		msg, err := buildGmailMessage(messageOpts, batch, nil)
+		msg, err := buildGmailMessage(ctx, messageOpts, batch, nil)
 		if err != nil {
 			return nil, err
 		}

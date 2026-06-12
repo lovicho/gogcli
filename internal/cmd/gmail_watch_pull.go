@@ -45,7 +45,7 @@ func (c *GmailWatchPullCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 		return subscriptionErr
 	}
 
-	loc, err := resolveOutputLocation(c.Timezone, c.Local)
+	loc, err := resolveOutputLocation(c.Timezone, c.Local, stderrWriter(ctx))
 	if err != nil {
 		return err
 	}

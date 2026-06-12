@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/docs/v1"
@@ -399,7 +398,7 @@ func submitBatchedDocsRequestsWithRevision(
 			end = len(requests)
 		}
 		chunkIdx := i/docsBatchUpdateRequestCap + 1
-		fmt.Fprintf(os.Stderr, "gog: docs batchUpdate split %d/%d (%d requests; Docs API per-call cap is %d)\n",
+		fmt.Fprintf(stderrWriter(ctx), "gog: docs batchUpdate split %d/%d (%d requests; Docs API per-call cap is %d)\n",
 			chunkIdx, totalChunks, end-i, docsBatchUpdateRequestCap)
 		resp, err := svc.Documents.BatchUpdate(docID, &docs.BatchUpdateDocumentRequest{
 			WriteControl: writeControl,

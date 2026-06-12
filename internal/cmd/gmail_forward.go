@@ -111,7 +111,7 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 	ccRecipients := splitCSV(c.Cc)
 	bccRecipients := splitCSV(c.Bcc)
 
-	msg, err := buildGmailMessage(sendMessageOptions{
+	msg, err := buildGmailMessage(ctx, sendMessageOptions{
 		FromAddr:    from.header,
 		Subject:     fwdSubject,
 		Body:        fwdPlain,
