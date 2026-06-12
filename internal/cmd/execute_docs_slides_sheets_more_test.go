@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,13 +17,9 @@ import (
 )
 
 func TestExecute_DocsSlidesSheets_CopyCreateInfoCat_JSON(t *testing.T) {
-	origNew := newDriveService
 	origDocs := newDocsService
-	origExport := driveExportDownload
 	t.Cleanup(func() {
-		newDriveService = origNew
 		newDocsService = origDocs
-		driveExportDownload = origExport
 	})
 
 	var createCalls int32
@@ -136,7 +133,6 @@ func TestExecute_DocsSlidesSheets_CopyCreateInfoCat_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return svc, nil }
 
 	docSvc, err := docs.NewService(context.Background(),
 		option.WithoutAuthentication(),
@@ -148,7 +144,10 @@ func TestExecute_DocsSlidesSheets_CopyCreateInfoCat_JSON(t *testing.T) {
 	}
 	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	driveExportDownload = func(context.Context, *drive.Service, string, string) (*http.Response, error) {
+	export := func(_ context.Context, _ *drive.Service, fileID, mimeType string) (*http.Response, error) {
+		if fileID == "" || mimeType == "" {
+			return nil, fmt.Errorf("invalid export request: file=%q mime=%q", fileID, mimeType)
+		}
 		atomic.AddInt32(&exportCalls, 1)
 		return &http.Response{
 			Status:     "200 OK",
@@ -158,16 +157,13 @@ func TestExecute_DocsSlidesSheets_CopyCreateInfoCat_JSON(t *testing.T) {
 	}
 
 	run := func(args ...string) map[string]any {
-		out := captureStdout(t, func() {
-			_ = captureStderr(t, func() {
-				if execErr := Execute(append([]string{"--json", "--account", "a@b.com"}, args...)); execErr != nil {
-					t.Fatalf("Execute(%v): %v", args, execErr)
-				}
-			})
-		})
+		result := executeWithDriveTestOperations(t, append([]string{"--json", "--account", "a@b.com"}, args...), svc, nil, export)
+		if result.err != nil {
+			t.Fatalf("Execute(%v): %v", args, result.err)
+		}
 		var parsed map[string]any
-		if unmarshalErr := json.Unmarshal([]byte(out), &parsed); unmarshalErr != nil {
-			t.Fatalf("json parse: %v\nout=%q", unmarshalErr, out)
+		if unmarshalErr := json.Unmarshal([]byte(result.stdout), &parsed); unmarshalErr != nil {
+			t.Fatalf("json parse: %v\nout=%q", unmarshalErr, result.stdout)
 		}
 		return parsed
 	}

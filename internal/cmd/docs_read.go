@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"google.golang.org/api/docs/v1"
@@ -54,11 +53,11 @@ func (c *DocsCatCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 		var buf bytes.Buffer
 		if indentErr := json.Indent(&buf, raw, "", "  "); indentErr != nil {
-			_, werr := os.Stdout.Write(raw)
+			_, werr := stdoutWriter(ctx).Write(raw)
 			return werr
 		}
 		buf.WriteByte('\n')
-		_, rawErr = buf.WriteTo(os.Stdout)
+		_, rawErr = buf.WriteTo(stdoutWriter(ctx))
 		return rawErr
 	}
 
@@ -83,9 +82,9 @@ func (c *DocsCatCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	text := docsPlainText(doc, c.MaxBytes)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"text": text})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"text": text})
 	}
-	_, err = io.WriteString(os.Stdout, text)
+	_, err = io.WriteString(stdoutWriter(ctx), text)
 	return err
 }
 
@@ -112,9 +111,9 @@ func (c *DocsCatCmd) runWithTabs(ctx context.Context, svc *docs.Service, id stri
 		}
 		text := tabPlainText(tab, c.MaxBytes)
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"tab": tabJSON(tab, text)})
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"tab": tabJSON(tab, text)})
 		}
-		_, err = io.WriteString(os.Stdout, text)
+		_, err = io.WriteString(stdoutWriter(ctx), text)
 		return err
 	}
 
@@ -124,25 +123,26 @@ func (c *DocsCatCmd) runWithTabs(ctx context.Context, svc *docs.Service, id stri
 			text := tabPlainText(tab, c.MaxBytes)
 			out = append(out, tabJSON(tab, text))
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"tabs": out})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"tabs": out})
 	}
 
+	out := stdoutWriter(ctx)
 	for i, tab := range tabs {
 		title := tabTitle(tab)
 		if i > 0 {
-			if _, err := fmt.Fprintln(os.Stdout); err != nil {
+			if _, err := fmt.Fprintln(out); err != nil {
 				return err
 			}
 		}
-		if _, err := fmt.Fprintf(os.Stdout, "=== Tab: %s ===\n", title); err != nil {
+		if _, err := fmt.Fprintf(out, "=== Tab: %s ===\n", title); err != nil {
 			return err
 		}
 		text := tabPlainText(tab, c.MaxBytes)
-		if _, err := io.WriteString(os.Stdout, text); err != nil {
+		if _, err := io.WriteString(out, text); err != nil {
 			return err
 		}
 		if text != "" && !strings.HasSuffix(text, "\n") {
-			if _, err := fmt.Fprintln(os.Stdout); err != nil {
+			if _, err := fmt.Fprintln(out); err != nil {
 				return err
 			}
 		}
@@ -183,7 +183,7 @@ func (c *DocsListTabsCmd) Run(ctx context.Context, flags *RootFlags) error {
 		for _, tab := range tabs {
 			out = append(out, tabInfoJSON(tab))
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"tabs": out})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"tabs": out})
 	}
 
 	u.Out().Linef("ID\tTITLE\tINDEX")
@@ -233,7 +233,7 @@ func (c *DocsStructureCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, pm)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), pm)
 	}
 
 	u.Out().Linef(" #  TYPE                CONTENT")
@@ -261,7 +261,7 @@ func (c *DocsCatCmd) printNumbered(ctx context.Context, doc *docs.Document, tabI
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, pm)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), pm)
 	}
 
 	for _, p := range pm.Paragraphs {
@@ -269,7 +269,7 @@ func (c *DocsCatCmd) printNumbered(ctx context.Context, doc *docs.Document, tabI
 		if p.ElemType == "table" {
 			text = fmt.Sprintf("[table %dx%d] %s", p.TableRows, p.TableCols, text)
 		}
-		if _, err := fmt.Fprintf(os.Stdout, "[%d] %s\n", p.Num, text); err != nil {
+		if _, err := fmt.Fprintf(stdoutWriter(ctx), "[%d] %s\n", p.Num, text); err != nil {
 			return err
 		}
 	}

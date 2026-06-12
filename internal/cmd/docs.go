@@ -218,7 +218,7 @@ func (c *DocsInfoCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			strFile:    file,
 			"document": doc,
 		})
@@ -320,7 +320,7 @@ func (c *DocsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{strFile: created})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{strFile: created})
 	}
 
 	u.Out().Linef("id\t%s", created.Id)
