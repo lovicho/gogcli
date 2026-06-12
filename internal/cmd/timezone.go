@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -24,18 +25,18 @@ const (
 	warnConfigIgnore    = "warning: invalid %s in config %q, ignoring\n"
 )
 
-func resolveOutputLocation(timezone string, local bool) (*time.Location, error) {
-	return resolveTimezone(timezone, local, timezoneWithFallback)
+func resolveOutputLocation(timezone string, local bool, diagnostics io.Writer) (*time.Location, error) {
+	return resolveTimezone(timezone, local, timezoneWithFallback, diagnostics)
 }
 
 // getConfiguredTimezone returns the timezone from flag, env var, or config file.
 // Returns nil if no timezone is explicitly configured. The special value "local"
 // returns time.Local to explicitly use the local timezone.
-func getConfiguredTimezone(timezone string) (*time.Location, error) {
-	return resolveTimezone(timezone, false, timezoneExplicitOnly)
+func getConfiguredTimezone(timezone string, diagnostics io.Writer) (*time.Location, error) {
+	return resolveTimezone(timezone, false, timezoneExplicitOnly, diagnostics)
 }
 
-func resolveTimezone(timezone string, local bool, mode timezoneResolveMode) (*time.Location, error) {
+func resolveTimezone(timezone string, local bool, mode timezoneResolveMode, diagnostics io.Writer) (*time.Location, error) {
 	if local {
 		return time.Local, nil
 	}
@@ -52,7 +53,7 @@ func resolveTimezone(timezone string, local bool, mode timezoneResolveMode) (*ti
 		loc, ok, err := parseTimezoneValue(configTimezoneLabel, cfg.DefaultTimezone, false)
 		if ok {
 			if err != nil {
-				warnInvalidConfigTimezone(cfg.DefaultTimezone, mode)
+				warnInvalidConfigTimezone(diagnostics, cfg.DefaultTimezone, mode)
 			} else {
 				return loc, nil
 			}
@@ -102,10 +103,13 @@ func readConfigOptional() (config.File, bool) {
 	return cfg, true
 }
 
-func warnInvalidConfigTimezone(value string, mode timezoneResolveMode) {
+func warnInvalidConfigTimezone(diagnostics io.Writer, value string, mode timezoneResolveMode) {
+	if diagnostics == nil {
+		diagnostics = io.Discard
+	}
 	if mode == timezoneWithFallback {
-		fmt.Fprintf(os.Stderr, warnConfigFallback, configTimezoneLabel, value)
+		fmt.Fprintf(diagnostics, warnConfigFallback, configTimezoneLabel, value)
 		return
 	}
-	fmt.Fprintf(os.Stderr, warnConfigIgnore, configTimezoneLabel, value)
+	fmt.Fprintf(diagnostics, warnConfigIgnore, configTimezoneLabel, value)
 }

@@ -1,14 +1,17 @@
 package cmd
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestCollectExpressions_Positional(t *testing.T) {
 	cmd := &DocsSedCmd{Expression: "s/foo/bar/"}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +24,7 @@ func TestCollectExpressions_MultipleE(t *testing.T) {
 	cmd := &DocsSedCmd{
 		Expressions: []string{"s/foo/bar/", "s/baz/qux/g"},
 	}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +41,7 @@ func TestCollectExpressions_PositionalPlusE(t *testing.T) {
 		Expression:  "s/first/one/",
 		Expressions: []string{"s/second/two/"},
 	}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +59,7 @@ func TestCollectExpressions_File(t *testing.T) {
 	}
 
 	cmd := &DocsSedCmd{File: path}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +82,7 @@ func TestCollectExpressions_FilePlusE(t *testing.T) {
 		Expressions: []string{"s/from-flag/yes/"},
 		File:        path,
 	}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,22 +95,8 @@ func TestCollectExpressions_FilePlusE(t *testing.T) {
 }
 
 func TestCollectExpressions_Stdin(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	go func() {
-		_, _ = w.WriteString("# comment\ns/from-stdin/yes/\ns/also-stdin/**bold**/g\n")
-		_ = w.Close()
-	}()
-
-	oldStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = oldStdin }()
-
 	cmd := &DocsSedCmd{}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, "# comment\ns/from-stdin/yes/\ns/also-stdin/**bold**/g\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,21 +109,8 @@ func TestCollectExpressions_Stdin(t *testing.T) {
 }
 
 func TestCollectExpressions_StdinIgnoredWhenEProvided(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		_, _ = w.WriteString("s/should-not-appear/nope/\n")
-		_ = w.Close()
-	}()
-
-	oldStdin := os.Stdin
-	os.Stdin = r
-	defer func() { os.Stdin = oldStdin }()
-
 	cmd := &DocsSedCmd{Expressions: []string{"s/from-flag/yes/"}}
-	exprs, err := cmd.collectExpressions()
+	exprs, err := cmd.collectExpressions(sedInputTestContext(t, "s/should-not-appear/nope/\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +121,7 @@ func TestCollectExpressions_StdinIgnoredWhenEProvided(t *testing.T) {
 
 func TestCollectExpressions_NoInput(t *testing.T) {
 	cmd := &DocsSedCmd{}
-	_, err := cmd.collectExpressions()
+	_, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err == nil {
 		t.Error("expected error for no expressions")
 	}
@@ -153,8 +129,13 @@ func TestCollectExpressions_NoInput(t *testing.T) {
 
 func TestCollectExpressions_FileMissing(t *testing.T) {
 	cmd := &DocsSedCmd{File: "/nonexistent/file.sed"}
-	_, err := cmd.collectExpressions()
+	_, err := cmd.collectExpressions(sedInputTestContext(t, ""))
 	if err == nil {
 		t.Error("expected error for missing file")
 	}
+}
+
+func sedInputTestContext(t *testing.T, input string) context.Context {
+	t.Helper()
+	return newCmdRuntimeIOContext(t, strings.NewReader(input), io.Discard, io.Discard)
 }

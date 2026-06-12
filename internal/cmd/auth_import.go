@@ -16,10 +16,6 @@ import (
 	"github.com/steipete/gogcli/internal/ui"
 )
 
-var readAuthImportStdin = func() ([]byte, error) {
-	return io.ReadAll(os.Stdin)
-}
-
 var authImportNow = time.Now
 
 type AuthImportCmd struct {
@@ -45,11 +41,11 @@ func (c *AuthImportCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("--access-token-stdin cannot be combined with --refresh-token-stdin")
 	}
 
-	refreshToken, tokenErr := c.resolveRefreshToken()
+	refreshToken, tokenErr := c.resolveRefreshToken(ctx)
 	if tokenErr != nil {
 		return tokenErr
 	}
-	accessToken, accessTokenExpiresAt, accessErr := c.resolveAccessToken()
+	accessToken, accessTokenExpiresAt, accessErr := c.resolveAccessToken(ctx)
 	if accessErr != nil {
 		return accessErr
 	}
@@ -124,7 +120,7 @@ func (c *AuthImportCmd) Run(ctx context.Context, flags *RootFlags) error {
 	)
 }
 
-func (c *AuthImportCmd) resolveRefreshToken() (string, error) {
+func (c *AuthImportCmd) resolveRefreshToken(ctx context.Context) (string, error) {
 	sources := 0
 	if c.RefreshTokenStdin {
 		sources++
@@ -148,7 +144,7 @@ func (c *AuthImportCmd) resolveRefreshToken() (string, error) {
 	)
 	switch {
 	case c.RefreshTokenStdin:
-		raw, err = readAuthImportStdin()
+		raw, err = io.ReadAll(stdinReader(ctx))
 		if err != nil {
 			return "", fmt.Errorf("read --refresh-token-stdin: %w", err)
 		}
@@ -177,7 +173,7 @@ func (c *AuthImportCmd) resolveRefreshToken() (string, error) {
 	return token, nil
 }
 
-func (c *AuthImportCmd) resolveAccessToken() (string, time.Time, error) {
+func (c *AuthImportCmd) resolveAccessToken(ctx context.Context) (string, time.Time, error) {
 	sources := 0
 	if c.AccessTokenStdin {
 		sources++
@@ -203,7 +199,7 @@ func (c *AuthImportCmd) resolveAccessToken() (string, time.Time, error) {
 	)
 	switch {
 	case c.AccessTokenStdin:
-		raw, err = readAuthImportStdin()
+		raw, err = io.ReadAll(stdinReader(ctx))
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("read --access-token-stdin: %w", err)
 		}

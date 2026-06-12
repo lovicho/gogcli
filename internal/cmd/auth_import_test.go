@@ -14,28 +14,26 @@ import (
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/secrets"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func newImportTestContext(t *testing.T) context.Context {
 	t.Helper()
-	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	return outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{})
+	return newImportTestContextWithInput(t, strings.NewReader(""))
+}
+
+func newImportTestContextWithInput(t *testing.T, stdin io.Reader) context.Context {
+	t.Helper()
+	return outfmt.WithMode(newCmdRuntimeIOContext(t, stdin, io.Discard, io.Discard), outfmt.Mode{})
 }
 
 func withImportOverrides(t *testing.T, store secrets.Store) {
 	t.Helper()
 	origOpen := openSecretsStore
 	origKeychain := ensureKeychainAccess
-	origStdin := readAuthImportStdin
 	origNow := authImportNow
 	t.Cleanup(func() {
 		openSecretsStore = origOpen
 		ensureKeychainAccess = origKeychain
-		readAuthImportStdin = origStdin
 		authImportNow = origNow
 	})
 	openSecretsStore = func() (secrets.Store, error) { return store, nil }
@@ -208,15 +206,12 @@ func TestAuthImportCmd_ExpandsRefreshTokenFilePath(t *testing.T) {
 func TestAuthImportCmd_ReadsRefreshTokenFromStdin(t *testing.T) {
 	store := newMemSecretsStore()
 	withImportOverrides(t, store)
-	readAuthImportStdin = func() ([]byte, error) {
-		return io.ReadAll(bytes.NewBufferString("rt-stdin\n"))
-	}
 
 	cmd := &AuthImportCmd{
 		Email:             "a@b.com",
 		RefreshTokenStdin: true,
 	}
-	if err := cmd.Run(newImportTestContext(t), &RootFlags{}); err != nil {
+	if err := cmd.Run(newImportTestContextWithInput(t, bytes.NewBufferString("rt-stdin\n")), &RootFlags{}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 

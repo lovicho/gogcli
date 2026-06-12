@@ -3,17 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	formsapi "google.golang.org/api/forms/v1"
 
-	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
-
-var newFormsService = googleapi.NewForms
 
 type FormsCmd struct {
 	Get            FormsGetCmd            `cmd:"" name:"get" aliases:"info,show" help:"Get a form"`
@@ -54,7 +50,7 @@ func (c *FormsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("empty formId")
 	}
 
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -65,7 +61,7 @@ func (c *FormsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"form":     form,
 			"edit_url": formEditURL(formID),
 		})
@@ -100,7 +96,7 @@ func (c *FormsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -135,7 +131,7 @@ func (c *FormsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	formID := strings.TrimSpace(form.FormId)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"created":  true,
 			"form":     form,
 			"edit_url": formEditURL(formID),
@@ -175,7 +171,7 @@ func (c *FormsResponsesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		return usage("--max must be > 0")
 	}
 
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -197,7 +193,7 @@ func (c *FormsResponsesListCmd) Run(ctx context.Context, flags *RootFlags) error
 		if responses == nil {
 			responses = []*formsapi.FormResponse{}
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"form_id":       formID,
 			"responses":     responses,
 			"nextPageToken": resp.NextPageToken,
@@ -238,7 +234,7 @@ func (c *FormsResponseGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("empty responseId")
 	}
 
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -248,7 +244,7 @@ func (c *FormsResponseGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"response": resp,
 		})
 	}

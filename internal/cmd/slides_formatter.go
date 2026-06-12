@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"unicode/utf16"
 
@@ -401,7 +400,7 @@ func CreatePresentationFromMarkdownV2(ctx context.Context, opts CreatePresentati
 	}
 	defer func() {
 		if cleanupErr := pipeline.Cleanup(ctx); cleanupErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: asset cleanup: %v\n", cleanupErr)
+			fmt.Fprintf(stderrWriter(ctx), "warning: asset cleanup: %v\n", cleanupErr)
 		}
 	}()
 

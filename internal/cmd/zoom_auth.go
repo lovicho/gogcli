@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -62,7 +63,7 @@ func (c *ZoomAuthSetupCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	clientSecret := strings.TrimSpace(c.ClientSecret)
 	if clientSecret == "" {
-		clientSecret, err = promptSecret("Zoom client secret: ")
+		clientSecret, err = promptSecret(ctx, "Zoom client secret: ")
 		if err != nil {
 			return err
 		}
@@ -85,7 +86,7 @@ func (c *ZoomAuthSetupCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"saved":  true,
 			"alias":  alias,
 			"scopes": defaultZoomScopes,
@@ -140,7 +141,7 @@ func (c *ZoomAuthDoctorCmd) Run(ctx context.Context, _ *RootFlags) error {
 func writeZoomDoctorResult(ctx context.Context, u *ui.UI, checks []authDoctorCheck) error {
 	status := authDoctorStatus(checks)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"status": status, "checks": checks})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"status": status, "checks": checks})
 	}
 	if u != nil {
 		for _, check := range checks {
@@ -159,19 +160,27 @@ func promptDefault(ctx context.Context, prompt, value string) (string, error) {
 	if value != "" {
 		return value, nil
 	}
-	line, err := input.PromptLine(ctx, prompt)
+	line, err := input.PromptLineFrom(ctx, prompt, stdinReader(ctx))
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(line), nil
 }
 
-func promptSecret(prompt string) (string, error) {
-	_, _ = fmt.Fprint(os.Stderr, prompt)
-	b, err := termutil.ReadPassword(os.Stdin)
-	_, _ = fmt.Fprintln(os.Stderr)
+func promptSecret(ctx context.Context, prompt string) (string, error) {
+	_, _ = fmt.Fprint(stderrWriter(ctx), prompt)
+	b, err := readSecret(stdinReader(ctx))
+	_, _ = fmt.Fprintln(stderrWriter(ctx))
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(b)), nil
+}
+
+func readSecret(reader io.Reader) ([]byte, error) {
+	if file, ok := reader.(*os.File); ok {
+		return termutil.ReadPassword(file)
+	}
+	line, err := input.ReadLine(reader)
+	return []byte(line), err
 }

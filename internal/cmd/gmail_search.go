@@ -81,7 +81,7 @@ func (c *GmailSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	loc, err := resolveOutputLocation(c.Timezone, c.Local)
+	loc, err := resolveOutputLocation(c.Timezone, c.Local, stderrWriter(ctx))
 	if err != nil {
 		return err
 	}

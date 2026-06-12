@@ -228,6 +228,30 @@ func TestBatchEndDryRunKeepsStateWithoutHTTP(t *testing.T) {
 	}
 }
 
+func TestBatchJSONUsesRuntimeOutput(t *testing.T) {
+	restoreHome, err := config.SetHomeOverride(t.TempDir())
+	if err != nil {
+		t.Fatalf("set home: %v", err)
+	}
+	t.Cleanup(restoreHome)
+
+	var output bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
+	if err := (&BatchListCmd{}).Run(ctx); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	var result struct {
+		Batches []docsBatchSummary `json:"batches"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("decode output %q: %v", output.String(), err)
+	}
+	if len(result.Batches) != 0 {
+		t.Fatalf("batches = %#v, want empty", result.Batches)
+	}
+}
+
 func TestBatchLocalMutatorsHonorDryRun(t *testing.T) {
 	restoreHome, err := config.SetHomeOverride(t.TempDir())
 	if err != nil {

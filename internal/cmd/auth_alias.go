@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -27,7 +26,7 @@ func (c *AuthAliasListCmd) Run(ctx context.Context) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"aliases": aliases})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"aliases": aliases})
 	}
 	if len(aliases) == 0 {
 		u.Err().Println("No account aliases")
@@ -78,7 +77,7 @@ func (c *AuthAliasSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"alias": alias,
 			"email": strings.ToLower(email),
 		})

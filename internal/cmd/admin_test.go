@@ -7,12 +7,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	admin "google.golang.org/api/admin/directory/v1"
-	"google.golang.org/api/option"
 )
 
 func TestRequireAdminAccount_ConsumerBlocked(t *testing.T) {
@@ -74,13 +72,10 @@ func TestAdminUsersCreate_ValidationErrors(t *testing.T) {
 }
 
 func TestAdminUsersCreate_JSONSendsWorkspaceUser(t *testing.T) {
-	origNew := newAdminDirectoryService
-	t.Cleanup(func() { newAdminDirectoryService = origNew })
-
 	var gotInsert admin.User
 	var gotPatch admin.User
 	patchCalls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/users"):
 			if err := json.NewDecoder(r.Body).Decode(&gotInsert); err != nil {
@@ -113,21 +108,9 @@ func TestAdminUsersCreate_JSONSendsWorkspaceUser(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-	out := captureStdout(t, func() {
-		err := (&AdminUsersCreateCmd{
+	result := runWithAdminDirectoryTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminUsersCreateCmd{
 			Email:         "ada@example.com",
 			GivenName:     "Ada",
 			FamilyName:    "Lovelace",
@@ -140,10 +123,10 @@ func TestAdminUsersCreate_JSONSendsWorkspaceUser(t *testing.T) {
 			RecoveryPhone: "+15551234567",
 			HashFunction:  "sha1",
 		}).Run(ctx, &RootFlags{Account: "svc@example.com"})
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
 	})
+	if result.err != nil {
+		t.Fatalf("Run: %v\nstderr=%q", result.err, result.stderr)
+	}
 
 	if gotInsert.PrimaryEmail != "ada@example.com" || gotInsert.Name == nil || gotInsert.Name.GivenName != "Ada" || gotInsert.Name.FamilyName != "Lovelace" {
 		t.Fatalf("unexpected user identity: %#v", gotInsert)
@@ -170,7 +153,7 @@ func TestAdminUsersCreate_JSONSendsWorkspaceUser(t *testing.T) {
 		Suspended bool   `json:"suspended"`
 		Archived  bool   `json:"archived"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Email != "ada@example.com" || parsed.ID != "user-123" || !parsed.Suspended || !parsed.Archived {
@@ -179,11 +162,8 @@ func TestAdminUsersCreate_JSONSendsWorkspaceUser(t *testing.T) {
 }
 
 func TestAdminUsersCreate_GeneratesPasswordWhenOmitted(t *testing.T) {
-	origNew := newAdminDirectoryService
-	t.Cleanup(func() { newAdminDirectoryService = origNew })
-
 	var got admin.User
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/users")) {
 			http.NotFound(w, r)
 			return
@@ -197,29 +177,17 @@ func TestAdminUsersCreate_GeneratesPasswordWhenOmitted(t *testing.T) {
 			"id":           "user-456",
 		})
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-	out := captureStdout(t, func() {
-		err := (&AdminUsersCreateCmd{
+	result := runWithAdminDirectoryTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminUsersCreateCmd{
 			Email:      "grace@example.com",
 			GivenName:  "Grace",
 			FamilyName: "Hopper",
 		}).Run(ctx, &RootFlags{Account: "svc@example.com"})
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
 	})
+	if result.err != nil {
+		t.Fatalf("Run: %v\nstderr=%q", result.err, result.stderr)
+	}
 
 	if got.Password == "" || len(got.Password) < 8 {
 		t.Fatalf("expected generated password, got %q", got.Password)
@@ -233,7 +201,7 @@ func TestAdminUsersCreate_GeneratesPasswordWhenOmitted(t *testing.T) {
 		ID                string `json:"id"`
 		GeneratedPassword string `json:"generatedPassword"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Email != "grace@example.com" || parsed.ID != "user-456" || parsed.GeneratedPassword != got.Password {
@@ -242,11 +210,8 @@ func TestAdminUsersCreate_GeneratesPasswordWhenOmitted(t *testing.T) {
 }
 
 func TestAdminUsersDelete_JSONRequiresForceAndDeletes(t *testing.T) {
-	origNew := newAdminDirectoryService
-	t.Cleanup(func() { newAdminDirectoryService = origNew })
-
 	var deletedPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/users/")) {
 			http.NotFound(w, r)
 			return
@@ -254,28 +219,16 @@ func TestAdminUsersDelete_JSONRequiresForceAndDeletes(t *testing.T) {
 		deletedPath = r.URL.Path
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-	out := captureStdout(t, func() {
-		err := (&AdminUsersDeleteCmd{UserEmail: "temp@example.com"}).Run(ctx, &RootFlags{
+	result := runWithAdminDirectoryTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminUsersDeleteCmd{UserEmail: "temp@example.com"}).Run(ctx, &RootFlags{
 			Account: "svc@example.com",
 			Force:   true,
 		})
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
 	})
+	if result.err != nil {
+		t.Fatalf("Run: %v\nstderr=%q", result.err, result.stderr)
+	}
 
 	if !strings.Contains(deletedPath, "/users/temp@example.com") {
 		t.Fatalf("unexpected delete path: %q", deletedPath)
@@ -284,7 +237,7 @@ func TestAdminUsersDelete_JSONRequiresForceAndDeletes(t *testing.T) {
 		Email   string `json:"email"`
 		Deleted bool   `json:"deleted"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Email != "temp@example.com" || !parsed.Deleted {
@@ -293,14 +246,11 @@ func TestAdminUsersDelete_JSONRequiresForceAndDeletes(t *testing.T) {
 }
 
 func TestAdminOrgunitsCreateUpdateDelete_JSON(t *testing.T) {
-	origNew := newAdminOrgUnitDirectoryService
-	t.Cleanup(func() { newAdminOrgUnitDirectoryService = origNew })
-
 	var inserted admin.OrgUnit
 	var patched admin.OrgUnit
 	var patchBody string
 	deleted := false
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/orgunits"):
 			if err := json.NewDecoder(r.Body).Decode(&inserted); err != nil {
@@ -340,34 +290,22 @@ func TestAdminOrgunitsCreateUpdateDelete_JSON(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminOrgUnitDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-	createOut := captureStdout(t, func() {
-		err := (&AdminOrgunitsCreateCmd{
+	createResult := runWithAdminOrgUnitTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminOrgunitsCreateCmd{
 			Name:        "Engineering",
 			Parent:      "/",
 			Description: "Builders",
 		}).Run(ctx, &RootFlags{Account: "svc@example.com"})
-		if err != nil {
-			t.Fatalf("create Run: %v", err)
-		}
 	})
+	if createResult.err != nil {
+		t.Fatalf("create Run: %v\nstderr=%q", createResult.err, createResult.stderr)
+	}
 	if inserted.Name != "Engineering" || inserted.ParentOrgUnitPath != "/" || inserted.Description != "Builders" {
 		t.Fatalf("unexpected insert body: %#v", inserted)
 	}
 	var created admin.OrgUnit
-	if err := json.Unmarshal([]byte(createOut), &created); err != nil {
+	if err := json.Unmarshal([]byte(createResult.stdout), &created); err != nil {
 		t.Fatalf("unmarshal create: %v", err)
 	}
 	if created.OrgUnitPath != "/Engineering" || created.OrgUnitId != "ou-123" {
@@ -376,36 +314,36 @@ func TestAdminOrgunitsCreateUpdateDelete_JSON(t *testing.T) {
 
 	rename := "Eng"
 	description := ""
-	updateOut := captureStdout(t, func() {
-		err := (&AdminOrgunitsUpdateCmd{
+	updateResult := runWithAdminOrgUnitTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminOrgunitsUpdateCmd{
 			Path:        "/Engineering",
 			Name:        &rename,
 			Description: &description,
 		}).Run(ctx, &RootFlags{Account: "svc@example.com"})
-		if err != nil {
-			t.Fatalf("update Run: %v", err)
-		}
 	})
+	if updateResult.err != nil {
+		t.Fatalf("update Run: %v\nstderr=%q", updateResult.err, updateResult.stderr)
+	}
 	if patched.Name != "Eng" || patched.Description != "" || !strings.Contains(patchBody, `"description":""`) {
 		t.Fatalf("unexpected patch body: %#v", patched)
 	}
 	var updated admin.OrgUnit
-	if err := json.Unmarshal([]byte(updateOut), &updated); err != nil {
+	if err := json.Unmarshal([]byte(updateResult.stdout), &updated); err != nil {
 		t.Fatalf("unmarshal update: %v", err)
 	}
 	if updated.Name != "Eng" || updated.OrgUnitPath != "/Engineering" {
 		t.Fatalf("unexpected update response: %#v", updated)
 	}
 
-	deleteOut := captureStdout(t, func() {
-		err := (&AdminOrgunitsDeleteCmd{Path: "/Engineering"}).Run(ctx, &RootFlags{
+	deleteRun := runWithAdminOrgUnitTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminOrgunitsDeleteCmd{Path: "/Engineering"}).Run(ctx, &RootFlags{
 			Account: "svc@example.com",
 			Force:   true,
 		})
-		if err != nil {
-			t.Fatalf("delete Run: %v", err)
-		}
 	})
+	if deleteRun.err != nil {
+		t.Fatalf("delete Run: %v\nstderr=%q", deleteRun.err, deleteRun.stderr)
+	}
 	if !deleted {
 		t.Fatalf("expected delete request")
 	}
@@ -413,7 +351,7 @@ func TestAdminOrgunitsCreateUpdateDelete_JSON(t *testing.T) {
 		Path    string `json:"path"`
 		Deleted bool   `json:"deleted"`
 	}
-	if err := json.Unmarshal([]byte(deleteOut), &deleteResult); err != nil {
+	if err := json.Unmarshal([]byte(deleteRun.stdout), &deleteResult); err != nil {
 		t.Fatalf("unmarshal delete: %v", err)
 	}
 	if deleteResult.Path != "Engineering" || !deleteResult.Deleted {
@@ -422,10 +360,7 @@ func TestAdminOrgunitsCreateUpdateDelete_JSON(t *testing.T) {
 }
 
 func TestAdminOrgunitsList_JSON(t *testing.T) {
-	origNew := newAdminOrgUnitDirectoryService
-	t.Cleanup(func() { newAdminOrgUnitDirectoryService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/orgunits")) {
 			http.NotFound(w, r)
 			return
@@ -443,34 +378,20 @@ func TestAdminOrgunitsList_JSON(t *testing.T) {
 			},
 		})
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminOrgUnitDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-	out := captureStdout(t, func() {
-		if err := (&AdminOrgunitsListCmd{Parent: "/", Type: "all"}).Run(ctx, &RootFlags{Account: "svc@example.com"}); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
+	result := runWithAdminOrgUnitTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminOrgunitsListCmd{Parent: "/", Type: "all"}).Run(ctx, &RootFlags{Account: "svc@example.com"})
 	})
-	if !strings.Contains(out, "Engineering") || !strings.Contains(out, "/Engineering") {
-		t.Fatalf("unexpected output: %q", out)
+	if result.err != nil {
+		t.Fatalf("Run: %v\nstderr=%q", result.err, result.stderr)
+	}
+	if !strings.Contains(result.stdout, "Engineering") || !strings.Contains(result.stdout, "/Engineering") {
+		t.Fatalf("unexpected output: %q", result.stdout)
 	}
 }
 
 func TestAdminUsersList_JSON_AllowsNilName(t *testing.T) {
-	origNew := newAdminDirectoryService
-	t.Cleanup(func() { newAdminDirectoryService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/users")) {
 			http.NotFound(w, r)
 			return
@@ -486,25 +407,13 @@ func TestAdminUsersList_JSON_AllowsNilName(t *testing.T) {
 			},
 		})
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-
-	out := captureStdout(t, func() {
-		if err := (&AdminUsersListCmd{Domain: "example.com", Max: 100}).Run(ctx, &RootFlags{Account: "svc@example.com"}); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
+	result := runWithAdminDirectoryTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminUsersListCmd{Domain: "example.com", Max: 100}).Run(ctx, &RootFlags{Account: "svc@example.com"})
 	})
+	if result.err != nil {
+		t.Fatalf("Run: %v\nstderr=%q", result.err, result.stderr)
+	}
 
 	var parsed struct {
 		Users []struct {
@@ -513,7 +422,7 @@ func TestAdminUsersList_JSON_AllowsNilName(t *testing.T) {
 			Admin bool   `json:"admin"`
 		} `json:"users"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(parsed.Users) != 1 || parsed.Users[0].Email != "ada@example.com" || parsed.Users[0].Name != "" || !parsed.Users[0].Admin {
@@ -522,13 +431,6 @@ func TestAdminUsersList_JSON_AllowsNilName(t *testing.T) {
 }
 
 func TestAdminListInvalidMaxFailsBeforeWorkspaceCheck(t *testing.T) {
-	origNew := newAdminDirectoryService
-	t.Cleanup(func() { newAdminDirectoryService = origNew })
-	newAdminDirectoryService = func(context.Context, string) (*admin.Service, error) {
-		t.Fatalf("expected max validation to fail before creating admin service")
-		return nil, errors.New("unexpected admin service call")
-	}
-
 	cases := [][]string{
 		{"--account", "user@gmail.com", "admin", "users", "list", "--domain", "example.com", "--max", "0"},
 		{"--account", "user@gmail.com", "admin", "users", "list", "--domain", "example.com", "--max=-1"},
@@ -539,16 +441,19 @@ func TestAdminListInvalidMaxFailsBeforeWorkspaceCheck(t *testing.T) {
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
-			err := Execute(args)
-			if ExitCode(err) != 2 || !strings.Contains(err.Error(), "max must be > 0") {
-				t.Fatalf("unexpected err: %v", err)
+			result := executeWithAdminDirectoryTestServiceFactory(
+				t,
+				args,
+				unexpectedAdminTestService(t, "expected max validation to fail before creating admin service"),
+			)
+			if ExitCode(result.err) != 2 || !strings.Contains(result.err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", result.err)
 			}
 		})
 	}
 }
 
 func TestAdminGroupsMembersAdd_ValidatesEmailsBeforeDryRun(t *testing.T) {
-	ctx := newCmdJSONContext(t)
 	flags := &RootFlags{Account: "svc@example.com", DryRun: true}
 
 	tests := []struct {
@@ -560,25 +465,26 @@ func TestAdminGroupsMembersAdd_ValidatesEmailsBeforeDryRun(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			out := captureStdout(t, func() {
-				err := tc.cmd.Run(ctx, flags)
-				if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), tc.want) {
-					t.Fatalf("unexpected err: %v", err)
-				}
-			})
-			if strings.TrimSpace(out) != "" {
-				t.Fatalf("expected no dry-run output, got %q", out)
+			result := runWithAdminDirectoryTestServiceFactory(
+				t,
+				unexpectedAdminTestService(t, "expected validation to fail before creating admin service"),
+				func(ctx context.Context) error {
+					return tc.cmd.Run(ctx, flags)
+				},
+			)
+			if result.err == nil || ExitCode(result.err) != 2 || !strings.Contains(result.err.Error(), tc.want) {
+				t.Fatalf("unexpected err: %v", result.err)
+			}
+			if strings.TrimSpace(result.stdout) != "" {
+				t.Fatalf("expected no dry-run output, got %q", result.stdout)
 			}
 		})
 	}
 }
 
 func TestAdminGroupsMembersAdd_JSON(t *testing.T) {
-	origNew := newAdminDirectoryService
-	t.Cleanup(func() { newAdminDirectoryService = origNew })
-
 	var gotRole string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newAdminTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/members")) {
 			http.NotFound(w, r)
 			return
@@ -592,29 +498,17 @@ func TestAdminGroupsMembersAdd_JSON(t *testing.T) {
 			"role":  gotRole,
 		})
 	}))
-	defer srv.Close()
 
-	svc, err := admin.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newAdminDirectoryService = func(context.Context, string) (*admin.Service, error) { return svc, nil }
-
-	ctx := newCmdJSONContext(t)
-
-	out := captureStdout(t, func() {
-		if err := (&AdminGroupsMembersAddCmd{
+	result := runWithAdminDirectoryTestService(t, svc, func(ctx context.Context) error {
+		return (&AdminGroupsMembersAddCmd{
 			GroupEmail:  "eng@example.com",
 			MemberEmail: "dev@example.com",
 			Role:        "owner",
-		}).Run(ctx, &RootFlags{Account: "svc@example.com"}); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
+		}).Run(ctx, &RootFlags{Account: "svc@example.com"})
 	})
+	if result.err != nil {
+		t.Fatalf("Run: %v\nstderr=%q", result.err, result.stderr)
+	}
 
 	if gotRole != adminRoleOwner {
 		t.Fatalf("unexpected role sent: %q", gotRole)
@@ -623,7 +517,7 @@ func TestAdminGroupsMembersAdd_JSON(t *testing.T) {
 		Email string `json:"email"`
 		Role  string `json:"role"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Email != "dev@example.com" || parsed.Role != adminRoleOwner {

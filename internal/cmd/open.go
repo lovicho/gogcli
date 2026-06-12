@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -34,7 +33,7 @@ func (c *OpenCmd) Run(ctx context.Context) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"input": target,
 			"type":  kind,
 			"url":   url,
@@ -42,12 +41,12 @@ func (c *OpenCmd) Run(ctx context.Context) error {
 	}
 
 	if outfmt.IsPlain(ctx) {
-		_, _ = fmt.Fprintf(os.Stdout, "type\t%s\n", kind)
-		_, _ = fmt.Fprintf(os.Stdout, "url\t%s\n", url)
+		_, _ = fmt.Fprintf(stdoutWriter(ctx), "type\t%s\n", kind)
+		_, _ = fmt.Fprintf(stdoutWriter(ctx), "url\t%s\n", url)
 		return nil
 	}
 
-	_, _ = fmt.Fprintln(os.Stdout, url)
+	_, _ = fmt.Fprintln(stdoutWriter(ctx), url)
 	return nil
 }
 

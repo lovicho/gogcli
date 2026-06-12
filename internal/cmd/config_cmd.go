@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -40,9 +39,9 @@ func (c *ConfigGetCmd) Run(ctx context.Context) error {
 	value := config.GetValue(cfg, key)
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, outfmt.KeyValuePayload(key.String(), value))
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), outfmt.KeyValuePayload(key.String(), value))
 	}
-	fmt.Fprintln(os.Stdout, formatConfigValue(value, spec.EmptyHint))
+	fmt.Fprintln(stdoutWriter(ctx), formatConfigValue(value, spec.EmptyHint))
 	return nil
 }
 
@@ -51,10 +50,10 @@ type ConfigKeysCmd struct{}
 func (c *ConfigKeysCmd) Run(ctx context.Context) error {
 	keys := config.KeyNames()
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, outfmt.KeysPayload(keys))
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), outfmt.KeysPayload(keys))
 	}
 	for _, key := range keys {
-		fmt.Fprintln(os.Stdout, key)
+		fmt.Fprintln(stdoutWriter(ctx), key)
 	}
 	return nil
 }
@@ -93,9 +92,9 @@ func (c *ConfigSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if outfmt.IsJSON(ctx) {
 		payload := outfmt.KeyValuePayload(key.String(), c.Value)
 		payload["saved"] = true
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
-	fmt.Fprintf(os.Stdout, "Set %s = %s\n", c.Key, c.Value)
+	fmt.Fprintf(stdoutWriter(ctx), "Set %s = %s\n", c.Key, c.Value)
 	return nil
 }
 
@@ -131,9 +130,9 @@ func (c *ConfigUnsetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if outfmt.IsJSON(ctx) {
 		payload := outfmt.KeyValuePayload(key.String(), "")
 		payload["removed"] = true
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
-	fmt.Fprintf(os.Stdout, "Unset %s\n", c.Key)
+	fmt.Fprintf(stdoutWriter(ctx), "Unset %s\n", c.Key)
 	return nil
 }
 
@@ -153,13 +152,13 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 		for _, key := range keys {
 			payload[key.String()] = config.GetValue(cfg, key)
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
-	fmt.Fprintf(os.Stdout, "Config file: %s\n", path)
+	fmt.Fprintf(stdoutWriter(ctx), "Config file: %s\n", path)
 	for _, key := range keys {
 		value := config.GetValue(cfg, key)
-		fmt.Fprintf(os.Stdout, "%s: %s\n", key, formatConfigValue(value, func() string { return "(not set)" }))
+		fmt.Fprintf(stdoutWriter(ctx), "%s: %s\n", key, formatConfigValue(value, func() string { return "(not set)" }))
 	}
 	return nil
 }
@@ -173,9 +172,9 @@ func (c *ConfigPathCmd) Run(ctx context.Context) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, outfmt.PathPayload(path))
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), outfmt.PathPayload(path))
 	}
-	fmt.Fprintln(os.Stdout, path)
+	fmt.Fprintln(stdoutWriter(ctx), path)
 	return nil
 }
 

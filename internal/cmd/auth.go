@@ -11,11 +11,8 @@ import (
 var (
 	openSecretsStore        = secrets.OpenDefault
 	authorizeGoogle         = googleauth.Authorize
-	startManageServer       = googleauth.StartManageServer
-	checkRefreshToken       = googleauth.CheckRefreshToken
 	ensureKeychainAccess    = secrets.EnsureKeychainAccess
 	fetchAuthorizedIdentity = googleauth.IdentityForRefreshToken
-	manualAuthURL           = googleauth.ManualAuthURL
 )
 
 func ensureKeychainAccessIfNeeded() error {

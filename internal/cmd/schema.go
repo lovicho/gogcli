@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -136,7 +135,7 @@ func (c *SchemaCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlag
 		Command:       buildSchemaNode(node, hide, profile),
 	}
 
-	return outfmt.WriteJSON(ctx, os.Stdout, doc)
+	return outfmt.WriteJSON(ctx, stdoutWriter(ctx), doc)
 }
 
 func buildSchemaAutomation(flags *RootFlags, profile bakedSafetyProfile) (schemaAutomation, error) {

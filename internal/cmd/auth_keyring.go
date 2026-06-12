@@ -8,7 +8,6 @@ import (
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/secrets"
-	"github.com/steipete/gogcli/internal/termutil"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -40,7 +39,7 @@ func (c *AuthKeyringCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 				"keyring_backend": info.Value,
 				"source":          info.Source,
 				"path":            path,
@@ -105,7 +104,7 @@ func (c *AuthKeyringCmd) Run(ctx context.Context, flags *RootFlags) error {
 		!outfmt.IsPlain(ctx) {
 		if v := strings.TrimSpace(os.Getenv(keyringPasswordEnv)); v != "" {
 			u.Err().Println("GOG_KEYRING_PASSWORD found in environment.")
-		} else if !termutil.IsTerminal(os.Stdin) {
+		} else if !stdinIsTerminal(ctx) {
 			u.Err().Linef("NOTE: file keyring backend in non-interactive context requires %s", keyringPasswordEnv)
 		} else {
 			u.Err().Linef("Hint: set %s for non-interactive use (CI/ssh)", keyringPasswordEnv)
@@ -113,7 +112,7 @@ func (c *AuthKeyringCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"written":         true,
 			"path":            path,
 			"keyring_backend": backend,

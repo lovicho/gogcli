@@ -230,7 +230,7 @@ func (c *SlidesCreateFromMarkdownCmd) Run(ctx context.Context, flags *RootFlags)
 		return fmt.Errorf("no slides found in markdown")
 	}
 	if c.Debug {
-		fmt.Fprintf(os.Stderr, "parsed %d slides\n", len(parsed))
+		fmt.Fprintf(stderrWriter(ctx), "parsed %d slides\n", len(parsed))
 	}
 
 	pipelineCfg := DefaultAssetPipelineConfig()

@@ -2,35 +2,17 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	gapi "google.golang.org/api/googleapi"
 	searchconsoleapi "google.golang.org/api/searchconsole/v1"
 
-	"github.com/steipete/gogcli/internal/config"
-	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
-)
-
-var newSearchConsoleService = googleapi.NewSearchConsole
-
-const (
-	defaultSearchConsoleRowLimit = int64(1000)
-	maxSearchConsoleRowLimit     = int64(25000)
-
-	searchConsoleGroupAnd          = "AND"
-	searchConsoleTypeWeb           = "WEB"
-	searchConsoleAggregationByPage = "BY_PAGE"
-	searchConsoleDimensionQuery    = "QUERY"
-	searchConsoleDimensionPage     = "PAGE"
 )
 
 type SearchConsoleCmd struct {
@@ -56,7 +38,7 @@ func (c *SearchConsoleSitesListCmd) Run(ctx context.Context, flags *RootFlags) e
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -67,7 +49,7 @@ func (c *SearchConsoleSitesListCmd) Run(ctx context.Context, flags *RootFlags) e
 
 	rows := resp.SiteEntry
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"sites": rows,
 		}); err != nil {
 			return err
@@ -111,7 +93,7 @@ func (c *SearchConsoleSitesGetCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -121,7 +103,7 @@ func (c *SearchConsoleSitesGetCmd) Run(ctx context.Context, flags *RootFlags) er
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"site": site,
 		})
 	}
@@ -159,37 +141,27 @@ func (c *SearchConsoleQueryCmd) Run(ctx context.Context, flags *RootFlags) error
 		return err
 	}
 
-	siteURL := strings.TrimSpace(c.SiteURL)
-	if siteURL == "" {
-		return usage("empty siteUrl")
-	}
-
-	req, err := c.buildRequest()
+	plan, err := c.plan(stdinReader(ctx))
 	if err != nil {
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
-	resp, err := svc.Searchanalytics.Query(siteURL, req).Context(ctx).Do()
+	resp, err := svc.Searchanalytics.Query(plan.SiteURL, plan.Request).Context(ctx).Do()
 	if err != nil {
 		return wrapSearchConsoleError(err)
 	}
 
-	queryType := req.Type
-	if queryType == "" {
-		queryType = req.SearchType
-	}
-
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
-			"site_url":                  siteURL,
-			"from":                      req.StartDate,
-			"to":                        req.EndDate,
-			"type":                      queryType,
-			"dimensions":                req.Dimensions,
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
+			"site_url":                  plan.SiteURL,
+			"from":                      plan.Request.StartDate,
+			"to":                        plan.Request.EndDate,
+			"type":                      plan.queryType(),
+			"dimensions":                plan.Request.Dimensions,
 			"response_aggregation_type": resp.ResponseAggregationType,
 			"rows":                      resp.Rows,
 		}); err != nil {
@@ -206,7 +178,7 @@ func (c *SearchConsoleQueryCmd) Run(ctx context.Context, flags *RootFlags) error
 		return failEmptyExit(c.FailEmpty)
 	}
 
-	headers := requestSearchConsoleDimensions(req, resp.Rows)
+	headers := requestSearchConsoleDimensions(plan.Request, resp.Rows)
 	headers = append(headers, "CLICKS", "IMPRESSIONS", "CTR", "POSITION")
 
 	w, flush := tableWriter(ctx)
@@ -229,84 +201,6 @@ func (c *SearchConsoleQueryCmd) Run(ctx context.Context, flags *RootFlags) error
 		fmt.Fprintln(w, strings.Join(values, "\t"))
 	}
 	return nil
-}
-
-func (c *SearchConsoleQueryCmd) buildRequest() (*searchconsoleapi.SearchAnalyticsQueryRequest, error) {
-	requestSpec := strings.TrimSpace(c.Request)
-	if requestSpec != "" {
-		return buildSearchConsoleRequestFromSpec(requestSpec)
-	}
-
-	from, err := parseSearchConsoleDate(c.From, "--from")
-	if err != nil {
-		return nil, err
-	}
-	to, err := parseSearchConsoleDate(c.To, "--to")
-	if err != nil {
-		return nil, err
-	}
-	if rangeErr := validateSearchConsoleDateRange(from, to); rangeErr != nil {
-		return nil, rangeErr
-	}
-
-	if c.Max <= 0 || c.Max > maxSearchConsoleRowLimit {
-		return nil, usagef("--max must be between 1 and %d", maxSearchConsoleRowLimit)
-	}
-	if c.Offset < 0 {
-		return nil, usage("--offset must be >= 0")
-	}
-
-	dimensions, err := normalizeSearchConsoleDimensions(c.Dimensions)
-	if err != nil {
-		return nil, err
-	}
-	searchType, err := normalizeSearchConsoleType(c.Type)
-	if err != nil {
-		return nil, err
-	}
-
-	req := &searchconsoleapi.SearchAnalyticsQueryRequest{
-		StartDate:  from,
-		EndDate:    to,
-		Dimensions: dimensions,
-		Type:       searchType,
-		RowLimit:   c.Max,
-		StartRow:   c.Offset,
-	}
-
-	if v := strings.TrimSpace(c.Aggregation); v != "" {
-		aggregation, err := normalizeSearchConsoleAggregation(v)
-		if err != nil {
-			return nil, err
-		}
-		req.AggregationType = aggregation
-	}
-	if v := strings.TrimSpace(c.DataState); v != "" {
-		dataState, err := normalizeSearchConsoleDataState(v)
-		if err != nil {
-			return nil, err
-		}
-		req.DataState = dataState
-	}
-
-	if len(c.Filter) > 0 {
-		filters := make([]*searchconsoleapi.ApiDimensionFilter, 0, len(c.Filter))
-		for _, raw := range c.Filter {
-			filter, err := parseSearchConsoleFilter(raw)
-			if err != nil {
-				return nil, err
-			}
-			filters = append(filters, filter)
-		}
-		req.DimensionFilterGroups = []*searchconsoleapi.ApiDimensionFilterGroup{
-			{
-				GroupType: searchConsoleGroupAnd,
-				Filters:   filters,
-			},
-		}
-	}
-
-	return req, nil
 }
 
 type SearchConsoleSitemapsCmd struct {
@@ -334,7 +228,7 @@ func (c *SearchConsoleSitemapsListCmd) Run(ctx context.Context, flags *RootFlags
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -349,7 +243,7 @@ func (c *SearchConsoleSitemapsListCmd) Run(ctx context.Context, flags *RootFlags
 
 	rows := resp.Sitemap
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"sitemaps": rows,
 		}); err != nil {
 			return err
@@ -407,7 +301,7 @@ func (c *SearchConsoleSitemapsGetCmd) Run(ctx context.Context, flags *RootFlags)
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -417,7 +311,7 @@ func (c *SearchConsoleSitemapsGetCmd) Run(ctx context.Context, flags *RootFlags)
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"sitemap": sitemap,
 		})
 	}
@@ -465,7 +359,7 @@ func (c *SearchConsoleSitemapsSubmitCmd) Run(ctx context.Context, flags *RootFla
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -511,7 +405,7 @@ func (c *SearchConsoleSitemapsDeleteCmd) Run(ctx context.Context, flags *RootFla
 		return err
 	}
 
-	svc, err := newSearchConsoleService(ctx, account)
+	svc, err := searchConsoleService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -536,299 +430,6 @@ func validateSearchConsoleSitemapURL(raw string) error {
 		return nil
 	default:
 		return usagef("invalid feedpath %q (expected http(s) sitemap URL)", raw)
-	}
-}
-
-func buildSearchConsoleRequestFromSpec(spec string) (*searchconsoleapi.SearchAnalyticsQueryRequest, error) {
-	b, err := readSearchConsoleRequestBytes(spec)
-	if err != nil {
-		return nil, err
-	}
-
-	var req searchconsoleapi.SearchAnalyticsQueryRequest
-	if unmarshalErr := json.Unmarshal(b, &req); unmarshalErr != nil {
-		return nil, fmt.Errorf("decode search console request: %w", unmarshalErr)
-	}
-
-	if req.RowLimit == 0 {
-		req.RowLimit = defaultSearchConsoleRowLimit
-	}
-	if req.RowLimit < 1 || req.RowLimit > maxSearchConsoleRowLimit {
-		return nil, usagef("request.rowLimit must be between 1 and %d", maxSearchConsoleRowLimit)
-	}
-	if req.StartRow < 0 {
-		return nil, usage("request.startRow must be >= 0")
-	}
-	if rangeErr := validateSearchConsoleDateRange(req.StartDate, req.EndDate); rangeErr != nil {
-		return nil, rangeErr
-	}
-
-	if len(req.Dimensions) > 0 {
-		dimensions, dimErr := normalizeSearchConsoleDimensionList(req.Dimensions)
-		if dimErr != nil {
-			return nil, dimErr
-		}
-		req.Dimensions = dimensions
-	}
-
-	if req.Type == "" && req.SearchType != "" {
-		req.Type = req.SearchType
-	}
-	if req.Type == "" {
-		req.Type = searchConsoleTypeWeb
-	}
-	searchType, err := normalizeSearchConsoleType(req.Type)
-	if err != nil {
-		return nil, err
-	}
-	req.Type = searchType
-	req.SearchType = searchType
-
-	if v := strings.TrimSpace(req.AggregationType); v != "" {
-		aggregation, err := normalizeSearchConsoleAggregation(v)
-		if err != nil {
-			return nil, err
-		}
-		req.AggregationType = aggregation
-	}
-	if v := strings.TrimSpace(req.DataState); v != "" {
-		dataState, err := normalizeSearchConsoleDataState(v)
-		if err != nil {
-			return nil, err
-		}
-		req.DataState = dataState
-	}
-
-	for _, group := range req.DimensionFilterGroups {
-		if group == nil {
-			continue
-		}
-		if strings.TrimSpace(group.GroupType) == "" {
-			group.GroupType = searchConsoleGroupAnd
-		}
-		if !strings.EqualFold(strings.TrimSpace(group.GroupType), "and") {
-			return nil, usagef("invalid request.groupType %q (expected and)", group.GroupType)
-		}
-		group.GroupType = searchConsoleGroupAnd
-		for _, filter := range group.Filters {
-			if filter == nil {
-				continue
-			}
-			dimension, err := normalizeSearchConsoleDimension(filter.Dimension)
-			if err != nil {
-				return nil, err
-			}
-			operator, err := normalizeSearchConsoleFilterOperator(filter.Operator)
-			if err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(filter.Expression) == "" {
-				return nil, usage("request filter expression cannot be empty")
-			}
-			filter.Dimension = dimension
-			filter.Operator = operator
-		}
-	}
-
-	return &req, nil
-}
-
-func readSearchConsoleRequestBytes(spec string) ([]byte, error) {
-	spec = strings.TrimSpace(spec)
-	switch {
-	case spec == "", spec == "-", strings.HasPrefix(spec, "@"), strings.HasPrefix(spec, "{"), strings.HasPrefix(spec, "["):
-		return resolveInlineOrFileBytes(spec)
-	default:
-		path, err := config.ExpandPath(spec)
-		if err != nil {
-			return nil, err
-		}
-		return os.ReadFile(path) //nolint:gosec // user-provided path
-	}
-}
-
-func parseSearchConsoleDate(value string, flagName string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", usagef("empty %s", flagName)
-	}
-	if _, err := time.Parse("2006-01-02", value); err != nil {
-		return "", usagef("invalid %s (expected YYYY-MM-DD)", flagName)
-	}
-	return value, nil
-}
-
-func validateSearchConsoleDateRange(from string, to string) error {
-	start, err := time.Parse("2006-01-02", strings.TrimSpace(from))
-	if err != nil {
-		return usage("invalid start date (expected YYYY-MM-DD)")
-	}
-	end, err := time.Parse("2006-01-02", strings.TrimSpace(to))
-	if err != nil {
-		return usage("invalid end date (expected YYYY-MM-DD)")
-	}
-	if end.Before(start) {
-		return usage("--to must be on or after --from")
-	}
-	return nil
-}
-
-func normalizeSearchConsoleType(raw string) (string, error) {
-	v := strings.TrimSpace(raw)
-	switch {
-	case strings.EqualFold(v, "web"):
-		return searchConsoleTypeWeb, nil
-	case strings.EqualFold(v, "image"):
-		return "IMAGE", nil
-	case strings.EqualFold(v, "video"):
-		return "VIDEO", nil
-	case strings.EqualFold(v, "news"):
-		return "NEWS", nil
-	case strings.EqualFold(v, "discover"):
-		return "DISCOVER", nil
-	case strings.EqualFold(strings.ReplaceAll(v, "_", ""), "googleNews"),
-		strings.EqualFold(strings.ReplaceAll(v, "-", ""), "googleNews"):
-		return "GOOGLE_NEWS", nil
-	case v == "":
-		return "", usage("empty --type")
-	default:
-		return "", usagef("invalid --type %q (expected WEB|IMAGE|VIDEO|NEWS|DISCOVER|GOOGLE_NEWS)", raw)
-	}
-}
-
-func normalizeSearchConsoleAggregation(raw string) (string, error) {
-	v := strings.TrimSpace(raw)
-	switch {
-	case v == "":
-		return "", nil
-	case strings.EqualFold(v, "auto"):
-		return "AUTO", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "byProperty"):
-		return "BY_PROPERTY", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "byPage"):
-		return searchConsoleAggregationByPage, nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "byNewsShowcasePanel"):
-		return "BY_NEWS_SHOWCASE_PANEL", nil
-	default:
-		return "", usagef("invalid --aggregation %q (expected AUTO|BY_PROPERTY|BY_PAGE|BY_NEWS_SHOWCASE_PANEL)", raw)
-	}
-}
-
-func normalizeSearchConsoleDataState(raw string) (string, error) {
-	v := strings.TrimSpace(raw)
-	switch {
-	case v == "":
-		return "", nil
-	case strings.EqualFold(v, "final"):
-		return "FINAL", nil
-	case strings.EqualFold(v, "all"):
-		return "ALL", nil
-	case strings.EqualFold(strings.ReplaceAll(v, "-", "_"), "hourly_all"):
-		return "HOURLY_ALL", nil
-	default:
-		return "", usagef("invalid --data-state %q (expected FINAL|ALL|HOURLY_ALL)", raw)
-	}
-}
-
-func normalizeSearchConsoleDimensions(raw string) ([]string, error) {
-	parts := splitCommaList(raw)
-	if len(parts) == 0 {
-		return nil, nil
-	}
-	return normalizeSearchConsoleDimensionList(parts)
-}
-
-func normalizeSearchConsoleDimensionList(parts []string) ([]string, error) {
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		v, err := normalizeSearchConsoleDimension(part)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	return out, nil
-}
-
-func normalizeSearchConsoleDimension(raw string) (string, error) {
-	v := strings.TrimSpace(raw)
-	switch {
-	case strings.EqualFold(v, "date"):
-		return "DATE", nil
-	case strings.EqualFold(v, "query"):
-		return searchConsoleDimensionQuery, nil
-	case strings.EqualFold(v, "page"):
-		return searchConsoleDimensionPage, nil
-	case strings.EqualFold(v, "country"):
-		return "COUNTRY", nil
-	case strings.EqualFold(v, "device"):
-		return "DEVICE", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "searchAppearance"):
-		return "SEARCH_APPEARANCE", nil
-	case strings.EqualFold(v, "hour"):
-		return "HOUR", nil
-	case v == "":
-		return "", usage("empty dimension")
-	default:
-		return "", usagef("invalid dimension %q (expected DATE|QUERY|PAGE|COUNTRY|DEVICE|SEARCH_APPEARANCE|HOUR)", raw)
-	}
-}
-
-func parseSearchConsoleFilter(raw string) (*searchconsoleapi.ApiDimensionFilter, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, usage("empty --filter")
-	}
-
-	first := strings.Index(raw, ":")
-	if first <= 0 {
-		return nil, usagef("invalid --filter %q (expected dimension:operator:expression)", raw)
-	}
-	rest := raw[first+1:]
-	second := strings.Index(rest, ":")
-	if second < 0 {
-		return nil, usagef("invalid --filter %q (expected dimension:operator:expression)", raw)
-	}
-
-	dimension, err := normalizeSearchConsoleDimension(raw[:first])
-	if err != nil {
-		return nil, err
-	}
-	operator, err := normalizeSearchConsoleFilterOperator(rest[:second])
-	if err != nil {
-		return nil, err
-	}
-	expression := strings.TrimSpace(rest[second+1:])
-	if expression == "" {
-		return nil, usagef("invalid --filter %q (expected dimension:operator:expression)", raw)
-	}
-
-	return &searchconsoleapi.ApiDimensionFilter{
-		Dimension:  dimension,
-		Operator:   operator,
-		Expression: expression,
-	}, nil
-}
-
-func normalizeSearchConsoleFilterOperator(raw string) (string, error) {
-	v := strings.TrimSpace(raw)
-	switch {
-	case v == "":
-		return "", usage("empty filter operator")
-	case strings.EqualFold(v, "equals"):
-		return "EQUALS", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "notEquals"):
-		return "NOT_EQUALS", nil
-	case strings.EqualFold(v, "contains"):
-		return "CONTAINS", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "notContains"):
-		return "NOT_CONTAINS", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "includingRegex"):
-		return "INCLUDING_REGEX", nil
-	case strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", ""), "excludingRegex"):
-		return "EXCLUDING_REGEX", nil
-	default:
-		return "", usagef("invalid filter operator %q (expected EQUALS|NOT_EQUALS|CONTAINS|NOT_CONTAINS|INCLUDING_REGEX|EXCLUDING_REGEX)", raw)
 	}
 }
 

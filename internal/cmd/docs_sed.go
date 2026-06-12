@@ -37,7 +37,7 @@ func parseExpressionLines(data []byte) []string {
 }
 
 // collectExpressions gathers sed expressions from positional arg, -e flags, -f file, and stdin.
-func (c *DocsSedCmd) collectExpressions() ([]string, error) {
+func (c *DocsSedCmd) collectExpressions(ctx context.Context) ([]string, error) {
 	var exprs []string
 
 	// 1. Positional argument
@@ -58,15 +58,12 @@ func (c *DocsSedCmd) collectExpressions() ([]string, error) {
 	}
 
 	// 4. Stdin (only if no expressions from other sources and stdin is not a terminal)
-	if len(exprs) == 0 {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			data, err := io.ReadAll(os.Stdin)
-			if err != nil {
-				return nil, fmt.Errorf("read stdin: %w", err)
-			}
-			exprs = append(exprs, parseExpressionLines(data)...)
+	if len(exprs) == 0 && !stdinIsTerminal(ctx) {
+		data, err := io.ReadAll(stdinReader(ctx))
+		if err != nil {
+			return nil, fmt.Errorf("read stdin: %w", err)
 		}
+		exprs = append(exprs, parseExpressionLines(data)...)
 	}
 
 	if len(exprs) == 0 {
@@ -118,7 +115,7 @@ func (c *DocsSedCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	// Collect all expressions
-	rawExprs, err := c.collectExpressions()
+	rawExprs, err := c.collectExpressions(ctx)
 	if err != nil {
 		return fmt.Errorf("collect expressions: %w", err)
 	}

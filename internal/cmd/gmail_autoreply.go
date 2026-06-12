@@ -66,7 +66,7 @@ type gmailAutoReplySummary struct {
 
 func (c *GmailAutoReplyCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	body, err := resolveBodyInput(c.Body, c.BodyFile)
+	body, err := resolveBodyInput(ctx, c.Body, c.BodyFile)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/quotedprintable"
 	"net/mail"
@@ -31,6 +32,7 @@ type mailAttachmentMetadata struct {
 
 type rfc822Config struct {
 	allowMissingTo bool
+	diagnostics    io.Writer
 }
 
 type mailOptions struct {
@@ -92,7 +94,7 @@ func buildRFC822(opts mailOptions, cfg *rfc822Config) ([]byte, error) {
 		return nil, fmt.Errorf("invalid Subject: %w", err)
 	}
 	writeHeader(&b, "Subject", encodeHeaderIfNeeded(opts.Subject))
-	dateLocation, dateErr := mailDateLocation()
+	dateLocation, dateErr := mailDateLocation(rfc822Diagnostics(cfg))
 	if dateErr != nil {
 		return nil, dateErr
 	}
@@ -244,8 +246,8 @@ func prepareMailAttachments(attachments []mailAttachment) ([]mailAttachment, []m
 	return prepared, metadata, nil
 }
 
-func mailDateLocation() (*time.Location, error) {
-	loc, err := getConfiguredTimezone("")
+func mailDateLocation(diagnostics io.Writer) (*time.Location, error) {
+	loc, err := getConfiguredTimezone("", diagnostics)
 	if err != nil {
 		return nil, err
 	}
@@ -253,6 +255,13 @@ func mailDateLocation() (*time.Location, error) {
 		return loc, nil
 	}
 	return time.Local, nil
+}
+
+func rfc822Diagnostics(cfg *rfc822Config) io.Writer {
+	if cfg == nil || cfg.diagnostics == nil {
+		return io.Discard
+	}
+	return cfg.diagnostics
 }
 
 func writeHeader(b *bytes.Buffer, name, value string) {

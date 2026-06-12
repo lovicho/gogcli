@@ -3,19 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
 	"google.golang.org/api/cloudidentity/v1"
 
 	"github.com/steipete/gogcli/internal/errfmt"
-	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
-
-var newCloudIdentityService = googleapi.NewCloudIdentityGroups
 
 const (
 	groupRoleOwner   = "OWNER"
@@ -92,7 +88,7 @@ func (c *GroupsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 				Role:        getRelationType(m.RelationType),
 			})
 		}
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"groups":        items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {
@@ -235,7 +231,7 @@ func (c *GroupsMembersCmd) Run(ctx context.Context, flags *RootFlags) error {
 				Type:  m.Type,
 			})
 		}
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"members":       items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {

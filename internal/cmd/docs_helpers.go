@@ -18,13 +18,13 @@ import (
 
 const docsAtIndexEnd = "end"
 
-func resolveContentInput(content, filePath string) (string, error) {
+func resolveContentInput(ctx context.Context, content, filePath string) (string, error) {
 	if content != "" {
 		return content, nil
 	}
 	if filePath != "" {
 		if filePath == "-" {
-			data, err := io.ReadAll(os.Stdin)
+			data, err := io.ReadAll(stdinReader(ctx))
 			if err != nil {
 				return "", fmt.Errorf("reading stdin: %w", err)
 			}
@@ -36,9 +36,8 @@ func resolveContentInput(content, filePath string) (string, error) {
 		}
 		return string(data), nil
 	}
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		data, err := io.ReadAll(os.Stdin)
+	if !stdinIsTerminal(ctx) {
+		data, err := io.ReadAll(stdinReader(ctx))
 		if err != nil {
 			return "", fmt.Errorf("reading stdin: %w", err)
 		}
@@ -60,7 +59,7 @@ const (
 	docsDocumentModePageless = "PAGELESS"
 )
 
-func resolveTextInput(text, file string, kctx *kong.Context, textFlag, fileFlag string) (string, bool, error) {
+func resolveTextInput(ctx context.Context, text, file string, kctx *kong.Context, textFlag, fileFlag string) (string, bool, error) {
 	file = strings.TrimSpace(file)
 	textProvided := text != "" || flagProvided(kctx, textFlag)
 	fileProvided := file != "" || flagProvided(kctx, fileFlag)
@@ -68,7 +67,7 @@ func resolveTextInput(text, file string, kctx *kong.Context, textFlag, fileFlag 
 		return "", true, usage(fmt.Sprintf("use only one of --%s or --%s", textFlag, fileFlag))
 	}
 	if fileProvided {
-		b, err := readTextInput(file)
+		b, err := readTextInput(ctx, file)
 		if err != nil {
 			return "", true, err
 		}
@@ -80,9 +79,9 @@ func resolveTextInput(text, file string, kctx *kong.Context, textFlag, fileFlag 
 	return text, false, nil
 }
 
-func readTextInput(path string) ([]byte, error) {
+func readTextInput(ctx context.Context, path string) ([]byte, error) {
 	if path == "-" {
-		return io.ReadAll(os.Stdin)
+		return io.ReadAll(stdinReader(ctx))
 	}
 	expanded, err := config.ExpandPath(path)
 	if err != nil {

@@ -29,7 +29,7 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("required: messageId")
 	}
 
-	note, err := resolveBodyInput(c.Note, c.NoteFile)
+	note, err := resolveBodyInput(ctx, c.Note, c.NoteFile)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 	ccRecipients := splitCSV(c.Cc)
 	bccRecipients := splitCSV(c.Bcc)
 
-	msg, err := buildGmailMessage(sendMessageOptions{
+	msg, err := buildGmailMessage(ctx, sendMessageOptions{
 		FromAddr:    from.header,
 		Subject:     fwdSubject,
 		Body:        fwdPlain,

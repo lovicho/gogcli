@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -66,7 +65,7 @@ func (c *BatchBeginCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, state)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), state)
 	}
 	ui.FromContext(ctx).Out().Println(state.BatchID)
 
@@ -85,7 +84,7 @@ func (c *BatchListCmd) Run(ctx context.Context) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"batches": batches})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"batches": batches})
 	}
 
 	out := ui.FromContext(ctx).Out()
@@ -114,7 +113,7 @@ func (c *BatchShowCmd) Run(ctx context.Context) error {
 		"payload": docsBatchWirePayload(state, state.Requests),
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	data, err := json.MarshalIndent(payload, "", "  ")
@@ -147,7 +146,7 @@ func (c *BatchAbortCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"aborted":  true,
 			"batch_id": state.BatchID,
 			"requests": len(state.Requests),
@@ -178,7 +177,7 @@ func (c *BatchPruneCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"pruned":  len(removed),
 			"batches": removed,
 		})
@@ -304,7 +303,7 @@ func (c *BatchEndCmd) submitIndividually(ctx context.Context, store *docsBatchSt
 
 func writeDocsBatchEndResult(ctx context.Context, result docsBatchEndResult) error {
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, result)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), result)
 	}
 	out := ui.FromContext(ctx).Out()
 	out.Linef("batch_id\t%s", result.BatchID)
@@ -392,7 +391,7 @@ func queueDocsBatchRequests(ctx context.Context, flags *RootFlags, batchID, docu
 		return true, err
 	}
 	if outfmt.IsJSON(ctx) {
-		err = outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		err = outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"batch_id": batchID,
 			"queued":   len(requests),
 			"requests": total,

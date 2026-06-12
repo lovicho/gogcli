@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -112,7 +111,7 @@ func (c *BackupInitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"repo":      cfg.Repo,
 			"remote":    cfg.Remote,
 			"identity":  cfg.Identity,
@@ -160,126 +159,9 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	backupOpts := c.options()
 	backupOpts.AsyncPush = c.GmailCheckpoints
 	backupOpts.Progress = func(format string, args ...any) { gmailBackupProgressf(ctx, format, args...) }
-	var snapshots []backup.Snapshot
-	for _, service := range services {
-		switch strings.ToLower(strings.TrimSpace(service)) {
-		case backupServiceAppScript:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceAppScript, func() (backup.Snapshot, error) {
-				return buildAppScriptBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceCalendar:
-			snapshot, err := buildCalendarBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceChat:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceChat, func() (backup.Snapshot, error) {
-				return buildChatBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceClassroom:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceClassroom, func() (backup.Snapshot, error) {
-				return buildClassroomBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceContacts:
-			snapshot, err := buildContactsBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceDrive:
-			snapshot, err := buildDriveBackupSnapshot(ctx, flags, driveBackupOptions{
-				ShardMaxRows:    c.ShardMaxRows,
-				IncludeContents: c.DriveContents,
-				IncludeBinary:   c.DriveBinaryContents,
-				MaxContentBytes: c.DriveContentMaxBytes,
-				IncludeCollab:   c.DriveCollaboration,
-				ContentTimeout:  c.DriveContentTimeout,
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceGmail:
-			snapshot, err := buildGmailBackupSnapshot(ctx, flags, gmailBackupOptions{
-				Query:            c.Query,
-				Max:              c.Max,
-				IncludeSpamTrash: c.IncludeSpamTrash,
-				ShardMaxRows:     c.ShardMaxRows,
-				CacheMessages:    c.GmailCache,
-				RefreshCache:     c.GmailRefreshCache,
-				Checkpoints:      c.GmailCheckpoints,
-				CheckpointRows:   c.GmailCheckpointRows,
-				CheckpointEvery:  c.GmailCheckpointEvery,
-				BackupOptions:    backupOpts,
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceGmailSettings:
-			snapshot, err := buildGmailSettingsBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceGroups:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceGroups, func() (backup.Snapshot, error) {
-				return buildGroupsBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceAdmin:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceAdmin, func() (backup.Snapshot, error) {
-				return buildAdminBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceKeep:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceKeep, func() (backup.Snapshot, error) {
-				return buildKeepBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceTasks:
-			snapshot, err := buildTasksBackupSnapshot(ctx, flags, c.ShardMaxRows)
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		case backupServiceWorkspace:
-			snapshot, err := c.buildOptionalSnapshot(flags, backupServiceWorkspace, func() (backup.Snapshot, error) {
-				return buildWorkspaceBackupSnapshot(ctx, flags, workspaceBackupOptions{
-					ShardMaxRows: c.ShardMaxRows,
-					Native:       c.WorkspaceNative,
-					MaxFiles:     c.WorkspaceMaxFiles,
-				})
-			})
-			if err != nil {
-				return err
-			}
-			snapshots = append(snapshots, snapshot)
-		default:
-			return usagef("unsupported backup service %q (supported: all, admin, appscript, calendar, chat, classroom, contacts, drive, gmail, gmail-settings, groups, keep, tasks, workspace)", service)
-		}
+	snapshots, err := buildBackupSnapshots(services, c.snapshotBuilders(ctx, flags, backupOpts))
+	if err != nil {
+		return err
 	}
 	result, err := backup.PushSnapshot(ctx, mergeBackupSnapshots(snapshots...), backupOpts)
 	if err != nil {
@@ -393,7 +275,7 @@ func (c *BackupStatusCmd) Run(ctx context.Context) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"repo": repo, "manifest": manifest})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"repo": repo, "manifest": manifest})
 	}
 	u := ui.FromContext(ctx)
 	u.Out().Linef("repo\t%s", repo)
@@ -445,7 +327,7 @@ func mergeBackupSnapshots(snapshots ...backup.Snapshot) backup.Snapshot {
 
 func writeBackupResult(ctx context.Context, result backup.Result) error {
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, result)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), result)
 	}
 	u := ui.FromContext(ctx)
 	u.Out().Linef("repo\t%s", result.Repo)

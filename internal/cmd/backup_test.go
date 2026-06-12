@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -175,6 +176,35 @@ func TestBackupPushUnsupportedServiceIsUsageError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported backup service") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildBackupSnapshotsPreservesOrderAndStopsOnError(t *testing.T) {
+	var calls []string
+	builders := map[string]backupSnapshotBuilder{
+		"first": func() (backup.Snapshot, error) {
+			calls = append(calls, "first")
+			return backup.Snapshot{Services: []string{"first"}}, nil
+		},
+		"second": func() (backup.Snapshot, error) {
+			calls = append(calls, "second")
+			return backup.Snapshot{}, errors.New("stop")
+		},
+		"third": func() (backup.Snapshot, error) {
+			calls = append(calls, "third")
+			return backup.Snapshot{}, nil
+		},
+	}
+
+	snapshots, err := buildBackupSnapshots([]string{" FIRST ", "second", "third"}, builders)
+	if err == nil || err.Error() != "stop" {
+		t.Fatalf("error = %v", err)
+	}
+	if snapshots != nil {
+		t.Fatalf("snapshots = %#v, want nil on error", snapshots)
+	}
+	if got := strings.Join(calls, ","); got != "first,second" {
+		t.Fatalf("calls = %q", got)
 	}
 }
 

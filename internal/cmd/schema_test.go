@@ -21,6 +21,21 @@ func TestSplitCommandPath_SplitsWhitespaceWithinArgs(t *testing.T) {
 	}
 }
 
+func TestSchemaCmdUsesRuntimeOutput(t *testing.T) {
+	result := executeWithTestRuntime(t, []string{"schema", "drive ls"}, nil)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+
+	var doc schemaDoc
+	if err := json.Unmarshal([]byte(result.stdout), &doc); err != nil {
+		t.Fatalf("decode schema: %v", err)
+	}
+	if doc.Command == nil || doc.Command.Name != "ls" {
+		t.Fatalf("command = %#v", doc.Command)
+	}
+}
+
 func TestExecute_Schema_QuotedCommandPathToken(t *testing.T) {
 	out := captureStdout(t, func() {
 		_ = captureStderr(t, func() {

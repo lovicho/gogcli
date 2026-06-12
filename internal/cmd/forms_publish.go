@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	formsapi "google.golang.org/api/forms/v1"
@@ -63,7 +62,7 @@ func setFormPublishState(ctx context.Context, flags *RootFlags, publishReq formP
 		return err
 	}
 
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -90,7 +89,7 @@ func setFormPublishState(ctx context.Context, flags *RootFlags, publishReq formP
 
 	responderURI := strings.TrimSpace(form.ResponderUri)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"published":           publishReq.Published,
 			"accepting_responses": publishReq.AcceptingResponses,
 			"form_id":             formID,

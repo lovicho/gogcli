@@ -39,13 +39,13 @@ func (c *AuthTokensListCmd) Run(ctx context.Context, _ *RootFlags) error {
 
 	if len(filtered) == 0 {
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"keys": []string{}})
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"keys": []string{}})
 		}
 		u.Err().Println("No tokens stored")
 		return nil
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"keys": filtered})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"keys": filtered})
 	}
 	for _, k := range filtered {
 		u.Out().Println(k)
@@ -192,7 +192,7 @@ func (c *AuthTokensExportCmd) Run(ctx context.Context, _ *RootFlags) error {
 
 	u.Err().Println("WARNING: exported file contains OAuth tokens (keep it safe and delete it when done)")
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"exported": true,
 			"email":    tok.Email,
 			"client":   client,
@@ -216,7 +216,7 @@ func (c *AuthTokensImportCmd) Run(ctx context.Context, flags *RootFlags) error {
 	var b []byte
 	var err error
 	if inPath == "-" {
-		b, err = io.ReadAll(os.Stdin)
+		b, err = io.ReadAll(stdinReader(ctx))
 	} else {
 		inPath, err = config.ExpandPath(inPath)
 		if err != nil {
@@ -315,7 +315,7 @@ func (c *AuthTokensImportCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	u.Err().Println("Imported refresh token into keyring")
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"imported": true,
 			"email":    ex.Email,
 			"client":   client,

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -490,7 +491,9 @@ func TestExecuteDocsTableRequestsSplitsAtAPICap(t *testing.T) {
 	for i := range requests {
 		requests[i] = &docs.Request{InsertTableRow: &docs.InsertTableRowRequest{}}
 	}
-	if _, err := executeDocsTableRequests(context.Background(), docSvc, "doc1", "rev-1", requests); err != nil {
+	var diagnostics bytes.Buffer
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, &diagnostics)
+	if _, err := executeDocsTableRequests(ctx, docSvc, "doc1", "rev-1", requests); err != nil {
 		t.Fatalf("executeDocsTableRequests: %v", err)
 	}
 	if len(batches) != 2 || len(batches[0].Requests) != docsBatchUpdateRequestCap || len(batches[1].Requests) != 1 {
@@ -501,6 +504,9 @@ func TestExecuteDocsTableRequestsSplitsAtAPICap(t *testing.T) {
 	}
 	if batches[1].WriteControl == nil || batches[1].WriteControl.RequiredRevisionId != "rev-2" {
 		t.Fatalf("second write control = %#v, want rev-2", batches[1].WriteControl)
+	}
+	if got := diagnostics.String(); !strings.Contains(got, "docs batchUpdate split 1/2") || !strings.Contains(got, "docs batchUpdate split 2/2") {
+		t.Fatalf("unexpected split diagnostics: %q", got)
 	}
 }
 

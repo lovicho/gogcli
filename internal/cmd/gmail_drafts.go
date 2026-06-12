@@ -315,7 +315,7 @@ func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, 
 		subject = autoReplySubject("", info.Subject)
 	}
 
-	msg, err := buildGmailMessage(sendMessageOptions{
+	msg, err := buildGmailMessage(ctx, sendMessageOptions{
 		FromAddr:    from.header,
 		ReplyTo:     input.ReplyTo,
 		Subject:     subject,
@@ -524,7 +524,7 @@ func messageFromMatchesAccount(msg *gmail.Message, account string) bool {
 func (c *GmailDraftsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 
-	body, err := resolveBodyInput(c.Body, c.BodyFile)
+	body, err := resolveBodyInput(ctx, c.Body, c.BodyFile)
 	if err != nil {
 		return err
 	}
@@ -629,7 +629,7 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		to = *c.To
 	}
 
-	body, err := resolveBodyInput(c.Body, c.BodyFile)
+	body, err := resolveBodyInput(ctx, c.Body, c.BodyFile)
 	if err != nil {
 		return err
 	}

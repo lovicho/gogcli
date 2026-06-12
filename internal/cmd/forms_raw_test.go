@@ -29,10 +29,9 @@ func newFormsRawTestServer(t *testing.T, status int, body map[string]any) *httpt
 	}))
 }
 
-func installMockFormsService(t *testing.T, srv *httptest.Server) {
+func newMockFormsService(t *testing.T, srv *httptest.Server) *formsapi.Service {
 	t.Helper()
-	svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", formsapi.NewService)
-	stubGoogleTestService(t, &newFormsService, svc)
+	return newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", formsapi.NewService)
 }
 
 func fullFormResponse(id string) map[string]any {
@@ -51,15 +50,13 @@ func fullFormResponse(id string) map[string]any {
 func TestFormsRaw_HappyPath(t *testing.T) {
 	srv := newFormsRawTestServer(t, 0, fullFormResponse("form1"))
 	defer srv.Close()
-	installMockFormsService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx, output := formsRawTestContext(t, newMockFormsService(t, srv))
 	flags := &RootFlags{Account: "a@b.com"}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &FormsRawCmd{}, []string{"form1"}, ctx, flags); err != nil {
-			t.Fatalf("run: %v", err)
-		}
-	})
+	if err := runKong(t, &FormsRawCmd{}, []string{"form1"}, ctx, flags); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	out := output.String()
 
 	var got map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -76,29 +73,23 @@ func TestFormsRaw_HappyPath(t *testing.T) {
 func TestFormsRaw_APIError(t *testing.T) {
 	srv := newFormsRawTestServer(t, http.StatusInternalServerError, nil)
 	defer srv.Close()
-	installMockFormsService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx, _ := formsRawTestContext(t, newMockFormsService(t, srv))
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &FormsRawCmd{}, []string{"form1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 500")
-		}
-	})
+	if err := runKong(t, &FormsRawCmd{}, []string{"form1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 500")
+	}
 }
 
 func TestFormsRaw_NotFound(t *testing.T) {
 	srv := newFormsRawTestServer(t, http.StatusNotFound, nil)
 	defer srv.Close()
-	installMockFormsService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx, _ := formsRawTestContext(t, newMockFormsService(t, srv))
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &FormsRawCmd{}, []string{"form1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 404")
-		}
-	})
+	if err := runKong(t, &FormsRawCmd{}, []string{"form1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 404")
+	}
 }
 
 func TestFormsRaw_EmptyID(t *testing.T) {

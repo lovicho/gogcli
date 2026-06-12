@@ -204,7 +204,7 @@ func (p *AssetPipeline) Resolve(ctx context.Context, slides []Slide) (AssetMap, 
 			if p.Config.Strict {
 				return am, err
 			}
-			fmt.Fprintf(os.Stderr, "warning: skipping FA icon :%s-%s: %v\n", ref.Style, ref.Name, err)
+			fmt.Fprintf(stderrWriter(ctx), "warning: skipping FA icon :%s-%s: %v\n", ref.Style, ref.Name, err)
 			continue
 		}
 		png, err := rasterizeSVGToPNGWithOptional(ctx, body, p.Config.SVGRasterizerPath)
@@ -212,7 +212,7 @@ func (p *AssetPipeline) Resolve(ctx context.Context, slides []Slide) (AssetMap, 
 			if p.Config.Strict {
 				return am, err
 			}
-			fmt.Fprintf(os.Stderr, "warning: skipping FA icon :%s-%s: %v\n", ref.Style, ref.Name, err)
+			fmt.Fprintf(stderrWriter(ctx), "warning: skipping FA icon :%s-%s: %v\n", ref.Style, ref.Name, err)
 			continue
 		}
 		ir, err := p.Uploader.UploadAsset(ctx, fmt.Sprintf("fa-%s-%s.png", resolvedStyle, ref.Name), "image/png", png)
@@ -220,7 +220,7 @@ func (p *AssetPipeline) Resolve(ctx context.Context, slides []Slide) (AssetMap, 
 			if p.Config.Strict {
 				return am, err
 			}
-			fmt.Fprintf(os.Stderr, "warning: skipping FA icon :%s-%s: upload: %v\n", ref.Style, ref.Name, err)
+			fmt.Fprintf(stderrWriter(ctx), "warning: skipping FA icon :%s-%s: upload: %v\n", ref.Style, ref.Name, err)
 			continue
 		}
 		am.Icons[ref] = ir
@@ -232,7 +232,7 @@ func (p *AssetPipeline) Resolve(ctx context.Context, slides []Slide) (AssetMap, 
 			if p.Config.Strict {
 				return am, fmt.Errorf("mmdc not configured; cannot render mermaid diagram %s", blockID)
 			}
-			fmt.Fprintf(os.Stderr, "warning: mmdc not configured; skipping mermaid diagram %s\n", blockID)
+			fmt.Fprintf(stderrWriter(ctx), "warning: mmdc not configured; skipping mermaid diagram %s\n", blockID)
 			continue
 		}
 		png, err := renderMermaidWithBinary(ctx, p.Config.MMDCPath, source)
@@ -240,7 +240,7 @@ func (p *AssetPipeline) Resolve(ctx context.Context, slides []Slide) (AssetMap, 
 			if p.Config.Strict {
 				return am, err
 			}
-			fmt.Fprintf(os.Stderr, "warning: skipping mermaid diagram %s: %v\n", blockID, err)
+			fmt.Fprintf(stderrWriter(ctx), "warning: skipping mermaid diagram %s: %v\n", blockID, err)
 			continue
 		}
 		ir, err := p.Uploader.UploadAsset(ctx, blockID+".png", "image/png", png)
@@ -248,7 +248,7 @@ func (p *AssetPipeline) Resolve(ctx context.Context, slides []Slide) (AssetMap, 
 			if p.Config.Strict {
 				return am, err
 			}
-			fmt.Fprintf(os.Stderr, "warning: skipping mermaid diagram %s: upload: %v\n", blockID, err)
+			fmt.Fprintf(stderrWriter(ctx), "warning: skipping mermaid diagram %s: upload: %v\n", blockID, err)
 			continue
 		}
 		am.Diagrams[blockID] = ir

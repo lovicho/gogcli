@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/chat/v1"
@@ -41,7 +40,7 @@ func (c *ChatThreadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newChatService(ctx, account)
+	svc, err := chatService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -97,7 +96,7 @@ func (c *ChatThreadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 				"createTime": item.message.CreateTime,
 			})
 		}
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"threads":       items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {

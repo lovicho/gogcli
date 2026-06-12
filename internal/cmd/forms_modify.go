@@ -3,8 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 
 	formsapi "google.golang.org/api/forms/v1"
@@ -39,35 +37,29 @@ type FormsAddQuestionCmd struct {
 }
 
 func (c *FormsAddQuestionCmd) Run(ctx context.Context, flags *RootFlags) error {
-	formID := strings.TrimSpace(normalizeGoogleID(c.FormID))
-	if formID == "" {
-		return usage("empty formId")
-	}
-	title := strings.TrimSpace(c.Title)
-	if title == "" {
-		return usage("empty --title")
-	}
-	if c.Index < -1 {
-		return usage("--index must be >= -1")
-	}
-	qType := strings.ToLower(strings.TrimSpace(c.Type))
-
-	question, err := buildQuestion(qType, c)
+	plan, err := newFormsAddQuestionPlan(formsAddQuestionInput{
+		FormID:         c.FormID,
+		Title:          c.Title,
+		Type:           c.Type,
+		Required:       c.Required,
+		Options:        c.Options,
+		Index:          c.Index,
+		Correct:        c.Correct,
+		Points:         c.Points,
+		ScaleLow:       c.ScaleLow,
+		ScaleHigh:      c.ScaleHigh,
+		ScaleLowLabel:  c.ScaleLowLabel,
+		ScaleHighLabel: c.ScaleHighLabel,
+		IncludeTime:    c.IncludeTime,
+		IncludeYear:    c.IncludeYear,
+		Duration:       c.Duration,
+		Description:    c.Description,
+	})
 	if err != nil {
 		return err
 	}
 
-	if dryRunErr := dryRunExit(ctx, flags, "forms.add-question", map[string]any{
-		"form_id":     formID,
-		"title":       title,
-		"type":        qType,
-		"required":    c.Required,
-		"options":     c.Options,
-		"index":       c.Index,
-		"correct":     c.Correct,
-		"points":      c.Points,
-		"description": c.Description,
-	}); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "forms.add-question", plan.dryRunPayload()); dryRunErr != nil {
 		return dryRunErr
 	}
 
@@ -75,87 +67,53 @@ func (c *FormsAddQuestionCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
 
-	item := &formsapi.Item{
-		Title:       title,
-		Description: strings.TrimSpace(c.Description),
-		QuestionItem: &formsapi.QuestionItem{
-			Question: question,
-		},
-	}
-
-	createReq := &formsapi.CreateItemRequest{
-		Item: item,
-	}
-
-	// Determine the insertion index. The API requires a Location.
-	// For index 0 we must use ForceSendFields since 0 is Go's zero-value.
-	var insertAt int64
-	if c.Index >= 0 {
-		insertAt = int64(c.Index)
-	} else {
-		// Append: get the form to find current item count.
-		currentForm, getErr := svc.Forms.Get(formID).Context(ctx).Do()
+	currentItemCount := 0
+	if plan.needsCurrentForm() {
+		currentForm, getErr := svc.Forms.Get(plan.FormID).Context(ctx).Do()
 		if getErr != nil {
 			return getErr
 		}
-		insertAt = int64(len(currentForm.Items))
-	}
-	createReq.Location = &formsapi.Location{
-		Index:           insertAt,
-		ForceSendFields: []string{"Index"},
+		currentItemCount = len(currentForm.Items)
 	}
 
-	batchReq := &formsapi.BatchUpdateFormRequest{
-		Requests: []*formsapi.Request{
-			{CreateItem: createReq},
-		},
-		IncludeFormInResponse: true,
-	}
-
-	resp, err := svc.Forms.BatchUpdate(formID, batchReq).Context(ctx).Do()
+	batchReq := plan.batchRequest(currentItemCount)
+	resp, err := svc.Forms.BatchUpdate(plan.FormID, batchReq).Context(ctx).Do()
 	if err != nil {
 		return err
 	}
 
-	// Determine the actual index used for output.
-	var insertIndex int64 = -1
-	if createReq.Location != nil {
-		insertIndex = createReq.Location.Index
-	} else if resp.Form != nil {
-		// Appended — index is last item position.
-		insertIndex = int64(len(resp.Form.Items) - 1)
-	}
+	insertIndex := batchReq.Requests[0].CreateItem.Location.Index
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"created":  true,
-			"form_id":  formID,
-			"title":    title,
-			"type":     qType,
+			"form_id":  plan.FormID,
+			"title":    plan.Title,
+			"type":     plan.Type,
 			"index":    insertIndex,
 			"form":     resp.Form,
-			"edit_url": formEditURL(formID),
+			"edit_url": formEditURL(plan.FormID),
 		})
 	}
 
 	u := ui.FromContext(ctx)
 	u.Out().Linef("created\ttrue")
-	u.Out().Linef("form_id\t%s", formID)
-	u.Out().Linef("question\t%s", title)
-	u.Out().Linef("type\t%s", qType)
+	u.Out().Linef("form_id\t%s", plan.FormID)
+	u.Out().Linef("question\t%s", plan.Title)
+	u.Out().Linef("type\t%s", plan.Type)
 	u.Out().Linef("index\t%d", insertIndex)
-	u.Out().Linef("edit_url\t%s", formEditURL(formID))
+	u.Out().Linef("edit_url\t%s", formEditURL(plan.FormID))
 	return nil
 }
 
-func buildQuestion(qType string, c *FormsAddQuestionCmd) (*formsapi.Question, error) {
+func buildQuestion(qType string, input *formsAddQuestionInput) (*formsapi.Question, error) {
 	q := &formsapi.Question{
-		Required: c.Required,
+		Required: input.Required,
 	}
 
 	switch qType {
@@ -164,7 +122,7 @@ func buildQuestion(qType string, c *FormsAddQuestionCmd) (*formsapi.Question, er
 	case "paragraph":
 		q.TextQuestion = &formsapi.TextQuestion{Paragraph: true}
 	case "radio", "checkbox", "dropdown":
-		if len(c.Options) == 0 {
+		if len(input.Options) == 0 {
 			return nil, usage("--option is required for " + qType + " questions (repeat for each choice)")
 		}
 		apiType := map[string]string{
@@ -172,8 +130,8 @@ func buildQuestion(qType string, c *FormsAddQuestionCmd) (*formsapi.Question, er
 			"checkbox": "CHECKBOX",
 			"dropdown": "DROP_DOWN",
 		}[qType]
-		opts := make([]*formsapi.Option, len(c.Options))
-		for i, v := range c.Options {
+		opts := make([]*formsapi.Option, len(input.Options))
+		for i, v := range input.Options {
 			opts[i] = &formsapi.Option{Value: v}
 		}
 		q.ChoiceQuestion = &formsapi.ChoiceQuestion{
@@ -181,39 +139,39 @@ func buildQuestion(qType string, c *FormsAddQuestionCmd) (*formsapi.Question, er
 			Options: opts,
 		}
 	case "scale":
-		if c.ScaleLow > c.ScaleHigh {
+		if input.ScaleLow > input.ScaleHigh {
 			return nil, usage("--scale-low must be <= --scale-high")
 		}
 		q.ScaleQuestion = &formsapi.ScaleQuestion{
-			Low:       int64(c.ScaleLow),
-			High:      int64(c.ScaleHigh),
-			LowLabel:  c.ScaleLowLabel,
-			HighLabel: c.ScaleHighLabel,
+			Low:       int64(input.ScaleLow),
+			High:      int64(input.ScaleHigh),
+			LowLabel:  input.ScaleLowLabel,
+			HighLabel: input.ScaleHighLabel,
 		}
 	case "date":
 		q.DateQuestion = &formsapi.DateQuestion{
-			IncludeTime: c.IncludeTime,
-			IncludeYear: c.IncludeYear,
+			IncludeTime: input.IncludeTime,
+			IncludeYear: input.IncludeYear,
 		}
 	case "time":
 		q.TimeQuestion = &formsapi.TimeQuestion{
-			Duration: c.Duration,
+			Duration: input.Duration,
 		}
 	default:
 		return nil, usage("unknown question type: " + qType + " (use text|paragraph|radio|checkbox|dropdown|scale|date|time)")
 	}
 
-	if err := applyQuestionGrading(q, qType, c); err != nil {
+	if err := applyQuestionGrading(q, qType, input); err != nil {
 		return nil, err
 	}
 
 	return q, nil
 }
 
-func applyQuestionGrading(q *formsapi.Question, qType string, c *FormsAddQuestionCmd) error {
-	correct := cleanedStrings(c.Correct)
+func applyQuestionGrading(q *formsapi.Question, qType string, input *formsAddQuestionInput) error {
+	correct := cleanedStrings(input.Correct)
 	hasCorrect := len(correct) > 0
-	hasPoints := c.Points > 0
+	hasPoints := input.Points > 0
 	if !hasCorrect && !hasPoints {
 		return nil
 	}
@@ -234,7 +192,7 @@ func applyQuestionGrading(q *formsapi.Question, qType string, c *FormsAddQuestio
 		answers[i] = &formsapi.CorrectAnswer{Value: value}
 	}
 	q.Grading = &formsapi.Grading{
-		PointValue:     int64(c.Points),
+		PointValue:     int64(input.Points),
 		CorrectAnswers: &formsapi.CorrectAnswers{Answers: answers},
 		ForceSendFields: []string{
 			"PointValue",
@@ -280,7 +238,7 @@ func (c *FormsDeleteQuestionCmd) Run(ctx context.Context, flags *RootFlags) erro
 	if err != nil {
 		return err
 	}
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -313,7 +271,7 @@ func (c *FormsDeleteQuestionCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"deleted": true,
 			"form_id": formID,
 			"index":   c.Index,
@@ -356,7 +314,7 @@ func (c *FormsMoveQuestionCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -378,7 +336,7 @@ func (c *FormsMoveQuestionCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"moved":     true,
 			"form_id":   formID,
 			"old_index": c.OldIndex,
@@ -410,33 +368,17 @@ type FormsUpdateCmd struct {
 }
 
 func (c *FormsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	formID := strings.TrimSpace(normalizeGoogleID(c.FormID))
-	if formID == "" {
-		return usage("empty formId")
+	plan, err := newFormsUpdatePlan(formsUpdateInput{
+		FormID:      c.FormID,
+		Title:       c.Title,
+		Description: c.Description,
+		Quiz:        c.IsQuiz,
+	})
+	if err != nil {
+		return err
 	}
 
-	title := strings.TrimSpace(c.Title)
-	description := strings.TrimSpace(c.Description)
-	quiz := strings.TrimSpace(strings.ToLower(c.IsQuiz))
-
-	if title == "" && description == "" && quiz == "" {
-		return usage("at least one of --title, --description, or --quiz is required")
-	}
-	var isQuiz bool
-	if quiz != "" {
-		var parseErr error
-		isQuiz, parseErr = strconv.ParseBool(quiz)
-		if parseErr != nil {
-			return usage("--quiz must be true or false")
-		}
-	}
-
-	if dryRunErr := dryRunExit(ctx, flags, "forms.update", map[string]any{
-		"form_id":     formID,
-		"title":       title,
-		"description": description,
-		"quiz":        quiz,
-	}); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "forms.update", plan.dryRunPayload()); dryRunErr != nil {
 		return dryRunErr
 	}
 
@@ -444,66 +386,27 @@ func (c *FormsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	svc, err := newFormsService(ctx, account)
+	svc, err := formsService(ctx, account)
 	if err != nil {
 		return err
 	}
 
-	var requests []*formsapi.Request
-
-	if title != "" || description != "" {
-		info := &formsapi.Info{}
-		var masks []string
-		if title != "" {
-			info.Title = title
-			masks = append(masks, "title")
-		}
-		if description != "" {
-			info.Description = description
-			masks = append(masks, "description")
-		}
-		requests = append(requests, &formsapi.Request{
-			UpdateFormInfo: &formsapi.UpdateFormInfoRequest{
-				Info:       info,
-				UpdateMask: strings.Join(masks, ","),
-			},
-		})
-	}
-
-	if quiz != "" {
-		requests = append(requests, &formsapi.Request{
-			UpdateSettings: &formsapi.UpdateSettingsRequest{
-				Settings: &formsapi.FormSettings{
-					QuizSettings: &formsapi.QuizSettings{
-						IsQuiz: isQuiz,
-					},
-				},
-				UpdateMask: "quizSettings.isQuiz",
-			},
-		})
-	}
-
-	batchReq := &formsapi.BatchUpdateFormRequest{
-		Requests:              requests,
-		IncludeFormInResponse: true,
-	}
-
-	resp, err := svc.Forms.BatchUpdate(formID, batchReq).Context(ctx).Do()
+	resp, err := svc.Forms.BatchUpdate(plan.FormID, plan.Request).Context(ctx).Do()
 	if err != nil {
 		return err
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"updated":  true,
-			"form_id":  formID,
+			"form_id":  plan.FormID,
 			"form":     resp.Form,
-			"edit_url": formEditURL(formID),
+			"edit_url": formEditURL(plan.FormID),
 		})
 	}
 
 	u := ui.FromContext(ctx)
 	u.Out().Linef("updated\ttrue")
-	printFormSummary(u, resp.Form, formID)
+	printFormSummary(u, resp.Form, plan.FormID)
 	return nil
 }

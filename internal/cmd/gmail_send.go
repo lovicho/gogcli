@@ -67,11 +67,11 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	replyToMessageID := normalizeGmailMessageID(c.ReplyToMessageID)
 	threadID := normalizeGmailThreadID(c.ThreadID)
 
-	body, err := resolveBodyInput(c.Body, c.BodyFile)
+	body, err := resolveBodyInput(ctx, c.Body, c.BodyFile)
 	if err != nil {
 		return err
 	}
-	htmlBodyInput, err := resolveBodyFileInput(c.BodyHTML, c.BodyHTMLFile, "--body-html", "--body-html-file")
+	htmlBodyInput, err := resolveBodyFileInput(ctx, c.BodyHTML, c.BodyHTMLFile, "--body-html", "--body-html-file")
 	if err != nil {
 		return err
 	}
@@ -340,7 +340,7 @@ func sendGmailBatches(ctx context.Context, svc *gmail.Service, opts sendMessageO
 
 		messageOpts := opts
 		messageOpts.BodyHTML = htmlBody
-		msg, err := buildGmailMessage(messageOpts, batch, nil)
+		msg, err := buildGmailMessage(ctx, messageOpts, batch, nil)
 		if err != nil {
 			return nil, err
 		}

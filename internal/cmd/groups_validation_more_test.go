@@ -6,12 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/cloudidentity/v1"
-	"google.golang.org/api/option"
 
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -32,18 +28,14 @@ func TestGroupsMembers_ValidationErrors(t *testing.T) {
 }
 
 func TestGroupsInvalidMaxFailsBeforeService(t *testing.T) {
-	origNew := newCloudIdentityService
-	t.Cleanup(func() { newCloudIdentityService = origNew })
-	newCloudIdentityService = func(context.Context, string) (*cloudidentity.Service, error) {
-		t.Fatalf("expected max validation to fail before creating Cloud Identity service")
-		return nil, errors.New("unexpected service call")
-	}
-
 	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
 	if uiErr != nil {
 		t.Fatalf("ui.New: %v", uiErr)
 	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withCloudIdentityTestServiceFactory(
+		ui.WithUI(context.Background(), u),
+		unexpectedCloudIdentityTestService(t, "expected max validation to fail before creating Cloud Identity service"),
+	)
 	flags := &RootFlags{Account: "a@b.com"}
 
 	testCases := []struct {
@@ -66,10 +58,7 @@ func TestGroupsInvalidMaxFailsBeforeService(t *testing.T) {
 }
 
 func TestGroupsList_NoGroups_Text(t *testing.T) {
-	origNew := newCloudIdentityService
-	t.Cleanup(func() { newCloudIdentityService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCloudIdentityTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "groups/-/memberships:searchTransitiveGroups") && r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -79,24 +68,13 @@ func TestGroupsList_NoGroups_Text(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer srv.Close()
-
-	svc, err := cloudidentity.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newCloudIdentityService = func(context.Context, string) (*cloudidentity.Service, error) { return svc, nil }
 
 	var errBuf strings.Builder
 	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: &errBuf, Color: "never"})
 	if uiErr != nil {
 		t.Fatalf("ui.New: %v", uiErr)
 	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withCloudIdentityTestService(ui.WithUI(context.Background(), u), svc)
 
 	if err := (&GroupsListCmd{Max: 100}).Run(ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("list: %v", err)

@@ -7,12 +7,6 @@ import (
 	"strings"
 
 	"github.com/steipete/gogcli/internal/errfmt"
-	"github.com/steipete/gogcli/internal/googleapi"
-)
-
-var (
-	newAdminDirectoryService        = googleapi.NewAdminDirectory
-	newAdminOrgUnitDirectoryService = googleapi.NewAdminDirectoryOrgUnit
 )
 
 const (

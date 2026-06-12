@@ -1,6 +1,12 @@
 package cmd
 
-import "testing"
+import (
+	"bytes"
+	"io"
+	"testing"
+
+	"github.com/steipete/gogcli/internal/outfmt"
+)
 
 func TestBestEffortWebURLExplicitTypeRejectsUnsupportedURLs(t *testing.T) {
 	t.Parallel()
@@ -51,5 +57,17 @@ func TestBestEffortWebURLExplicitTypeRejectsUnsupportedURLs(t *testing.T) {
 				t.Fatalf("bestEffortWebURL(%q, %q) = %q, want %q", tt.kind, tt.in, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestOpenCmdUsesRuntimeOutput(t *testing.T) {
+	var output bytes.Buffer
+	ctx := outfmt.WithMode(newCmdRuntimeOutputContext(t, &output, io.Discard), outfmt.Mode{Plain: true})
+
+	if err := (&OpenCmd{Target: "doc-id", Type: "docs"}).Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := output.String(); got != "type\tdocs\nurl\thttps://docs.google.com/document/d/doc-id/edit\n" {
+		t.Fatalf("output = %q", got)
 	}
 }

@@ -75,7 +75,7 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"config": map[string]any{
 				"path":   configPath,
 				"exists": configExists,
@@ -177,10 +177,10 @@ type AuthServicesCmd struct {
 func (c *AuthServicesCmd) Run(ctx context.Context, _ *RootFlags) error {
 	infos := googleauth.ServicesInfo()
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"services": infos})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"services": infos})
 	}
 	if c.Markdown {
-		_, err := io.WriteString(os.Stdout, googleauth.ServicesMarkdown(infos))
+		_, err := io.WriteString(stdoutWriter(ctx), googleauth.ServicesMarkdown(infos))
 		return err
 	}
 
@@ -273,7 +273,7 @@ func (c *AuthManageCmd) Run(ctx context.Context, _ *RootFlags) error {
 		}
 	}
 
-	return startManageServer(ctx, googleauth.ManageServerOptions{
+	return startAuthManageServer(ctx, googleauth.ManageServerOptions{
 		Timeout:      c.Timeout,
 		Services:     services,
 		ForceConsent: c.ForceConsent,
@@ -344,7 +344,7 @@ func (c *AuthKeepCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"stored": true,
 			"email":  email,
 			"path":   destPath,

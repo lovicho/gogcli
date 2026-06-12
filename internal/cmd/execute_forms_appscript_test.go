@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,13 +10,9 @@ import (
 
 	formsapi "google.golang.org/api/forms/v1"
 	"google.golang.org/api/option"
-	scriptapi "google.golang.org/api/script/v1"
 )
 
 func TestExecute_FormsGet_Text(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "/forms/form123") && r.Method == http.MethodGet) {
 			http.NotFound(w, r)
@@ -43,24 +38,17 @@ func TestExecute_FormsGet_Text(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "forms", "get", "form123"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithFormsTestService(t, []string{"--account", "a@b.com", "forms", "get", "form123"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 	if !strings.Contains(out, "id\tform123") || !strings.Contains(out, "title\tSurvey") || !strings.Contains(out, "edit_url\thttps://docs.google.com/forms/d/form123/edit") {
 		t.Fatalf("unexpected out=%q", out)
 	}
 }
 
 func TestExecute_FormsResponsesList_JSON(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "/forms/form123/responses") && r.Method == http.MethodGet) {
 			http.NotFound(w, r)
@@ -88,15 +76,11 @@ func TestExecute_FormsResponsesList_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "forms", "responses", "list", "form123", "--max", "1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithFormsTestService(t, []string{"--json", "--account", "a@b.com", "forms", "responses", "list", "form123", "--max", "1"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		FormID    string `json:"form_id"`
@@ -114,9 +98,6 @@ func TestExecute_FormsResponsesList_JSON(t *testing.T) {
 }
 
 func TestExecute_FormsResponsesList_JSONEmptyArray(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "/forms/form123/responses") && r.Method == http.MethodGet) {
 			http.NotFound(w, r)
@@ -135,15 +116,11 @@ func TestExecute_FormsResponsesList_JSONEmptyArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "forms", "responses", "list", "form123", "--max", "1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithFormsTestService(t, []string{"--json", "--account", "a@b.com", "forms", "responses", "list", "form123", "--max", "1"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		FormID    string            `json:"form_id"`
@@ -164,43 +141,28 @@ func TestExecute_FormsResponsesList_JSONEmptyArray(t *testing.T) {
 }
 
 func TestExecute_FormsResponsesList_RejectsNonPositiveMax(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) {
-		t.Fatalf("expected validation to fail before creating forms service")
-		return nil, errors.New("unexpected forms service call")
+	result := executeWithFormsTestServiceFactory(t,
+		[]string{"--account", "a@b.com", "forms", "responses", "list", "form123", "--max", "0"},
+		unexpectedFormsTestService(t, "expected validation to fail before creating forms service"),
+	)
+	if result.err == nil || !strings.Contains(result.err.Error(), "--max must be > 0") {
+		t.Fatalf("unexpected err: %v", result.err)
 	}
-
-	_ = captureStderr(t, func() {
-		err := Execute([]string{"--account", "a@b.com", "forms", "responses", "list", "form123", "--max", "0"})
-		if err == nil || !strings.Contains(err.Error(), "--max must be > 0") {
-			t.Fatalf("unexpected err: %v", err)
-		}
-	})
 }
 
 func TestExecute_FormsCreate_DryRun_JSON(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) {
-		t.Fatalf("dry-run should not create forms service")
-		return nil, errors.New("unexpected forms service call")
+	result := executeWithFormsTestServiceFactory(t, []string{
+		"--json",
+		"--dry-run",
+		"--account", "a@b.com",
+		"forms", "create",
+		"--title", "Weekly Check-in",
+		"--description", "Friday async update",
+	}, unexpectedFormsTestService(t, "dry-run should not create forms service"))
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--json",
-				"--dry-run",
-				"--account", "a@b.com",
-				"forms", "create",
-				"--title", "Weekly Check-in",
-				"--description", "Friday async update",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	var parsed struct {
 		DryRun  bool   `json:"dry_run"`
@@ -222,9 +184,6 @@ func TestExecute_FormsCreate_DryRun_JSON(t *testing.T) {
 }
 
 func TestExecute_FormsCreate_DescriptionBatchUpdate(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var sawCreate bool
 	var sawBatchUpdate bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -280,21 +239,17 @@ func TestExecute_FormsCreate_DescriptionBatchUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--json",
-				"--account", "a@b.com",
-				"forms", "create",
-				"--title", "Weekly Check-in",
-				"--description", "Friday async update",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithFormsTestService(t, []string{
+		"--json",
+		"--account", "a@b.com",
+		"forms", "create",
+		"--title", "Weekly Check-in",
+		"--description", "Friday async update",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 	if !sawCreate || !sawBatchUpdate {
 		t.Fatalf("expected create and batchUpdate; sawCreate=%v sawBatchUpdate=%v", sawCreate, sawBatchUpdate)
 	}
@@ -304,9 +259,6 @@ func TestExecute_FormsCreate_DescriptionBatchUpdate(t *testing.T) {
 }
 
 func TestExecute_AppScriptRun_JSON(t *testing.T) {
-	origNew := newAppScriptService
-	t.Cleanup(func() { newAppScriptService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "/scripts/script123:run") && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
@@ -331,23 +283,16 @@ func TestExecute_AppScriptRun_JSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := scriptapi.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	svc := newAppScriptTestService(t, srv)
+	result := executeWithAppScriptTestService(t, []string{
+		"--json", "--account", "a@b.com",
+		"appscript", "run", "script123", "myFunc",
+		"--params", "[\"x\"]",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-	newAppScriptService = func(context.Context, string) (*scriptapi.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "appscript", "run", "script123", "myFunc", "--params", "[\"x\"]"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
@@ -363,26 +308,17 @@ func TestExecute_AppScriptRun_JSON(t *testing.T) {
 }
 
 func TestExecute_AppScriptCreate_DryRun_Text(t *testing.T) {
-	origNew := newAppScriptService
-	t.Cleanup(func() { newAppScriptService = origNew })
-	newAppScriptService = func(context.Context, string) (*scriptapi.Service, error) {
-		t.Fatalf("dry-run should not create appscript service")
-		return nil, errors.New("unexpected appscript service call")
+	result := executeWithAppScriptTestServiceFactory(t, []string{
+		"--dry-run",
+		"--account", "a@b.com",
+		"appscript", "create",
+		"--title", "Automation Helpers",
+		"--parent-id", "drive123",
+	}, unexpectedAppScriptTestService(t, "dry-run should not create appscript service"))
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--dry-run",
-				"--account", "a@b.com",
-				"appscript", "create",
-				"--title", "Automation Helpers",
-				"--parent-id", "drive123",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 	if !strings.Contains(out, "Dry run: would appscript.create") ||
 		!strings.Contains(out, `"title": "Automation Helpers"`) ||
 		!strings.Contains(out, `"parent_id": "drive123"`) {
@@ -391,25 +327,17 @@ func TestExecute_AppScriptCreate_DryRun_Text(t *testing.T) {
 }
 
 func TestExecute_AppScriptRun_RejectsNonArrayParams(t *testing.T) {
-	origNew := newAppScriptService
-	t.Cleanup(func() { newAppScriptService = origNew })
-	newAppScriptService = func(context.Context, string) (*scriptapi.Service, error) {
-		t.Fatalf("expected params validation to fail before creating appscript service")
-		return nil, errors.New("unexpected appscript service call")
+	result := executeWithAppScriptTestServiceFactory(
+		t,
+		[]string{"--account", "a@b.com", "appscript", "run", "script123", "myFunc", "--params", `{"x":1}`},
+		unexpectedAppScriptTestService(t, "expected params validation to fail before creating appscript service"),
+	)
+	if result.err == nil || !strings.Contains(result.err.Error(), "invalid --params JSON array") {
+		t.Fatalf("unexpected err: %v", result.err)
 	}
-
-	_ = captureStderr(t, func() {
-		err := Execute([]string{"--account", "a@b.com", "appscript", "run", "script123", "myFunc", "--params", `{"x":1}`})
-		if err == nil || !strings.Contains(err.Error(), "invalid --params JSON array") {
-			t.Fatalf("unexpected err: %v", err)
-		}
-	})
 }
 
 func TestExecute_AppScriptRun_TextErrorDetails(t *testing.T) {
-	origNew := newAppScriptService
-	t.Cleanup(func() { newAppScriptService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "/scripts/script123:run") && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
@@ -433,23 +361,15 @@ func TestExecute_AppScriptRun_TextErrorDetails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := scriptapi.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	svc := newAppScriptTestService(t, srv)
+	result := executeWithAppScriptTestService(t, []string{
+		"--account", "a@b.com",
+		"appscript", "run", "script123", "myFunc",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-	newAppScriptService = func(context.Context, string) (*scriptapi.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "appscript", "run", "script123", "myFunc"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 	if !strings.Contains(out, "done\ttrue") ||
 		!strings.Contains(out, "error_code\t3") ||
 		!strings.Contains(out, "error\tScript execution failed") ||

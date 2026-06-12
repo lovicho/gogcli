@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -180,6 +181,22 @@ func TestAssetPipeline_StrictFailsWhenMMDCDisabled(t *testing.T) {
 	_, err := p.Resolve(context.Background(), slides)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mmdc not configured")
+}
+
+func TestAssetPipelineWarningUsesRuntimeStderr(t *testing.T) {
+	cfg := DefaultAssetPipelineConfig()
+	cfg.MMDCPath = ""
+
+	var stderr bytes.Buffer
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, &stderr)
+	p := &AssetPipeline{Config: cfg, Uploader: &fakeDriveUploader{}}
+	slides := []Slide{{Body: []Block{
+		DiagramBlock{Kind: "mermaid", Source: "graph TD\nA-->B", ID: "block-1"},
+	}}}
+
+	_, err := p.Resolve(ctx, slides)
+	require.NoError(t, err)
+	assert.Contains(t, stderr.String(), "mmdc not configured; skipping mermaid diagram block-1")
 }
 
 func TestCollectIconRefs_OnlyLeadingParagraphAndHeadingIcons(t *testing.T) {

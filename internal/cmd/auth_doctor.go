@@ -12,7 +12,6 @@ import (
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/secrets"
-	"github.com/steipete/gogcli/internal/termutil"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -67,7 +66,7 @@ func (c *AuthDoctorCmd) Run(ctx context.Context, _ *RootFlags) error {
 		add("keyring.backend", doctorError, backendErr.Error(), "")
 	} else {
 		add("keyring.backend", doctorOK, backendInfo.Value+" (source: "+backendInfo.Source+")", "")
-		addKeyringEnvChecks(add, backendInfo)
+		addKeyringEnvChecks(ctx, add, backendInfo)
 	}
 
 	store, storeErr := openSecretsStore()
@@ -116,7 +115,7 @@ func (c *AuthDoctorCmd) Run(ctx context.Context, _ *RootFlags) error {
 
 	if c.Check {
 		for _, tok := range tokens {
-			err := checkRefreshToken(ctx, tok.Client, tok.RefreshToken, tok.Scopes, c.Timeout)
+			err := checkAuthRefreshToken(ctx, tok.Client, tok.RefreshToken, tok.Scopes, c.Timeout)
 			if err == nil {
 				add(authDoctorTokenCheckName("refresh", tok.Client, tok.Email), doctorOK, "refresh token exchange succeeded", "")
 				continue
@@ -137,7 +136,7 @@ func authDoctorTokenCheckName(prefix string, client string, email string) string
 	return prefix + "." + client + "." + email
 }
 
-func addKeyringEnvChecks(add func(string, string, string, string), backendInfo secrets.KeyringBackendInfo) {
+func addKeyringEnvChecks(ctx context.Context, add func(string, string, string, string), backendInfo secrets.KeyringBackendInfo) {
 	cfg, cfgErr := config.ReadConfig()
 	if cfgErr != nil {
 		add("keyring.config", doctorError, cfgErr.Error(), "")
@@ -166,7 +165,7 @@ func addKeyringEnvChecks(add func(string, string, string, string), backendInfo s
 		add("keyring.password", doctorWarn, "GOG_KEYRING_PASSWORD is set to an empty string", "empty is valid but easy to set accidentally; keep it identical in every shell/service")
 	case passwordSet:
 		add("keyring.password", doctorOK, "GOG_KEYRING_PASSWORD is set", "keep this value identical across shell, service, and agent configs")
-	case !termutil.IsTerminal(os.Stdin):
+	case !stdinIsTerminal(ctx):
 		add("keyring.password", doctorError, "file keyring selected but GOG_KEYRING_PASSWORD is not set in a non-interactive process", "set GOG_KEYRING_PASSWORD or switch to a system keyring")
 	default:
 		add("keyring.password", doctorWarn, "file keyring selected and GOG_KEYRING_PASSWORD is not set", "interactive prompts work locally, but CI/ssh/agents need GOG_KEYRING_PASSWORD")
@@ -176,7 +175,7 @@ func addKeyringEnvChecks(add func(string, string, string, string), backendInfo s
 func writeAuthDoctorResult(ctx context.Context, u *ui.UI, checks []authDoctorCheck) error {
 	status := authDoctorStatus(checks)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"status": status,
 			"checks": checks,
 		})

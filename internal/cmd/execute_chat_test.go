@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,29 +11,11 @@ import (
 	"testing"
 
 	"google.golang.org/api/chat/v1"
-	"google.golang.org/api/option"
 )
 
-var errUnexpectedChatServiceCall = errors.New("unexpected chat service call")
-
-func useFakeChatService(t *testing.T, handler http.HandlerFunc) {
+func useFakeChatService(t *testing.T, handler http.HandlerFunc) *chat.Service {
 	t.Helper()
-
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
-
-	svc, err := chat.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newChatService = func(context.Context, string) (*chat.Service, error) { return svc, nil }
+	return newChatTestService(t, handler)
 }
 
 func TestChatSpaceDisplayNameMatches(t *testing.T) {
@@ -63,7 +43,7 @@ func TestChatSpaceDisplayNameMatches(t *testing.T) {
 }
 
 func TestExecute_ChatSpacesList_Text(t *testing.T) {
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/spaces")) {
 			http.NotFound(w, r)
 			return
@@ -78,30 +58,25 @@ func TestExecute_ChatSpacesList_Text(t *testing.T) {
 		})
 	})
 
-	out := captureStdout(t, func() {
-		errOut := captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "chat", "spaces", "list", "--max", "2"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-		if !strings.Contains(errOut, "# Next page: --page npt") {
-			t.Fatalf("unexpected stderr=%q", errOut)
-		}
-	})
-	if !strings.Contains(out, "RESOURCE") || !strings.Contains(out, "spaces/aaa") || !strings.Contains(out, "Engineering") {
-		t.Fatalf("unexpected out=%q", out)
+	result := executeWithChatTestService(t, []string{"--account", "a@b.com", "chat", "spaces", "list", "--max", "2"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	if !strings.Contains(result.stderr, "# Next page: --page npt") {
+		t.Fatalf("unexpected stderr=%q", result.stderr)
+	}
+	if !strings.Contains(result.stdout, "RESOURCE") || !strings.Contains(result.stdout, "spaces/aaa") || !strings.Contains(result.stdout, "Engineering") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 }
 
 func TestExecute_ChatSpacesList_ConsumerBlocked(t *testing.T) {
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-	newChatService = func(context.Context, string) (*chat.Service, error) {
-		t.Fatalf("unexpected chat service call")
-		return nil, errUnexpectedChatServiceCall
-	}
-
-	err := Execute([]string{"--account", "user@gmail.com", "chat", "spaces", "list"})
+	result := executeWithChatTestServiceFactory(
+		t,
+		[]string{"--account", "user@gmail.com", "chat", "spaces", "list"},
+		unexpectedChatTestService(t, "unexpected chat service call"),
+	)
+	err := result.err
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -111,13 +86,6 @@ func TestExecute_ChatSpacesList_ConsumerBlocked(t *testing.T) {
 }
 
 func TestExecute_ChatListInvalidMaxFailsBeforeWorkspaceCheck(t *testing.T) {
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-	newChatService = func(context.Context, string) (*chat.Service, error) {
-		t.Fatalf("expected max validation to fail before creating chat service")
-		return nil, errUnexpectedChatServiceCall
-	}
-
 	cases := [][]string{
 		{"--account", "user@gmail.com", "chat", "spaces", "list", "--max", "0"},
 		{"--account", "user@gmail.com", "chat", "spaces", "list", "--max=-1"},
@@ -130,7 +98,12 @@ func TestExecute_ChatListInvalidMaxFailsBeforeWorkspaceCheck(t *testing.T) {
 	}
 	for _, args := range cases {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
-			err := Execute(args)
+			result := executeWithChatTestServiceFactory(
+				t,
+				args,
+				unexpectedChatTestService(t, "expected max validation to fail before creating chat service"),
+			)
+			err := result.err
 			if ExitCode(err) != 2 || !strings.Contains(err.Error(), "max must be > 0") {
 				t.Fatalf("unexpected err: %v", err)
 			}
@@ -139,7 +112,7 @@ func TestExecute_ChatListInvalidMaxFailsBeforeWorkspaceCheck(t *testing.T) {
 }
 
 func TestExecute_ChatSpacesFind_JSON(t *testing.T) {
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/spaces")) {
 			http.NotFound(w, r)
 			return
@@ -162,13 +135,10 @@ func TestExecute_ChatSpacesFind_JSON(t *testing.T) {
 		})
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "spaces", "find", "Engineering"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "spaces", "find", "Engineering"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 
 	var parsed struct {
 		Spaces []struct {
@@ -176,7 +146,7 @@ func TestExecute_ChatSpacesFind_JSON(t *testing.T) {
 			Name     string `json:"name"`
 		} `json:"spaces"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(parsed.Spaces) != 1 || parsed.Spaces[0].Resource != "spaces/aaa" {
@@ -185,7 +155,7 @@ func TestExecute_ChatSpacesFind_JSON(t *testing.T) {
 }
 
 func TestExecute_ChatSpacesFind_Substring(t *testing.T) {
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/spaces")) {
 			http.NotFound(w, r)
 			return
@@ -204,13 +174,10 @@ func TestExecute_ChatSpacesFind_Substring(t *testing.T) {
 	// Default behavior: substring, case-insensitive. "project" must match all
 	// three entries whose DisplayName contains "Project", and must exclude the
 	// unrelated "Random Channel".
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "spaces", "find", "project"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "spaces", "find", "project"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 
 	var parsed struct {
 		Spaces []struct {
@@ -218,7 +185,7 @@ func TestExecute_ChatSpacesFind_Substring(t *testing.T) {
 			Name     string `json:"name"`
 		} `json:"spaces"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	got := make(map[string]bool, len(parsed.Spaces))
@@ -234,7 +201,7 @@ func TestExecute_ChatSpacesFind_Substring(t *testing.T) {
 }
 
 func TestExecute_ChatSpacesFind_Exact(t *testing.T) {
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/spaces")) {
 			http.NotFound(w, r)
 			return
@@ -251,20 +218,17 @@ func TestExecute_ChatSpacesFind_Exact(t *testing.T) {
 	// --exact must restore the legacy case-insensitive equality behavior: only
 	// the space whose DisplayName equals "project alpha" (ignoring case)
 	// is returned.
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "spaces", "find", "--exact", "project alpha"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "spaces", "find", "--exact", "project alpha"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 
 	var parsed struct {
 		Spaces []struct {
 			Resource string `json:"resource"`
 		} `json:"spaces"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if len(parsed.Spaces) != 1 || parsed.Spaces[0].Resource != "spaces/bbb" {
@@ -277,7 +241,7 @@ func TestExecute_ChatSpacesCreate_JSON(t *testing.T) {
 	var gotType string
 	var gotMembers int
 
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/spaces:setup")) {
 			http.NotFound(w, r)
 			return
@@ -299,20 +263,17 @@ func TestExecute_ChatSpacesCreate_JSON(t *testing.T) {
 		})
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "spaces", "create", "Engineering", "--member", "a@b.com", "--member", "b@b.com"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "spaces", "create", "Engineering", "--member", "a@b.com", "--member", "b@b.com"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 
 	var parsed struct {
 		Space struct {
 			Name string `json:"name"`
 		} `json:"space"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Space.Name != "spaces/new" {
@@ -327,13 +288,6 @@ func TestExecute_ChatSpacesCreate_JSON(t *testing.T) {
 }
 
 func TestExecute_ChatSpacesCreate_InvalidMemberFailsBeforeDryRun(t *testing.T) {
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-	newChatService = func(context.Context, string) (*chat.Service, error) {
-		t.Fatalf("expected validation to fail before creating chat service")
-		return nil, errUnexpectedChatServiceCall
-	}
-
 	testCases := [][]string{
 		{"--account", "a@b.com", "--dry-run", "chat", "spaces", "create", "Team", "--member", "nope"},
 		{"--account", "a@b.com", "--dry-run", "chat", "spaces", "create", "Team", "--member", "Tester <x@example.com>"},
@@ -343,13 +297,15 @@ func TestExecute_ChatSpacesCreate_InvalidMemberFailsBeforeDryRun(t *testing.T) {
 	}
 	for _, args := range testCases {
 		t.Run(strings.Join(args[4:], "_"), func(t *testing.T) {
-			_ = captureStderr(t, func() {
-				err := Execute(args)
-				var exitErr *ExitError
-				if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid --member") {
-					t.Fatalf("unexpected err: %v", err)
-				}
-			})
+			result := executeWithChatTestServiceFactory(
+				t,
+				args,
+				unexpectedChatTestService(t, "expected validation to fail before creating chat service"),
+			)
+			var exitErr *ExitError
+			if !errors.As(result.err, &exitErr) || exitErr.Code != 2 || !strings.Contains(result.err.Error(), "invalid --member") {
+				t.Fatalf("unexpected err: %v", result.err)
+			}
 		})
 	}
 }
@@ -357,7 +313,7 @@ func TestExecute_ChatSpacesCreate_InvalidMemberFailsBeforeDryRun(t *testing.T) {
 func TestExecute_ChatMessagesList_Text_Unread(t *testing.T) {
 	var gotFilter string
 
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/spaceReadState") && r.Method == http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
@@ -384,18 +340,15 @@ func TestExecute_ChatMessagesList_Text_Unread(t *testing.T) {
 		}
 	})
 
-	out := captureStdout(t, func() {
-		errOut := captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "chat", "messages", "list", "spaces/aaa", "--unread", "--thread", "t1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-		if !strings.Contains(errOut, "# Next page: --page npt") {
-			t.Fatalf("unexpected stderr=%q", errOut)
-		}
-	})
-	if !strings.Contains(out, "RESOURCE") || !strings.Contains(out, "messages/msg1") || !strings.Contains(out, "hello") {
-		t.Fatalf("unexpected out=%q", out)
+	result := executeWithChatTestService(t, []string{"--account", "a@b.com", "chat", "messages", "list", "spaces/aaa", "--unread", "--thread", "t1"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	if !strings.Contains(result.stderr, "# Next page: --page npt") {
+		t.Fatalf("unexpected stderr=%q", result.stderr)
+	}
+	if !strings.Contains(result.stdout, "RESOURCE") || !strings.Contains(result.stdout, "messages/msg1") || !strings.Contains(result.stdout, "hello") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 	if !strings.Contains(gotFilter, "createTime > \"2025-01-01T00:00:00Z\"") {
 		t.Fatalf("unexpected filter: %q", gotFilter)
@@ -409,7 +362,7 @@ func TestExecute_ChatMessagesSend_JSON(t *testing.T) {
 	var gotText string
 	var gotThread string
 
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/messages")) {
 			http.NotFound(w, r)
 			return
@@ -427,21 +380,18 @@ func TestExecute_ChatMessagesSend_JSON(t *testing.T) {
 		})
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "messages", "send", "spaces/aaa", "--text", "hello", "--thread", "t1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "messages", "send", "spaces/aaa", "--text", "hello", "--thread", "t1"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 	if gotText != "hello" {
 		t.Fatalf("unexpected text: %q", gotText)
 	}
 	if gotThread != "spaces/aaa/threads/t1" {
 		t.Fatalf("unexpected thread: %q", gotThread)
 	}
-	if !strings.Contains(out, "spaces/aaa/messages/msg2") {
-		t.Fatalf("unexpected out=%q", out)
+	if !strings.Contains(result.stdout, "spaces/aaa/messages/msg2") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 }
 
@@ -456,7 +406,7 @@ func TestExecute_ChatMessagesSend_WithAttachment(t *testing.T) {
 	var gotUploadParent string
 	var gotAttachmentToken string
 
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "attachments:upload"):
 			uploadHits++
@@ -484,13 +434,10 @@ func TestExecute_ChatMessagesSend_WithAttachment(t *testing.T) {
 		}
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "messages", "send", "spaces/aaa", "--text", "look", "--attach", imgPath}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "messages", "send", "spaces/aaa", "--text", "look", "--attach", imgPath}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 
 	if uploadHits != 1 {
 		t.Fatalf("expected exactly 1 upload, got %d", uploadHits)
@@ -501,8 +448,8 @@ func TestExecute_ChatMessagesSend_WithAttachment(t *testing.T) {
 	if gotAttachmentToken != "tok-123" {
 		t.Fatalf("attachment token not forwarded to message, got %q", gotAttachmentToken)
 	}
-	if !strings.Contains(out, "spaces/aaa/messages/msg3") {
-		t.Fatalf("unexpected out=%q", out)
+	if !strings.Contains(result.stdout, "spaces/aaa/messages/msg3") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 }
 
@@ -514,7 +461,7 @@ func TestExecute_ChatMessagesSend_AttachmentOnlyNoText(t *testing.T) {
 	}
 
 	var messageSent bool
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "attachments:upload"):
 			w.Header().Set("Content-Type", "application/json")
@@ -530,62 +477,49 @@ func TestExecute_ChatMessagesSend_AttachmentOnlyNoText(t *testing.T) {
 		}
 	})
 
-	_ = captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "chat", "messages", "send", "spaces/aaa", "--attach", imgPath}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--account", "a@b.com", "chat", "messages", "send", "spaces/aaa", "--attach", imgPath}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 	if !messageSent {
 		t.Fatalf("expected message to be sent with attachment-only payload")
 	}
 }
 
 func TestExecute_ChatMessagesSend_NoTextNoAttachFails(t *testing.T) {
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-	newChatService = func(context.Context, string) (*chat.Service, error) {
-		t.Fatalf("expected validation to fail before creating chat service")
-		return nil, errUnexpectedChatServiceCall
+	result := executeWithChatTestServiceFactory(
+		t,
+		[]string{"--account", "a@b.com", "chat", "messages", "send", "spaces/aaa"},
+		unexpectedChatTestService(t, "expected validation to fail before creating chat service"),
+	)
+	var exitErr *ExitError
+	if !errors.As(result.err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("unexpected err: %v", result.err)
 	}
-
-	_ = captureStderr(t, func() {
-		err := Execute([]string{"--account", "a@b.com", "chat", "messages", "send", "spaces/aaa"})
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-			t.Fatalf("unexpected err: %v", err)
-		}
-	})
 }
 
 func TestExecute_ChatMessagesSend_InvalidResourceFailsBeforeDryRun(t *testing.T) {
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-	newChatService = func(context.Context, string) (*chat.Service, error) {
-		t.Fatalf("expected validation to fail before creating chat service")
-		return nil, errUnexpectedChatServiceCall
-	}
-
 	testCases := [][]string{
 		{"--account", "a@b.com", "--dry-run", "chat", "messages", "send", "spaces/AAA/extra", "--text", "ping"},
 		{"--account", "a@b.com", "--dry-run", "chat", "messages", "send", "spaces/AAA", "--text", "ping", "--thread", "spaces/AAA/threads/t1/extra"},
 	}
 	for _, args := range testCases {
 		t.Run(strings.Join(args[4:], "_"), func(t *testing.T) {
-			_ = captureStderr(t, func() {
-				err := Execute(args)
-				var exitErr *ExitError
-				if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-					t.Fatalf("unexpected err: %v", err)
-				}
-			})
+			result := executeWithChatTestServiceFactory(
+				t,
+				args,
+				unexpectedChatTestService(t, "expected validation to fail before creating chat service"),
+			)
+			var exitErr *ExitError
+			if !errors.As(result.err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("unexpected err: %v", result.err)
+			}
 		})
 	}
 }
 
 func TestExecute_ChatThreadsList_Text(t *testing.T) {
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/messages")) {
 			http.NotFound(w, r)
 			return
@@ -600,22 +534,19 @@ func TestExecute_ChatThreadsList_Text(t *testing.T) {
 		})
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "chat", "threads", "list", "spaces/aaa"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
-	if strings.Count(out, "threads/t1") != 1 || !strings.Contains(out, "threads/t2") {
-		t.Fatalf("unexpected out=%q", out)
+	result := executeWithChatTestService(t, []string{"--account", "a@b.com", "chat", "threads", "list", "spaces/aaa"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	if strings.Count(result.stdout, "threads/t1") != 1 || !strings.Contains(result.stdout, "threads/t2") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 }
 
 func TestExecute_ChatDMSpace_JSON(t *testing.T) {
 	var gotMember string
 
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		if !(r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/spaces:setup")) {
 			http.NotFound(w, r)
 			return
@@ -633,25 +564,22 @@ func TestExecute_ChatDMSpace_JSON(t *testing.T) {
 		})
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "dm", "space", "user@example.com"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "dm", "space", "user@example.com"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 	if gotMember != "users/user@example.com" {
 		t.Fatalf("unexpected member: %q", gotMember)
 	}
-	if !strings.Contains(out, "spaces/dm1") {
-		t.Fatalf("unexpected out=%q", out)
+	if !strings.Contains(result.stdout, "spaces/dm1") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 }
 
 func TestExecute_ChatDMSend_JSON(t *testing.T) {
 	var gotText string
 
-	useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := useFakeChatService(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/spaces:setup"):
 			w.Header().Set("Content-Type", "application/json")
@@ -671,29 +599,19 @@ func TestExecute_ChatDMSend_JSON(t *testing.T) {
 		}
 	})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "chat", "dm", "send", "user@example.com", "--text", "ping"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithChatTestService(t, []string{"--json", "--account", "a@b.com", "chat", "dm", "send", "user@example.com", "--text", "ping"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 	if gotText != "ping" {
 		t.Fatalf("unexpected text: %q", gotText)
 	}
-	if !strings.Contains(out, "spaces/dm1/messages/m1") {
-		t.Fatalf("unexpected out=%q", out)
+	if !strings.Contains(result.stdout, "spaces/dm1/messages/m1") {
+		t.Fatalf("unexpected out=%q", result.stdout)
 	}
 }
 
 func TestExecute_ChatDM_InvalidEmailFailsBeforeDryRun(t *testing.T) {
-	origNew := newChatService
-	t.Cleanup(func() { newChatService = origNew })
-	newChatService = func(context.Context, string) (*chat.Service, error) {
-		t.Fatalf("expected validation to fail before creating chat service")
-		return nil, errUnexpectedChatServiceCall
-	}
-
 	testCases := [][]string{
 		{"--account", "a@b.com", "--dry-run", "chat", "dm", "send", "nope", "--text", "ping"},
 		{"--account", "a@b.com", "--dry-run", "chat", "dm", "space", "nope"},
@@ -702,13 +620,15 @@ func TestExecute_ChatDM_InvalidEmailFailsBeforeDryRun(t *testing.T) {
 	}
 	for _, args := range testCases {
 		t.Run(strings.Join(args[4:], "_"), func(t *testing.T) {
-			_ = captureStderr(t, func() {
-				err := Execute(args)
-				var exitErr *ExitError
-				if !errors.As(err, &exitErr) || exitErr.Code != 2 {
-					t.Fatalf("unexpected err: %v", err)
-				}
-			})
+			result := executeWithChatTestServiceFactory(
+				t,
+				args,
+				unexpectedChatTestService(t, "expected validation to fail before creating chat service"),
+			)
+			var exitErr *ExitError
+			if !errors.As(result.err, &exitErr) || exitErr.Code != 2 {
+				t.Fatalf("unexpected err: %v", result.err)
+			}
 		})
 	}
 }

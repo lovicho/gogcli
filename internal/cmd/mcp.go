@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -49,7 +50,7 @@ type mcpCommandResult struct {
 	Stderr   string `json:"stderr,omitempty"`
 }
 
-func (c *McpCmd) Run(_ context.Context, flags *RootFlags) error {
+func (c *McpCmd) Run(ctx context.Context, flags *RootFlags) error {
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
@@ -66,7 +67,7 @@ func (c *McpCmd) Run(_ context.Context, flags *RootFlags) error {
 		return usage("no MCP tools enabled")
 	}
 	if c.ListTools {
-		return mcpPrintTools(tools)
+		return mcpPrintTools(stdoutWriter(ctx), tools)
 	}
 
 	baseArgs := mcpParentRootArgs(flags)
@@ -266,7 +267,7 @@ func mcpToolAllowed(tool mcpToolSpec, allow []string) bool {
 	return false
 }
 
-func mcpPrintTools(tools []mcpToolSpec) error {
+func mcpPrintTools(output io.Writer, tools []mcpToolSpec) error {
 	items := make([]map[string]string, 0, len(tools))
 	for _, tool := range tools {
 		items = append(items, map[string]string{
@@ -276,7 +277,7 @@ func mcpPrintTools(tools []mcpToolSpec) error {
 			"description": tool.Description,
 		})
 	}
-	enc := json.NewEncoder(os.Stdout)
+	enc := json.NewEncoder(output)
 	enc.SetIndent("", "  ")
 	return enc.Encode(map[string]any{"tools": items})
 }

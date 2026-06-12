@@ -51,7 +51,7 @@ func buildChatBackupSnapshot(ctx context.Context, flags *RootFlags, shardMaxRows
 	if workspaceErr := requireWorkspaceAccount(account); workspaceErr != nil {
 		return backup.Snapshot{}, workspaceErr
 	}
-	svc, err := newChatService(ctx, account)
+	svc, err := chatService(ctx, account)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}

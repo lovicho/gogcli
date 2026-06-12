@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -212,7 +211,7 @@ func (c *AuthListCmd) writeAuthListJSON(ctx context.Context, entries []authListE
 		out = append(out, it)
 	}
 
-	return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"accounts": out})
+	return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"accounts": out})
 }
 
 func (c *AuthListCmd) annotateAuthListCheck(ctx context.Context, e authListEntry, it *authListJSONItem) {
@@ -225,7 +224,7 @@ func (c *AuthListCmd) annotateAuthListCheck(ctx context.Context, e authListEntry
 		it.Valid = &valid
 		it.Error = "service account (not checked)"
 	default:
-		err := checkRefreshToken(ctx, e.Token.Client, e.Token.RefreshToken, e.Token.Scopes, c.Timeout)
+		err := checkAuthRefreshToken(ctx, e.Token.Client, e.Token.RefreshToken, e.Token.Scopes, c.Timeout)
 		valid := err == nil
 		it.Valid = &valid
 		if err != nil {
@@ -268,7 +267,7 @@ func (c *AuthListCmd) writeAuthListCheckRow(ctx context.Context, u *ui.UI, e aut
 	case e.Token == nil:
 		u.Out().Linef("%s\t%s\t%s\t%s\t%t\t%s\t%s", e.Email, client, servicesCSV, created, true, "service account (not checked)", e.authType())
 	default:
-		err := checkRefreshToken(ctx, e.Token.Client, e.Token.RefreshToken, e.Token.Scopes, c.Timeout)
+		err := checkAuthRefreshToken(ctx, e.Token.Client, e.Token.RefreshToken, e.Token.Scopes, c.Timeout)
 		valid := err == nil
 		msg := ""
 		if err != nil {

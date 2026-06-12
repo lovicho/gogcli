@@ -555,7 +555,7 @@ func (c *ContactsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 			return usage("can't combine --from-file with other update flags")
 		}
 		if flags != nil && flags.DryRun {
-			inputPerson, updateFields, err := c.readUpdateJSONInput(resourceName)
+			inputPerson, updateFields, err := c.readUpdateJSONInput(ctx, resourceName)
 			if err != nil {
 				return err
 			}

@@ -37,7 +37,7 @@ func (c *AuthCredentialsSetCmd) Run(ctx context.Context, _ *RootFlags) error {
 	inPath := c.Path
 	var b []byte
 	if inPath == "-" {
-		b, err = io.ReadAll(os.Stdin)
+		b, err = io.ReadAll(stdinReader(ctx))
 	} else {
 		inPath, err = config.ExpandPath(inPath)
 		if err != nil {
@@ -76,7 +76,7 @@ func (c *AuthCredentialsSetCmd) Run(ctx context.Context, _ *RootFlags) error {
 		}
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"saved":                    true,
 			"path":                     outPath,
 			"client":                   client,
@@ -152,14 +152,14 @@ func (c *AuthCredentialsListCmd) Run(ctx context.Context, _ *RootFlags) error {
 
 	if len(entries) == 0 {
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"clients": []entry{}})
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"clients": []entry{}})
 		}
 		u.Err().Println("No OAuth client credentials stored")
 		return nil
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"clients": entries})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"clients": entries})
 	}
 
 	w, done := tableWriter(ctx)

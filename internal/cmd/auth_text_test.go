@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/secrets"
 )
@@ -109,32 +110,30 @@ func TestAuthListAndTokens_NoTokens_Text(t *testing.T) {
 
 func TestAuthList_Check_Text(t *testing.T) {
 	origOpen := openSecretsStore
-	origCheck := checkRefreshToken
-	t.Cleanup(func() {
-		openSecretsStore = origOpen
-		checkRefreshToken = origCheck
-	})
+	t.Cleanup(func() { openSecretsStore = origOpen })
 
 	store := newMemSecretsStore()
 	openSecretsStore = func() (secrets.Store, error) { return store, nil }
 
-	checkRefreshToken = func(_ context.Context, _ string, refreshToken string, _ []string, _ time.Duration) error {
-		if refreshToken == "bad" {
-			return errors.New("invalid_grant")
-		}
-		return nil
+	runtime := &app.Runtime{
+		Auth: app.AuthOperations{
+			CheckRefreshToken: func(_ context.Context, _ string, refreshToken string, _ []string, _ time.Duration) error {
+				if refreshToken == "bad" {
+					return errors.New("invalid_grant")
+				}
+				return nil
+			},
+		},
 	}
 
 	_ = store.SetToken(config.DefaultClientName, "a@b.com", secrets.Token{RefreshToken: "good"})
 	_ = store.SetToken(config.DefaultClientName, "b@b.com", secrets.Token{RefreshToken: "bad"})
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"auth", "list", "--check"}); err != nil {
-				t.Fatalf("list --check: %v", err)
-			}
-		})
-	})
+	result := executeWithTestRuntime(t, []string{"auth", "list", "--check"}, runtime)
+	if result.err != nil {
+		t.Fatalf("list --check: %v", result.err)
+	}
+	out := result.stdout
 	if !strings.Contains(out, "a@b.com") || !strings.Contains(out, "\ttrue\t") {
 		t.Fatalf("expected a@b.com valid in output: %q", out)
 	}

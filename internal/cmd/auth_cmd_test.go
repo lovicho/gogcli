@@ -13,6 +13,7 @@ import (
 
 	"github.com/99designs/keyring"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/secrets"
 )
@@ -433,11 +434,7 @@ func TestAuthList_JSON_ReportsUnreadableToken(t *testing.T) {
 
 func TestAuthDoctor_JSON_CheckClassifiesInvalidRAPT(t *testing.T) {
 	origOpen := openSecretsStore
-	origCheck := checkRefreshToken
-	t.Cleanup(func() {
-		openSecretsStore = origOpen
-		checkRefreshToken = origCheck
-	})
+	t.Cleanup(func() { openSecretsStore = origOpen })
 
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -451,17 +448,16 @@ func TestAuthDoctor_JSON_CheckClassifiesInvalidRAPT(t *testing.T) {
 		t.Fatalf("SetToken: %v", err)
 	}
 	openSecretsStore = func() (secrets.Store, error) { return store, nil }
-	checkRefreshToken = func(context.Context, string, string, []string, time.Duration) error {
-		return errors.New(`oauth2: "invalid_grant" "reauth related error (invalid_rapt)"`)
-	}
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "auth", "doctor", "--check"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
+	result := executeWithTestRuntime(t, []string{"--json", "auth", "doctor", "--check"}, &app.Runtime{
+		Auth: app.AuthOperations{
+			CheckRefreshToken: func(context.Context, string, string, []string, time.Duration) error {
+				return errors.New(`oauth2: "invalid_grant" "reauth related error (invalid_rapt)"`)
+			},
+		},
 	})
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 
 	var payload struct {
 		Status string `json:"status"`
@@ -471,8 +467,8 @@ func TestAuthDoctor_JSON_CheckClassifiesInvalidRAPT(t *testing.T) {
 			Hint   string `json:"hint"`
 		} `json:"checks"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("json parse: %v\nout=%q", err, out)
+	if err := json.Unmarshal([]byte(result.stdout), &payload); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, result.stdout)
 	}
 	if payload.Status != "error" {
 		t.Fatalf("status=%q, want error", payload.Status)
@@ -553,20 +549,20 @@ func TestAuthTokensImport_FileBackendSkipsKeychain(t *testing.T) {
 
 func TestAuthListRemoveTokensListDelete_JSON(t *testing.T) {
 	origOpen := openSecretsStore
-	origCheck := checkRefreshToken
-	t.Cleanup(func() {
-		openSecretsStore = origOpen
-		checkRefreshToken = origCheck
-	})
+	t.Cleanup(func() { openSecretsStore = origOpen })
 
 	store := newMemSecretsStore()
 	openSecretsStore = func() (secrets.Store, error) { return store, nil }
 
-	checkRefreshToken = func(_ context.Context, _ string, refreshToken string, _ []string, _ time.Duration) error {
-		if refreshToken == "rt2" {
-			return errors.New("invalid_grant")
-		}
-		return nil
+	runtime := &app.Runtime{
+		Auth: app.AuthOperations{
+			CheckRefreshToken: func(_ context.Context, _ string, refreshToken string, _ []string, _ time.Duration) error {
+				if refreshToken == "rt2" {
+					return errors.New("invalid_grant")
+				}
+				return nil
+			},
+		},
 	}
 
 	_ = store.SetToken(config.DefaultClientName, "b@b.com", secrets.Token{RefreshToken: "rt2"})
@@ -591,13 +587,10 @@ func TestAuthListRemoveTokensListDelete_JSON(t *testing.T) {
 		t.Fatalf("unexpected accounts: %#v", listResp.Accounts)
 	}
 
-	listOut = captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "auth", "list", "--check"}); err != nil {
-				t.Fatalf("Execute list --check: %v", err)
-			}
-		})
-	})
+	listChecked := executeWithTestRuntime(t, []string{"--json", "auth", "list", "--check"}, runtime)
+	if listChecked.err != nil {
+		t.Fatalf("Execute list --check: %v", listChecked.err)
+	}
 	var listCheckedResp struct {
 		Accounts []struct {
 			Email string `json:"email"`
@@ -605,8 +598,8 @@ func TestAuthListRemoveTokensListDelete_JSON(t *testing.T) {
 			Error string `json:"error,omitempty"`
 		} `json:"accounts"`
 	}
-	if err := json.Unmarshal([]byte(listOut), &listCheckedResp); err != nil {
-		t.Fatalf("list --check json: %v\nout=%q", err, listOut)
+	if err := json.Unmarshal([]byte(listChecked.stdout), &listCheckedResp); err != nil {
+		t.Fatalf("list --check json: %v\nout=%q", err, listChecked.stdout)
 	}
 	if len(listCheckedResp.Accounts) != 2 {
 		t.Fatalf("unexpected accounts: %#v", listCheckedResp.Accounts)

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/config"
@@ -33,13 +32,13 @@ func (c *ConfigNoSendSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"account": account,
 			"noSend":  true,
 			"saved":   true,
 		})
 	}
-	fmt.Fprintf(os.Stdout, "No-send enabled for %s\n", account)
+	fmt.Fprintf(stdoutWriter(ctx), "No-send enabled for %s\n", account)
 	return nil
 }
 
@@ -59,13 +58,13 @@ func (c *ConfigNoSendRemoveCmd) Run(ctx context.Context, flags *RootFlags) error
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"account": account,
 			"noSend":  false,
 			"removed": true,
 		})
 	}
-	fmt.Fprintf(os.Stdout, "No-send removed for %s\n", account)
+	fmt.Fprintf(stdoutWriter(ctx), "No-send removed for %s\n", account)
 	return nil
 }
 
@@ -79,18 +78,18 @@ func (c *ConfigNoSendListCmd) Run(ctx context.Context) error {
 	}
 	accounts := config.NoSendAccountList(cfg)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"accounts": accounts})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"accounts": accounts})
 	}
 	if len(accounts) == 0 {
 		if u != nil {
 			u.Err().Println("No no-send accounts")
 			return nil
 		}
-		fmt.Fprintln(os.Stderr, "No no-send accounts")
+		fmt.Fprintln(stderrWriter(ctx), "No no-send accounts")
 		return nil
 	}
 	for _, account := range accounts {
-		fmt.Fprintln(os.Stdout, account)
+		fmt.Fprintln(stdoutWriter(ctx), account)
 	}
 	return nil
 }

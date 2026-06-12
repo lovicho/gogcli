@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,14 +13,14 @@ import (
 
 func TestBuildQuestion(t *testing.T) {
 	t.Run("choice question requires options", func(t *testing.T) {
-		_, err := buildQuestion("radio", &FormsAddQuestionCmd{})
+		_, err := buildQuestion("radio", &formsAddQuestionInput{})
 		if err == nil || !strings.Contains(err.Error(), "--option is required") {
 			t.Fatalf("expected option validation error, got %v", err)
 		}
 	})
 
 	t.Run("scale question", func(t *testing.T) {
-		q, err := buildQuestion("scale", &FormsAddQuestionCmd{Required: true, ScaleLow: 1, ScaleHigh: 7, ScaleLowLabel: "low", ScaleHighLabel: "high"})
+		q, err := buildQuestion("scale", &formsAddQuestionInput{Required: true, ScaleLow: 1, ScaleHigh: 7, ScaleLowLabel: "low", ScaleHighLabel: "high"})
 		if err != nil {
 			t.Fatalf("buildQuestion: %v", err)
 		}
@@ -34,7 +33,7 @@ func TestBuildQuestion(t *testing.T) {
 	})
 
 	t.Run("quiz grading", func(t *testing.T) {
-		q, err := buildQuestion("radio", &FormsAddQuestionCmd{
+		q, err := buildQuestion("radio", &formsAddQuestionInput{
 			Options: []string{"1", "2", "4"},
 			Correct: []string{
 				"4",
@@ -53,7 +52,7 @@ func TestBuildQuestion(t *testing.T) {
 	})
 
 	t.Run("quiz grading validation", func(t *testing.T) {
-		_, err := buildQuestion("radio", &FormsAddQuestionCmd{
+		_, err := buildQuestion("radio", &formsAddQuestionInput{
 			Options: []string{"1", "2"},
 			Correct: []string{
 				"2",
@@ -63,7 +62,7 @@ func TestBuildQuestion(t *testing.T) {
 			t.Fatalf("expected points validation, got %v", err)
 		}
 
-		_, err = buildQuestion("scale", &FormsAddQuestionCmd{Correct: []string{"5"}, Points: 1})
+		_, err = buildQuestion("scale", &formsAddQuestionInput{Correct: []string{"5"}, Points: 1})
 		if err == nil || !strings.Contains(err.Error(), "supported only") {
 			t.Fatalf("expected type validation, got %v", err)
 		}
@@ -71,9 +70,6 @@ func TestBuildQuestion(t *testing.T) {
 }
 
 func TestFormsAddQuestionAppend(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var gotBatch formsapi.BatchUpdateFormRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -104,11 +100,9 @@ func TestFormsAddQuestionAppend(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
-	err := runKong(t, &FormsAddQuestionCmd{}, []string{"form1", "--title", "Favorite color", "--type", "radio", "--option", "Red", "--option", "Blue"}, newQuietUIContext(t), &RootFlags{Account: "a@b.com"})
+	svc := newFormsTestService(t, t.Context(), srv)
+	ctx := withFormsTestService(newQuietUIContext(t), svc)
+	err := runKong(t, &FormsAddQuestionCmd{}, []string{"form1", "--title", "Favorite color", "--type", "radio", "--option", "Red", "--option", "Blue"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -132,19 +126,13 @@ func TestFormsAddQuestionAppend(t *testing.T) {
 }
 
 func TestFormsAddQuestionRejectsInvalidAppendIndexBeforeDryRun(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) {
-		t.Fatal("forms service should not be created")
-		return nil, context.Canceled
-	}
-
+	ctx := withFormsTestServiceFactory(newQuietUIContext(t), unexpectedFormsTestService(t, "forms service should not be created"))
 	err := runKong(t, &FormsAddQuestionCmd{}, []string{
 		"form1",
 		"--title", "Favorite color",
 		"--type", "text",
 		"--index=-2",
-	}, newQuietUIContext(t), &RootFlags{Account: "a@b.com", DryRun: true})
+	}, ctx, &RootFlags{Account: "a@b.com", DryRun: true})
 	if err == nil {
 		t.Fatal("expected index validation error")
 	}
@@ -154,9 +142,6 @@ func TestFormsAddQuestionRejectsInvalidAppendIndexBeforeDryRun(t *testing.T) {
 }
 
 func TestFormsAddQuestionAppendWithGrading(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var gotBatch formsapi.BatchUpdateFormRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -181,10 +166,8 @@ func TestFormsAddQuestionAppendWithGrading(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
+	svc := newFormsTestService(t, t.Context(), srv)
+	ctx := withFormsTestService(newQuietUIContext(t), svc)
 	err := runKong(t, &FormsAddQuestionCmd{}, []string{
 		"form1",
 		"--title", "What is 2+2?",
@@ -193,7 +176,7 @@ func TestFormsAddQuestionAppendWithGrading(t *testing.T) {
 		"--option", "4",
 		"--correct", "4",
 		"--points", "1",
-	}, newQuietUIContext(t), &RootFlags{Account: "a@b.com"})
+	}, ctx, &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -211,9 +194,6 @@ func TestFormsAddQuestionAppendWithGrading(t *testing.T) {
 }
 
 func TestFormsDeleteQuestionValidationAndDryRun(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	getCalls := 0
 	batchCalls := 0
 
@@ -238,11 +218,8 @@ func TestFormsDeleteQuestionValidationAndDryRun(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
-	ctx := newQuietUIContext(t)
+	svc := newFormsTestService(t, t.Context(), srv)
+	ctx := withFormsTestService(newQuietUIContext(t), svc)
 
 	t.Run("out of range before confirmation", func(t *testing.T) {
 		err := runKong(t, &FormsDeleteQuestionCmd{}, []string{"form1", "5"}, ctx, &RootFlags{Account: "a@b.com", NoInput: true})
@@ -283,9 +260,6 @@ func TestFormsDeleteQuestionValidationAndDryRun(t *testing.T) {
 }
 
 func TestFormsMoveQuestionSendsZeroIndex(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var gotBatch formsapi.BatchUpdateFormRequest
 	var rawBatch string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -307,11 +281,9 @@ func TestFormsMoveQuestionSendsZeroIndex(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
-	err := runKong(t, &FormsMoveQuestionCmd{}, []string{"form1", "1", "0"}, newQuietUIContext(t), &RootFlags{Account: "a@b.com"})
+	svc := newFormsTestService(t, t.Context(), srv)
+	ctx := withFormsTestService(newQuietUIContext(t), svc)
+	err := runKong(t, &FormsMoveQuestionCmd{}, []string{"form1", "1", "0"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("runKong: %v", err)
 	}

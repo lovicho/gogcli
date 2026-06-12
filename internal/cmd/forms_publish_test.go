@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,9 +12,6 @@ import (
 )
 
 func TestFormsPublishCmd(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var gotPublish formsapi.SetPublishSettingsRequest
 	var gotPublishJSON map[string]any
 
@@ -54,11 +49,9 @@ func TestFormsPublishCmd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
-	err := runKong(t, &FormsPublishCmd{}, []string{"form1"}, newQuietUIContext(t), &RootFlags{Account: "a@b.com"})
+	svc := newFormsTestService(t, t.Context(), srv)
+	ctx := withFormsTestService(newQuietUIContext(t), svc)
+	err := runKong(t, &FormsPublishCmd{}, []string{"form1"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -77,9 +70,6 @@ func TestFormsPublishCmd(t *testing.T) {
 }
 
 func TestFormsPublishCmdUnpublish(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var gotPublish formsapi.SetPublishSettingsRequest
 	var gotPublishJSON map[string]any
 
@@ -116,18 +106,12 @@ func TestFormsPublishCmdUnpublish(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
+	svc := newFormsTestService(t, t.Context(), srv)
+	result := executeWithFormsTestService(t, []string{"--json", "--account", "a@b.com", "forms", "publish", "form1", "--unpublish"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			err := Execute([]string{"--json", "--account", "a@b.com", "forms", "publish", "form1", "--unpublish"})
-			if err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	if gotPublish.UpdateMask != "publish_state" {
 		t.Fatalf("UpdateMask = %q, want publish_state", gotPublish.UpdateMask)
@@ -155,9 +139,6 @@ func TestFormsPublishCmdUnpublish(t *testing.T) {
 }
 
 func TestFormsPublishCmdAcceptingResponsesFalseJSON(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var gotPublish formsapi.SetPublishSettingsRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -187,23 +168,17 @@ func TestFormsPublishCmdAcceptingResponsesFalseJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
+	svc := newFormsTestService(t, t.Context(), srv)
+	result := executeWithFormsTestService(t, []string{
+		"--json",
+		"--account", "a@b.com",
+		"forms", "publish", "form1",
+		"--accepting-responses=false",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			err := Execute([]string{
-				"--json",
-				"--account", "a@b.com",
-				"forms", "publish", "form1",
-				"--accepting-responses=false",
-			})
-			if err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	if gotPublish.PublishSettings == nil ||
 		gotPublish.PublishSettings.PublishState == nil ||
@@ -230,26 +205,16 @@ func TestFormsPublishCmdAcceptingResponsesFalseJSON(t *testing.T) {
 }
 
 func TestFormsPublishCmdDryRun(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) {
-		t.Fatalf("dry-run should not create forms service")
-		return nil, errors.New("unexpected forms service call")
+	result := executeWithFormsTestServiceFactory(t, []string{
+		"--json",
+		"--dry-run",
+		"--account", "a@b.com",
+		"forms", "publish", "form1",
+	}, unexpectedFormsTestService(t, "dry-run should not create forms service"))
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			err := Execute([]string{
-				"--json",
-				"--dry-run",
-				"--account", "a@b.com",
-				"forms", "publish", "form1",
-			})
-			if err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	var parsed struct {
 		DryRun  bool   `json:"dry_run"`

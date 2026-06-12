@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -37,7 +36,7 @@ func (c *TimeNowCmd) Run(ctx context.Context) error {
 	offset := formatUTCOffset(now)
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"timezone":     tz,
 			"current_time": now.Format(time.RFC3339),
 			"utc_offset":   offset,

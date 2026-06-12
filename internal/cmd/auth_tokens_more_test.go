@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/secrets"
 )
@@ -84,23 +85,20 @@ func TestAuthTokensExportImport_JSON(t *testing.T) {
 
 func TestAuthList_CheckJSON(t *testing.T) {
 	origOpen := openSecretsStore
-	origCheck := checkRefreshToken
-	t.Cleanup(func() {
-		openSecretsStore = origOpen
-		checkRefreshToken = origCheck
-	})
+	t.Cleanup(func() { openSecretsStore = origOpen })
 
 	store := newMemStore()
 	openSecretsStore = func() (secrets.Store, error) { return store, nil }
-	checkRefreshToken = func(context.Context, string, string, []string, time.Duration) error {
-		return nil
-	}
 
 	if err := store.SetToken(config.DefaultClientName, "a@b.com", secrets.Token{Email: "a@b.com", RefreshToken: "rt"}); err != nil {
 		t.Fatalf("SetToken: %v", err)
 	}
 
-	ctx := newCmdJSONOutputContext(t, os.Stdout, os.Stderr)
+	ctx := withTestRuntime(newCmdJSONOutputContext(t, os.Stdout, os.Stderr), func(runtime *app.Runtime) {
+		runtime.Auth.CheckRefreshToken = func(context.Context, string, string, []string, time.Duration) error {
+			return nil
+		}
+	})
 	var err error
 
 	listCmd := AuthListCmd{Check: true}

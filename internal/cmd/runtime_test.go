@@ -9,13 +9,27 @@ import (
 	"strings"
 	"testing"
 
+	admin "google.golang.org/api/admin/directory/v1"
+	analyticsadmin "google.golang.org/api/analyticsadmin/v1beta"
+	analyticsdata "google.golang.org/api/analyticsdata/v1beta"
+	"google.golang.org/api/chat/v1"
+	"google.golang.org/api/cloudidentity/v1"
 	"google.golang.org/api/drive/v3"
+	driveactivityapi "google.golang.org/api/driveactivity/v2"
+	drivelabelsapi "google.golang.org/api/drivelabels/v2"
+	formsapi "google.golang.org/api/forms/v1"
 	"google.golang.org/api/gmail/v1"
+	keepapi "google.golang.org/api/keep/v1"
+	meetapi "google.golang.org/api/meet/v2"
 	"google.golang.org/api/people/v1"
+	scriptapi "google.golang.org/api/script/v1"
+	searchconsoleapi "google.golang.org/api/searchconsole/v1"
 	"google.golang.org/api/sheets/v4"
 	"google.golang.org/api/slides/v1"
+	youtubeapi "google.golang.org/api/youtube/v3"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/googleapi"
 )
 
 func TestExecuteRuntimeRoutesMigratedCommandOutput(t *testing.T) {
@@ -64,6 +78,303 @@ func TestExecuteRuntimeRoutesEarlyErrors(t *testing.T) {
 	}
 }
 
+func TestAdminDirectoryServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &admin.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		AdminDirectory: func(_ context.Context, account string) (*admin.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := adminDirectoryService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("adminDirectoryService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("adminDirectoryService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestAdminOrgUnitDirectoryServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &admin.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		AdminOrgUnit: func(_ context.Context, account string) (*admin.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := adminOrgUnitDirectoryService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("adminOrgUnitDirectoryService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("adminOrgUnitDirectoryService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestAppScriptServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &scriptapi.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		AppScript: func(_ context.Context, account string) (*scriptapi.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := appScriptService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("appScriptService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("appScriptService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestCloudIdentityServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &cloudidentity.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		CloudIdentity: func(_ context.Context, account string) (*cloudidentity.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := cloudIdentityService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("cloudIdentityService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("cloudIdentityService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestKeepServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &keepapi.Service{}
+	var gotPath string
+	var gotImpersonate string
+	runtime := &app.Runtime{Services: app.Services{
+		Keep: func(_ context.Context, path, impersonate string) (*keepapi.Service, error) {
+			gotPath = path
+			gotImpersonate = impersonate
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := keepServiceWithServiceAccount(ctx, "/tmp/service-account.json", "test@example.com")
+	if err != nil {
+		t.Fatalf("keepServiceWithServiceAccount() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("keepServiceWithServiceAccount() = %p, want %p", got, want)
+	}
+	if gotPath != "/tmp/service-account.json" || gotImpersonate != "test@example.com" {
+		t.Fatalf("factory args = (%q, %q)", gotPath, gotImpersonate)
+	}
+}
+
+func TestMeetServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &meetapi.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		Meet: func(_ context.Context, account string) (*meetapi.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := meetService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("meetService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("meetService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestPhotosServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &googleapi.PhotosClient{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		Photos: func(_ context.Context, account string) (*googleapi.PhotosClient, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := photosService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("photosService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("photosService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestPhotosPickerServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &googleapi.PhotosPickerClient{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		PhotosPicker: func(_ context.Context, account string) (*googleapi.PhotosPickerClient, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := photosPickerService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("photosPickerService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("photosPickerService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestOpenURLUsesRuntimeOperation(t *testing.T) {
+	t.Parallel()
+
+	var gotURI string
+	runtime := &app.Runtime{Services: app.Services{
+		OpenURL: func(_ context.Context, uri string) error {
+			gotURI = uri
+			return nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	if err := openURL(ctx, "https://example.com/picker"); err != nil {
+		t.Fatalf("openURL() error = %v", err)
+	}
+	if gotURI != "https://example.com/picker" {
+		t.Fatalf("URI = %q, want picker URI", gotURI)
+	}
+}
+
+func TestAnalyticsAdminServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &analyticsadmin.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		AnalyticsAdmin: func(_ context.Context, account string) (*analyticsadmin.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := analyticsAdminService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("analyticsAdminService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("analyticsAdminService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestAnalyticsDataServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &analyticsdata.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		AnalyticsData: func(_ context.Context, account string) (*analyticsdata.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := analyticsDataService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("analyticsDataService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("analyticsDataService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestSearchConsoleServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &searchconsoleapi.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		SearchConsole: func(_ context.Context, account string) (*searchconsoleapi.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := searchConsoleService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("searchConsoleService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("searchConsoleService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
 func TestDriveServiceUsesRuntimeFactory(t *testing.T) {
 	t.Parallel()
 
@@ -83,6 +394,106 @@ func TestDriveServiceUsesRuntimeFactory(t *testing.T) {
 	}
 	if got != want {
 		t.Fatalf("driveService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestDriveActivityServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &driveactivityapi.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		DriveActivity: func(_ context.Context, account string) (*driveactivityapi.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := driveActivityService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("driveActivityService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("driveActivityService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestDriveLabelsServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &drivelabelsapi.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		DriveLabels: func(_ context.Context, account string) (*drivelabelsapi.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := driveLabelsService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("driveLabelsService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("driveLabelsService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestChatServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &chat.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		Chat: func(_ context.Context, account string) (*chat.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := chatService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("chatService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("chatService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestFormsServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &formsapi.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		Forms: func(_ context.Context, account string) (*formsapi.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := formsService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("formsService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("formsService() = %p, want %p", got, want)
 	}
 	if gotAccount != "test@example.com" {
 		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
@@ -189,6 +600,70 @@ func TestSheetsServiceUsesRuntimeFactory(t *testing.T) {
 	}
 	if gotAccount != "test@example.com" {
 		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestSitesDriveServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &drive.Service{}
+	var gotAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		SitesDrive: func(_ context.Context, account string) (*drive.Service, error) {
+			gotAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	got, err := sitesDriveService(ctx, "test@example.com")
+	if err != nil {
+		t.Fatalf("sitesDriveService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("sitesDriveService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestYouTubeServiceFactoriesUseRuntime(t *testing.T) {
+	t.Setenv("GOG_YOUTUBE_API_KEY", "runtime-key")
+
+	apiKeyService := &youtubeapi.Service{}
+	accountService := &youtubeapi.Service{}
+	commentsService := &youtubeapi.Service{}
+	var gotAPIKey string
+	var gotAccount string
+	var gotCommentsAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		YouTubeAPIKey: func(_ context.Context, key string) (*youtubeapi.Service, error) {
+			gotAPIKey = key
+			return apiKeyService, nil
+		},
+		YouTubeAccount: func(_ context.Context, account string) (*youtubeapi.Service, error) {
+			gotAccount = account
+			return accountService, nil
+		},
+		YouTubeComments: func(_ context.Context, account string) (*youtubeapi.Service, error) {
+			gotCommentsAccount = account
+			return commentsService, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	gotAPIKeyService, err := getYouTubeServiceWithAPIKey(ctx)
+	if err != nil || gotAPIKeyService != apiKeyService || gotAPIKey != "runtime-key" {
+		t.Fatalf("API key service = (%p, %v, %q)", gotAPIKeyService, err, gotAPIKey)
+	}
+	gotAccountService, err := getYouTubeServiceForAccount(ctx, "account@example.com")
+	if err != nil || gotAccountService != accountService || gotAccount != "account@example.com" {
+		t.Fatalf("account service = (%p, %v, %q)", gotAccountService, err, gotAccount)
+	}
+	gotCommentsService, err := getYouTubeCommentsServiceForAccount(ctx, "comments@example.com")
+	if err != nil || gotCommentsService != commentsService || gotCommentsAccount != "comments@example.com" {
+		t.Fatalf("comments service = (%p, %v, %q)", gotCommentsService, err, gotCommentsAccount)
 	}
 }
 

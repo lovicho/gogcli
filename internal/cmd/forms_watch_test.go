@@ -1,22 +1,18 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	formsapi "google.golang.org/api/forms/v1"
-
-	"github.com/steipete/gogcli/internal/outfmt"
 )
 
 func TestFormsWatchCommands(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	var created formsapi.CreateWatchRequest
 	deleteCalls := 0
 	renewCalls := 0
@@ -57,11 +53,8 @@ func TestFormsWatchCommands(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
-	ctx := newQuietUIContext(t)
+	svc := newFormsTestService(t, t.Context(), srv)
+	ctx := withFormsTestService(newQuietUIContext(t), svc)
 	flags := &RootFlags{Account: "a@b.com"}
 
 	if err := runKong(t, &FormsWatchCreateCmd{}, []string{"form1", "--topic", "projects/p/topics/t1"}, ctx, flags); err != nil {
@@ -94,14 +87,8 @@ func TestFormsWatchCommands(t *testing.T) {
 }
 
 func TestFormsWatchCreateRejectsInvalidTopicBeforeDryRun(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-	newFormsService = func(context.Context, string) (*formsapi.Service, error) {
-		t.Fatal("forms service should not be created")
-		return nil, context.Canceled
-	}
-
-	err := runKong(t, &FormsWatchCreateCmd{}, []string{"form1", "--topic", "nope"}, newQuietUIContext(t), &RootFlags{Account: "a@b.com", DryRun: true})
+	ctx := withFormsTestServiceFactory(newQuietUIContext(t), unexpectedFormsTestService(t, "forms service should not be created"))
+	err := runKong(t, &FormsWatchCreateCmd{}, []string{"form1", "--topic", "nope"}, ctx, &RootFlags{Account: "a@b.com", DryRun: true})
 	if err == nil {
 		t.Fatal("expected topic validation error")
 	}
@@ -111,9 +98,6 @@ func TestFormsWatchCreateRejectsInvalidTopicBeforeDryRun(t *testing.T) {
 }
 
 func TestFormsWatchList_JSONEmptyArray(t *testing.T) {
-	origNew := newFormsService
-	t.Cleanup(func() { newFormsService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/v1/forms/form1/watches") {
 			w.Header().Set("Content-Type", "application/json")
@@ -124,17 +108,14 @@ func TestFormsWatchList_JSONEmptyArray(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	newFormsService = func(ctx context.Context, account string) (*formsapi.Service, error) {
-		return newFormsTestService(t, ctx, srv), nil
-	}
-
-	ctx := outfmt.WithMode(newQuietUIContext(t), outfmt.Mode{JSON: true})
+	svc := newFormsTestService(t, t.Context(), srv)
+	var stdout bytes.Buffer
+	ctx := withFormsTestService(newCmdRuntimeJSONOutputContext(t, &stdout, io.Discard), svc)
 	flags := &RootFlags{Account: "a@b.com", JSON: true}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &FormsWatchListCmd{}, []string{"form1"}, ctx, flags); err != nil {
-			t.Fatalf("list watches: %v", err)
-		}
-	})
+	if err := runKong(t, &FormsWatchListCmd{}, []string{"form1"}, ctx, flags); err != nil {
+		t.Fatalf("list watches: %v", err)
+	}
+	out := stdout.String()
 
 	var parsed struct {
 		FormID  string            `json:"form_id"`

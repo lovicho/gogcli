@@ -25,26 +25,28 @@ var (
 	errPhotosPickerWaitTimeout          = errors.New("session wait timed out")
 	errPhotosPickerRepeatedPageToken    = errors.New("repeated page token from Photos Picker")
 	errPhotosPickerPollingConfigMissing = errors.New("response is missing Photos Picker pollingConfig")
-	newPhotosPickerClient               = func(ctx context.Context, email string) (*googleapi.PhotosPickerClient, error) {
-		return googleapi.NewPhotosPickerClientForAccount(
-			ctx,
-			email,
-			googleapi.WithPhotosPickerBaseURL(os.Getenv("GOG_PHOTOS_PICKER_BASE_URL")),
-		)
-	}
-	openPhotosPickerBrowser = func(uri string) error {
-		var command *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			command = exec.Command("open", uri) //nolint:gosec // executable is fixed; arg is a Google-generated Picker URI
-		case literalWindows:
-			command = exec.Command("rundll32", "url.dll,FileProtocolHandler", uri) //nolint:gosec // executable is fixed
-		default:
-			command = exec.Command("xdg-open", uri) //nolint:gosec // executable is fixed; arg is a Google-generated Picker URI
-		}
-		return command.Start()
-	}
 )
+
+func newPhotosPickerClient(ctx context.Context, email string) (*googleapi.PhotosPickerClient, error) {
+	return googleapi.NewPhotosPickerClientForAccount(
+		ctx,
+		email,
+		googleapi.WithPhotosPickerBaseURL(os.Getenv("GOG_PHOTOS_PICKER_BASE_URL")),
+	)
+}
+
+func openPhotosPickerBrowser(ctx context.Context, uri string) error {
+	var command *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		command = exec.CommandContext(ctx, "open", uri) //nolint:gosec // executable is fixed; arg is a Google-generated Picker URI
+	case literalWindows:
+		command = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", uri) //nolint:gosec // executable is fixed
+	default:
+		command = exec.CommandContext(ctx, "xdg-open", uri) //nolint:gosec // executable is fixed; arg is a Google-generated Picker URI
+	}
+	return command.Start()
+}
 
 type PhotosPickerCmd struct {
 	Create   PhotosPickerCreateCmd   `cmd:"" name:"create" aliases:"new,start" help:"Create a photo-picking session"`
@@ -82,7 +84,7 @@ func (c *PhotosPickerCreateCmd) Run(ctx context.Context, flags *RootFlags) error
 		return err
 	}
 	if c.Open && strings.TrimSpace(session.PickerURI) != "" {
-		return openPhotosPickerBrowser(session.PickerURI)
+		return openURL(ctx, session.PickerURI)
 	}
 	return nil
 }
@@ -208,7 +210,7 @@ func (c *PhotosPickerDownloadCmd) Run(ctx context.Context, flags *RootFlags) err
 	defer resp.Body.Close()
 
 	if isStdoutPath(c.Out) {
-		_, err = io.Copy(os.Stdout, resp.Body)
+		_, err = io.Copy(stdoutWriter(ctx), resp.Body)
 		return err
 	}
 	filename := ""
@@ -371,7 +373,7 @@ func requirePhotosPickerClient(ctx context.Context, flags *RootFlags) (*googleap
 	if err != nil {
 		return nil, err
 	}
-	return newPhotosPickerClient(ctx, account)
+	return photosPickerService(ctx, account)
 }
 
 func requirePhotosPickerSessionID(raw string) (string, error) {
@@ -407,7 +409,7 @@ func writePhotosPickerSession(ctx context.Context, session *googleapi.PhotosPick
 		session = &googleapi.PhotosPickerSession{}
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"session": session})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"session": session})
 	}
 	u := ui.FromContext(ctx)
 	u.Out().Linef("id\t%s", session.ID)
@@ -432,7 +434,7 @@ func writePhotosPickerMediaItems(
 	nextPageToken string,
 ) error {
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"sessionId":      sessionID,
 			"mediaItems":     items,
 			"mediaItemCount": len(items),

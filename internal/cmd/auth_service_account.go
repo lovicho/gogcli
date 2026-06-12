@@ -58,7 +58,7 @@ func (c *AuthServiceAccountSetCmd) Run(ctx context.Context, flags *RootFlags) er
 		return usage("empty email")
 	}
 
-	data, keySource, err := c.resolveServiceAccountKey()
+	data, keySource, err := c.resolveServiceAccountKey(ctx)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (c *AuthServiceAccountSetCmd) Run(ctx context.Context, flags *RootFlags) er
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"stored":       true,
 			"email":        email,
 			"path":         destPath,
@@ -111,7 +111,7 @@ func (c *AuthServiceAccountSetCmd) Run(ctx context.Context, flags *RootFlags) er
 	return nil
 }
 
-func (c *AuthServiceAccountSetCmd) resolveServiceAccountKey() ([]byte, string, error) {
+func (c *AuthServiceAccountSetCmd) resolveServiceAccountKey(ctx context.Context) ([]byte, string, error) {
 	keyPath := strings.TrimSpace(c.Key)
 	keyEnv := strings.TrimSpace(c.KeyEnv)
 
@@ -134,7 +134,7 @@ func (c *AuthServiceAccountSetCmd) resolveServiceAccountKey() ([]byte, string, e
 
 	switch {
 	case c.KeyStdin || keyPath == "-":
-		data, err := io.ReadAll(os.Stdin)
+		data, err := io.ReadAll(stdinReader(ctx))
 		if err != nil {
 			return nil, "", fmt.Errorf("read service account key from stdin: %w", err)
 		}
@@ -218,7 +218,7 @@ func (c *AuthServiceAccountStatusCmd) Run(ctx context.Context) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			if outfmt.IsJSON(ctx) {
-				return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+				return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 					"email":   email,
 					"path":    path,
 					"exists":  false,
@@ -245,7 +245,7 @@ func (c *AuthServiceAccountStatusCmd) Run(ctx context.Context) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"email":        email,
 			"path":         path,
 			"exists":       true,

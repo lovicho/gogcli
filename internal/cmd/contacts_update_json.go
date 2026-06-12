@@ -274,12 +274,12 @@ func contactSourceETag(p *people.Person) string {
 	return ""
 }
 
-func openFileOrStdin(path string) (io.Reader, func(), error) {
+func openFileOrStdin(ctx context.Context, path string) (io.Reader, func(), error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil, usage("missing --from-file path")
 	}
 	if path == "-" {
-		return os.Stdin, nil, nil
+		return stdinReader(ctx), nil, nil
 	}
 	// #nosec G304 -- user-controlled CLI input; reading arbitrary files is expected here.
 	f, err := os.Open(path)
@@ -339,8 +339,8 @@ func contactsUpdateMaskFromKeys(keys map[string]json.RawMessage) ([]string, erro
 	return update, nil
 }
 
-func (c *ContactsUpdateCmd) readUpdateJSONInput(resourceName string) (*people.Person, []string, error) {
-	reader, closeFn, err := openFileOrStdin(strings.TrimSpace(c.FromFile))
+func (c *ContactsUpdateCmd) readUpdateJSONInput(ctx context.Context, resourceName string) (*people.Person, []string, error) {
+	reader, closeFn, err := openFileOrStdin(ctx, strings.TrimSpace(c.FromFile))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -373,7 +373,7 @@ func (c *ContactsUpdateCmd) readUpdateJSONInput(resourceName string) (*people.Pe
 }
 
 func (c *ContactsUpdateCmd) updateFromJSON(ctx context.Context, svc *people.Service, resourceName string, u *ui.UI) error {
-	inputPerson, updateFields, err := c.readUpdateJSONInput(resourceName)
+	inputPerson, updateFields, err := c.readUpdateJSONInput(ctx, resourceName)
 	if err != nil {
 		return err
 	}

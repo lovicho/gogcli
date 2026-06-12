@@ -1,34 +1,25 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
-	"os"
+	"io"
 	"testing"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestTimeNowCmd_JSON(t *testing.T) {
-	u, err := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
+	var output bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
+	if err := runKong(t, &TimeNowCmd{}, []string{"--timezone", "UTC"}, ctx, &RootFlags{}); err != nil {
+		t.Fatalf("runKong: %v", err)
 	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &TimeNowCmd{}, []string{"--timezone", "UTC"}, ctx, &RootFlags{}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
 
 	var parsed struct {
 		Timezone    string `json:"timezone"`
 		UTCOffset   string `json:"utc_offset"`
 		CurrentTime string `json:"current_time"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if parsed.Timezone != "UTC" {
@@ -43,7 +34,7 @@ func TestTimeNowCmd_JSON(t *testing.T) {
 }
 
 func TestTimeNowCmd_InvalidTimezone(t *testing.T) {
-	err := runKong(t, &TimeNowCmd{}, []string{"--timezone", "Nope/Zone"}, context.Background(), &RootFlags{})
+	err := runKong(t, &TimeNowCmd{}, []string{"--timezone", "Nope/Zone"}, newCmdRuntimeOutputContext(t, io.Discard, io.Discard), &RootFlags{})
 	if err == nil {
 		t.Fatalf("expected error")
 	}

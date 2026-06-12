@@ -3,10 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
-
-	admin "google.golang.org/api/admin/directory/v1"
 
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
@@ -33,7 +30,7 @@ func (c *AdminOrgunitsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	svc, err := newAdminOrgUnitDirectoryService(ctx, account)
+	svc, err := adminOrgUnitDirectoryService(ctx, account)
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}
@@ -48,7 +45,7 @@ func (c *AdminOrgunitsListCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, resp)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), resp)
 	}
 	if len(resp.OrganizationUnits) == 0 {
 		u.Err().Println("No organizational units found")
@@ -93,7 +90,7 @@ func (c *AdminOrgunitsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("org unit path required")
 	}
 
-	svc, err := newAdminOrgUnitDirectoryService(ctx, account)
+	svc, err := adminOrgUnitDirectoryService(ctx, account)
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}
@@ -104,7 +101,7 @@ func (c *AdminOrgunitsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, ou)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), ou)
 	}
 
 	w, flush := tableWriter(ctx)
@@ -128,22 +125,15 @@ type AdminOrgunitsCreateCmd struct {
 
 func (c *AdminOrgunitsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	name := strings.TrimSpace(c.Name)
-	if name == "" {
-		return usage("org unit name required")
+	plan, err := newAdminOrgUnitCreatePlan(adminOrgUnitCreateInput{
+		Name:        c.Name,
+		Parent:      c.Parent,
+		Description: c.Description,
+	})
+	if err != nil {
+		return err
 	}
-	parent := strings.TrimSpace(c.Parent)
-	if parent == "" {
-		parent = "/"
-	}
-
-	orgUnit := &admin.OrgUnit{
-		Name:              name,
-		ParentOrgUnitPath: parent,
-		Description:       strings.TrimSpace(c.Description),
-	}
-
-	if dryRunErr := dryRunExit(ctx, flags, "admin.orgunits.create", orgUnit); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "admin.orgunits.create", plan.Request); dryRunErr != nil {
 		return dryRunErr
 	}
 
@@ -152,18 +142,18 @@ func (c *AdminOrgunitsCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return err
 	}
 
-	svc, err := newAdminOrgUnitDirectoryService(ctx, account)
+	svc, err := adminOrgUnitDirectoryService(ctx, account)
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}
 
-	created, err := svc.Orgunits.Insert(adminCustomerID, orgUnit).Context(ctx).Do()
+	created, err := svc.Orgunits.Insert(adminCustomerID, plan.Request).Context(ctx).Do()
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, created)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), created)
 	}
 	u.Out().Linef("Created org unit: %s (%s)", created.Name, created.OrgUnitPath)
 	return nil
@@ -178,33 +168,16 @@ type AdminOrgunitsUpdateCmd struct {
 
 func (c *AdminOrgunitsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	path := strings.TrimSpace(c.Path)
-	if path == "" {
-		return usage("org unit path required")
+	plan, err := newAdminOrgUnitUpdatePlan(adminOrgUnitUpdateInput{
+		Path:        c.Path,
+		Name:        c.Name,
+		Parent:      c.Parent,
+		Description: c.Description,
+	})
+	if err != nil {
+		return err
 	}
-
-	patch := &admin.OrgUnit{}
-	hasUpdates := false
-	if c.Name != nil {
-		patch.Name = strings.TrimSpace(*c.Name)
-		hasUpdates = true
-	}
-	if c.Parent != nil {
-		patch.ParentOrgUnitPath = strings.TrimSpace(*c.Parent)
-		hasUpdates = true
-	}
-	if c.Description != nil {
-		patch.Description = strings.TrimSpace(*c.Description)
-		if patch.Description == "" {
-			patch.ForceSendFields = append(patch.ForceSendFields, "Description")
-		}
-		hasUpdates = true
-	}
-	if !hasUpdates {
-		return usage("no updates specified")
-	}
-
-	if dryRunErr := dryRunExit(ctx, flags, "admin.orgunits.update", patch); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "admin.orgunits.update", plan.Request); dryRunErr != nil {
 		return dryRunErr
 	}
 
@@ -213,23 +186,22 @@ func (c *AdminOrgunitsUpdateCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return err
 	}
 
-	path = normalizeAdminOrgUnitPath(path)
-	if path == "" {
+	if plan.Path == "" {
 		return usage("org unit path required")
 	}
 
-	svc, err := newAdminOrgUnitDirectoryService(ctx, account)
+	svc, err := adminOrgUnitDirectoryService(ctx, account)
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}
 
-	updated, err := svc.Orgunits.Patch(adminCustomerID, path, patch).Context(ctx).Do()
+	updated, err := svc.Orgunits.Patch(adminCustomerID, plan.Path, plan.Request).Context(ctx).Do()
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, updated)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), updated)
 	}
 	u.Out().Linef("Updated org unit: %s (%s)", updated.Name, updated.OrgUnitPath)
 	return nil
@@ -261,7 +233,7 @@ func (c *AdminOrgunitsDeleteCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return usage("org unit path required")
 	}
 
-	svc, err := newAdminOrgUnitDirectoryService(ctx, account)
+	svc, err := adminOrgUnitDirectoryService(ctx, account)
 	if err != nil {
 		return wrapAdminOrgUnitDirectoryError(err, account)
 	}

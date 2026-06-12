@@ -4,34 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/meet/v2"
-	"google.golang.org/api/option"
 )
-
-func newTestMeetService(t *testing.T, handler http.Handler) {
-	t.Helper()
-
-	origNew := newMeetService
-	t.Cleanup(func() { newMeetService = origNew })
-
-	srv := httptest.NewServer(handler)
-	t.Cleanup(srv.Close)
-
-	svc, err := meet.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-
-	newMeetService = func(context.Context, string) (*meet.Service, error) { return svc, nil }
-}
 
 func meetSpaceResponse() map[string]any {
 	return map[string]any{
@@ -46,7 +21,7 @@ func meetSpaceResponse() map[string]any {
 }
 
 func TestExecute_MeetCreate_JSON(t *testing.T) {
-	newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.URL.Path == "/v2/spaces" && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
 			return
@@ -56,13 +31,11 @@ func TestExecute_MeetCreate_JSON(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(meetSpaceResponse())
 	}))
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "meet", "create"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithMeetTestService(t, []string{"--json", "--account", "a@b.com", "meet", "create"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		Created     bool   `json:"created"`
@@ -87,8 +60,36 @@ func TestExecute_MeetCreate_JSON(t *testing.T) {
 	}
 }
 
+func TestExecute_MeetCreate_OpenUsesRuntimeOperation(t *testing.T) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !(r.URL.Path == "/v2/spaces" && r.Method == http.MethodPost) {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(meetSpaceResponse())
+	}))
+
+	var openedURL string
+	result := executeWithMeetTestOperations(
+		t,
+		[]string{"--json", "--account", "a@b.com", "meet", "create", "--open"},
+		fixedMeetTestService(svc),
+		func(_ context.Context, uri string) error {
+			openedURL = uri
+			return nil
+		},
+	)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	if openedURL != "https://meet.google.com/abc-defg-hij" {
+		t.Fatalf("opened URL = %q", openedURL)
+	}
+}
+
 func TestExecute_MeetCreate_Text(t *testing.T) {
-	newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.URL.Path == "/v2/spaces" && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
 			return
@@ -98,13 +99,11 @@ func TestExecute_MeetCreate_Text(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(meetSpaceResponse())
 	}))
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--plain", "--account", "a@b.com", "meet", "create"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithMeetTestService(t, []string{"--plain", "--account", "a@b.com", "meet", "create"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	if !strings.Contains(out, "meeting_code\tabc-defg-hij") {
 		t.Fatalf("expected meeting_code in output, got: %q", out)
@@ -120,19 +119,16 @@ func TestExecute_MeetCreate_Text(t *testing.T) {
 }
 
 func TestExecute_MeetCreate_DryRun(t *testing.T) {
-	newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		t.Fatal("should not call API in dry-run mode")
-		http.Error(w, "unexpected", http.StatusInternalServerError)
-	}))
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			err := Execute([]string{"--json", "--dry-run", "--account", "a@b.com", "meet", "create"})
-			if err != nil && ExitCode(err) != 0 {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithMeetTestOperations(
+		t,
+		[]string{"--json", "--dry-run", "--account", "a@b.com", "meet", "create"},
+		unexpectedMeetTestService(t, "should not call API in dry-run mode"),
+		nil,
+	)
+	if result.err != nil && ExitCode(result.err) != 0 {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		DryRun bool   `json:"dry_run"`
@@ -153,7 +149,7 @@ func TestExecute_MeetCreate_DryRun(t *testing.T) {
 }
 
 func TestExecute_MeetGet_JSON(t *testing.T) {
-	newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(r.URL.Path == "/v2/spaces/abc-defg-hij" && r.Method == http.MethodGet) {
 			http.NotFound(w, r)
 			return
@@ -163,13 +159,14 @@ func TestExecute_MeetGet_JSON(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(meetSpaceResponse())
 	}))
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "meet", "get", "abc-defg-hij"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithMeetTestService(t, []string{
+		"--json", "--account", "a@b.com",
+		"meet", "get", "abc-defg-hij",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		MeetingCode string `json:"meeting_code"`
@@ -184,8 +181,86 @@ func TestExecute_MeetGet_JSON(t *testing.T) {
 	}
 }
 
+func TestExecute_MeetUpdate_JSON(t *testing.T) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/spaces/abc-defg-hij" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(meetSpaceResponse())
+		case r.URL.Path == "/v2/spaces/abc123" && r.Method == http.MethodPatch:
+			if got := r.URL.Query().Get("updateMask"); got != "config.accessType" {
+				t.Fatalf("update mask = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			response := meetSpaceResponse()
+			response["config"] = map[string]any{
+				"accessType":       "OPEN",
+				"entryPointAccess": "ALL",
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	result := executeWithMeetTestService(t, []string{
+		"--json", "--account", "a@b.com",
+		"meet", "update", "abc-defg-hij", "--access", "open",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+
+	var parsed struct {
+		Updated bool `json:"updated"`
+		Config  struct {
+			AccessType string `json:"accessType"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, result.stdout)
+	}
+	if !parsed.Updated || parsed.Config.AccessType != "OPEN" {
+		t.Fatalf("unexpected response: %#v", parsed)
+	}
+}
+
+func TestExecute_MeetEnd_JSON(t *testing.T) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/v2/spaces/abc-defg-hij" && r.Method == http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(meetSpaceResponse())
+		case r.URL.Path == "/v2/spaces/abc123:endActiveConference" && r.Method == http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	result := executeWithMeetTestService(t, []string{
+		"--json", "--force", "--account", "a@b.com",
+		"meet", "end", "abc-defg-hij",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+
+	var parsed struct {
+		Ended       bool   `json:"ended"`
+		MeetingCode string `json:"meeting_code"`
+	}
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, result.stdout)
+	}
+	if !parsed.Ended || parsed.MeetingCode != "abc-defg-hij" {
+		t.Fatalf("unexpected response: %#v", parsed)
+	}
+}
+
 func TestExecute_MeetHistory_JSON(t *testing.T) {
-	newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/spaces/abc-defg-hij" && r.Method == http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
@@ -211,13 +286,14 @@ func TestExecute_MeetHistory_JSON(t *testing.T) {
 		}
 	}))
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "meet", "history", "abc-defg-hij"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithMeetTestService(t, []string{
+		"--json", "--account", "a@b.com",
+		"meet", "history", "abc-defg-hij",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		MeetingCode string `json:"meeting_code"`
@@ -240,7 +316,7 @@ func TestExecute_MeetHistory_JSON(t *testing.T) {
 }
 
 func TestExecute_MeetParticipants_JSON(t *testing.T) {
-	newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newTestMeetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/spaces/abc-defg-hij" && r.Method == http.MethodGet:
 			w.Header().Set("Content-Type", "application/json")
@@ -281,13 +357,14 @@ func TestExecute_MeetParticipants_JSON(t *testing.T) {
 		}
 	}))
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "meet", "participants", "abc-defg-hij"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithMeetTestService(t, []string{
+		"--json", "--account", "a@b.com",
+		"meet", "participants", "abc-defg-hij",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		MeetingCode  string `json:"meeting_code"`

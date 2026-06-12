@@ -55,7 +55,7 @@ func (c *DocsWriteCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootF
 		return usage("empty docId")
 	}
 
-	text, err := c.resolveWriteText(kctx)
+	text, err := c.resolveWriteText(ctx, kctx)
 	if err != nil {
 		return err
 	}
@@ -104,8 +104,8 @@ func (c *DocsWriteCmd) validateDocumentStyle() error {
 	return err
 }
 
-func (c *DocsWriteCmd) resolveWriteText(kctx *kong.Context) (string, error) {
-	text, provided, err := resolveTextInput(c.Text, c.File, kctx, "text", "file")
+func (c *DocsWriteCmd) resolveWriteText(ctx context.Context, kctx *kong.Context) (string, error) {
+	text, provided, err := resolveTextInput(ctx, c.Text, c.File, kctx, "text", "file")
 	if err != nil {
 		return "", err
 	}
@@ -642,7 +642,7 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 		return usage("empty docId")
 	}
 
-	text, provided, err := resolveTextInput(c.Text, c.File, kctx, "text", "file")
+	text, provided, err := resolveTextInput(ctx, c.Text, c.File, kctx, "text", "file")
 	if err != nil {
 		return err
 	}
@@ -956,7 +956,7 @@ func (c *DocsInsertCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 	if docID == "" {
 		return usage("empty docId")
 	}
-	content, err := resolveContentInput(c.Content, c.File)
+	content, err := resolveContentInput(ctx, c.Content, c.File)
 	if err != nil {
 		return err
 	}

@@ -1,22 +1,14 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/cloudidentity/v1"
-	"google.golang.org/api/option"
 )
 
 func TestExecute_GroupsList_JSON(t *testing.T) {
-	origNew := newCloudIdentityService
-	t.Cleanup(func() { newCloudIdentityService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCloudIdentityTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "groups/-/memberships:searchTransitiveGroups") && r.Method == http.MethodGet {
 			query := r.URL.Query().Get("query")
 			if !strings.Contains(query, "'"+groupLabelDiscussionForum+"' in labels") {
@@ -44,25 +36,11 @@ func TestExecute_GroupsList_JSON(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer srv.Close()
 
-	svc, err := cloudidentity.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	result := executeWithCloudIdentityTestService(t, []string{"--json", "--account", "a@b.com", "groups", "list"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newCloudIdentityService = func(context.Context, string) (*cloudidentity.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "groups", "list"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
 
 	var parsed struct {
 		Groups []struct {
@@ -72,8 +50,8 @@ func TestExecute_GroupsList_JSON(t *testing.T) {
 		} `json:"groups"`
 		NextPageToken string `json:"nextPageToken"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
-		t.Fatalf("json parse: %v\nout=%q", err, out)
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, result.stdout)
 	}
 	if len(parsed.Groups) != 2 {
 		t.Fatalf("expected 2 groups, got %d", len(parsed.Groups))
@@ -87,10 +65,7 @@ func TestExecute_GroupsList_JSON(t *testing.T) {
 }
 
 func TestExecute_GroupsMembers_JSON(t *testing.T) {
-	origNew := newCloudIdentityService
-	t.Cleanup(func() { newCloudIdentityService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCloudIdentityTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "groups:lookup"):
 			w.Header().Set("Content-Type", "application/json")
@@ -118,25 +93,13 @@ func TestExecute_GroupsMembers_JSON(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer srv.Close()
 
-	svc, err := cloudidentity.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	result := executeWithCloudIdentityTestService(t, []string{
+		"--json", "--account", "a@b.com", "groups", "members", "engineering@example.com",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newCloudIdentityService = func(context.Context, string) (*cloudidentity.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "groups", "members", "engineering@example.com"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
 
 	var parsed struct {
 		Members []struct {
@@ -146,8 +109,8 @@ func TestExecute_GroupsMembers_JSON(t *testing.T) {
 		} `json:"members"`
 		NextPageToken string `json:"nextPageToken"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
-		t.Fatalf("json parse: %v\nout=%q", err, out)
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, result.stdout)
 	}
 	if len(parsed.Members) != 2 {
 		t.Fatalf("expected 2 members, got %d", len(parsed.Members))
@@ -161,10 +124,7 @@ func TestExecute_GroupsMembers_JSON(t *testing.T) {
 }
 
 func TestExecute_GroupsList_Text(t *testing.T) {
-	origNew := newCloudIdentityService
-	t.Cleanup(func() { newCloudIdentityService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCloudIdentityTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "groups/-/memberships:searchTransitiveGroups") && r.Method == http.MethodGet {
 			query := r.URL.Query().Get("query")
 			if !strings.Contains(query, "'"+groupLabelDiscussionForum+"' in labels") {
@@ -187,30 +147,16 @@ func TestExecute_GroupsList_Text(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	defer srv.Close()
 
-	svc, err := cloudidentity.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	result := executeWithCloudIdentityTestService(t, []string{"--account", "a@b.com", "groups", "list"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newCloudIdentityService = func(context.Context, string) (*cloudidentity.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "groups", "list"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
-
-	if !strings.Contains(out, "GROUP") || !strings.Contains(out, "NAME") || !strings.Contains(out, "RELATION") {
-		t.Fatalf("missing headers in output: %q", out)
+	if !strings.Contains(result.stdout, "GROUP") || !strings.Contains(result.stdout, "NAME") || !strings.Contains(result.stdout, "RELATION") {
+		t.Fatalf("missing headers in output: %q", result.stdout)
 	}
-	if !strings.Contains(out, "engineering@example.com") || !strings.Contains(out, "Engineering") {
-		t.Fatalf("missing group data in output: %q", out)
+	if !strings.Contains(result.stdout, "engineering@example.com") || !strings.Contains(result.stdout, "Engineering") {
+		t.Fatalf("missing group data in output: %q", result.stdout)
 	}
 }

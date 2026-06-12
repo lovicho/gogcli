@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"io"
 	"os"
 	"strings"
@@ -8,11 +9,11 @@ import (
 	"github.com/steipete/gogcli/internal/config"
 )
 
-func resolveBodyInput(body, bodyFile string) (string, error) {
-	return resolveBodyFileInput(body, bodyFile, "--body", "--body-file")
+func resolveBodyInput(ctx context.Context, body, bodyFile string) (string, error) {
+	return resolveBodyFileInput(ctx, body, bodyFile, "--body", "--body-file")
 }
 
-func resolveBodyFileInput(body, bodyFile, bodyFlag, bodyFileFlag string) (string, error) {
+func resolveBodyFileInput(ctx context.Context, body, bodyFile, bodyFlag, bodyFileFlag string) (string, error) {
 	bodyFile = strings.TrimSpace(bodyFile)
 	if bodyFile == "" {
 		return body, nil
@@ -26,7 +27,7 @@ func resolveBodyFileInput(body, bodyFile, bodyFlag, bodyFileFlag string) (string
 		err error
 	)
 	if bodyFile == "-" {
-		b, err = io.ReadAll(os.Stdin)
+		b, err = io.ReadAll(stdinReader(ctx))
 	} else {
 		bodyFile, err = config.ExpandPath(bodyFile)
 		if err != nil {

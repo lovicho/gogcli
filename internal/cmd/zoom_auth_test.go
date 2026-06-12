@@ -1,13 +1,16 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/zoom"
 )
 
@@ -32,8 +35,12 @@ func TestZoomAuthSetupCmd_StoresCredentialsWithoutValidation(t *testing.T) {
 		ClientSecret: "secret",
 		SkipValidate: true,
 	}
-	if err := cmd.Run(newCmdJSONContext(t), &RootFlags{}); err != nil {
+	var output bytes.Buffer
+	if err := cmd.Run(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), &RootFlags{}); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(output.String(), `"saved": true`) {
+		t.Fatalf("unexpected output: %s", output.String())
 	}
 	creds, err := zoom.LoadCredentials("work")
 	if err != nil {
@@ -46,8 +53,12 @@ func TestZoomAuthSetupCmd_StoresCredentialsWithoutValidation(t *testing.T) {
 
 func TestZoomAuthDoctorCmd_NoCredentials(t *testing.T) {
 	withTempZoomAuthStore(t)
-	if err := (&ZoomAuthDoctorCmd{}).Run(newCmdJSONContext(t), &RootFlags{}); err != nil {
+	var output bytes.Buffer
+	if err := (&ZoomAuthDoctorCmd{}).Run(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), &RootFlags{}); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(output.String(), `"status": "error"`) {
+		t.Fatalf("unexpected output: %s", output.String())
 	}
 }
 
@@ -65,12 +76,12 @@ func TestZoomAuthSetupCmd_DryRunDoesNotStoreCredentials(t *testing.T) {
 		Alias:        "dry",
 		SkipValidate: true,
 	}
-	out := captureStdout(t, func() {
-		err := cmd.Run(newCmdJSONContext(t), &RootFlags{DryRun: true, NoInput: true})
-		if ExitCode(err) != 0 {
-			t.Fatalf("expected dry-run exit 0, got %v", err)
-		}
-	})
+	var output bytes.Buffer
+	err := cmd.Run(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), &RootFlags{DryRun: true, NoInput: true})
+	if ExitCode(err) != 0 {
+		t.Fatalf("expected dry-run exit 0, got %v", err)
+	}
+	out := output.String()
 	if strings.Contains(out, "topsecretvalue") {
 		t.Fatalf("dry-run output leaked client secret: %s", out)
 	}
@@ -91,5 +102,31 @@ func TestZoomAuthSetupCmd_DryRunDoesNotStoreCredentials(t *testing.T) {
 		t.Fatalf("dry-run created config directory")
 	} else if !os.IsNotExist(err) {
 		t.Fatalf("stat config directory: %v", err)
+	}
+}
+
+func TestZoomAuthSetupCmd_ReadsPromptsFromRuntime(t *testing.T) {
+	withTempZoomAuthStore(t)
+	var output bytes.Buffer
+	var diagnostics bytes.Buffer
+	ctx := newCmdRuntimeIOContext(t, strings.NewReader("acct\nclient\nsecret\n"), &output, &diagnostics)
+	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
+
+	err := (&ZoomAuthSetupCmd{
+		Alias:        "prompted",
+		SkipValidate: true,
+	}).Run(ctx, &RootFlags{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	creds, err := zoom.LoadCredentials("prompted")
+	if err != nil {
+		t.Fatalf("LoadCredentials: %v", err)
+	}
+	if creds.AccountID != "acct" || creds.ClientID != "client" || creds.ClientSecret != "secret" {
+		t.Fatalf("unexpected creds: %#v", creds)
+	}
+	if got := diagnostics.String(); !strings.Contains(got, "Zoom account ID: ") || !strings.Contains(got, "Zoom client secret: ") {
+		t.Fatalf("unexpected prompts: %q", got)
 	}
 }

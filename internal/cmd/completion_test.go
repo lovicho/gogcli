@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -17,12 +18,12 @@ func TestCompletionCmd(t *testing.T) {
 		shell := shell
 		marker := marker
 		t.Run(shell, func(t *testing.T) {
-			out := captureStdout(t, func() {
-				cmd := &CompletionCmd{Shell: shell}
-				if err := cmd.Run(context.Background()); err != nil {
-					t.Fatalf("run: %v", err)
-				}
-			})
+			var output bytes.Buffer
+			cmd := &CompletionCmd{Shell: shell}
+			if err := cmd.Run(newCmdRuntimeOutputContext(t, &output, io.Discard)); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			out := output.String()
 			if !strings.Contains(out, "__complete") {
 				t.Fatalf("expected __complete hook, got %q", out)
 			}
