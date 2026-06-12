@@ -7,12 +7,9 @@ import (
 
 	formsapi "google.golang.org/api/forms/v1"
 
-	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
-
-var newFormsService = googleapi.NewForms
 
 type FormsCmd struct {
 	Get            FormsGetCmd            `cmd:"" name:"get" aliases:"info,show" help:"Get a form"`

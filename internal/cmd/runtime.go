@@ -39,7 +39,7 @@ func newDefaultRuntime() *app.Runtime {
 				return googleapi.NewHTTPClient(ctx, googleauth.ServiceDocs, account)
 			},
 			Drive:           googleapi.NewDrive,
-			Forms:           newFormsService,
+			Forms:           googleapi.NewForms,
 			Gmail:           googleapi.NewGmail,
 			PeopleContacts:  googleapi.NewPeopleContacts,
 			PeopleDirectory: googleapi.NewPeopleDirectory,
@@ -193,7 +193,7 @@ func formsService(ctx context.Context, account string) (*formsapi.Service, error
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Forms != nil {
 		return runtime.Services.Forms(ctx, account)
 	}
-	return newFormsService(ctx, account)
+	return googleapi.NewForms(ctx, account)
 }
 
 func gmailService(ctx context.Context, account string) (*gmail.Service, error) {
