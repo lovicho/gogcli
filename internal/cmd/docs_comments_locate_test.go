@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,9 +17,6 @@ import (
 )
 
 func TestDocsCommentsLocateJSONTabEntitiesAndWhitespace(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	driveSvc, driveCleanup := newDriveCommentsTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || strings.TrimPrefix(r.URL.Path, "/drive/v3") != "/files/doc1/comments/c1" {
 			http.NotFound(w, r)
@@ -60,9 +58,8 @@ func TestDocsCommentsLocateJSONTabEntitiesAndWhitespace(t *testing.T) {
 		})
 	}))
 	defer docsCleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	execResult := runDocsCommentsLocateJSON(t, driveSvc, "doc1", "c1", "--tab", "Second")
+	execResult := runDocsCommentsLocateJSON(t, driveSvc, docSvc, "doc1", "c1", "--tab", "Second")
 	if execResult.err != nil {
 		t.Fatalf("locate: %v", execResult.err)
 	}
@@ -86,9 +83,6 @@ func TestDocsCommentsLocateJSONTabEntitiesAndWhitespace(t *testing.T) {
 }
 
 func TestDocsCommentsLocatePreservesLiteralEntities(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	driveSvc, driveCleanup := newDriveCommentsTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || strings.TrimPrefix(r.URL.Path, "/drive/v3") != "/files/doc1/comments/c1" {
 			http.NotFound(w, r)
@@ -113,9 +107,8 @@ func TestDocsCommentsLocatePreservesLiteralEntities(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(docsFindRangeDoc(docsFindRangeParagraph(1, "literal &amp; marker\n")))
 	}))
 	defer docsCleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	execResult := runDocsCommentsLocateJSON(t, driveSvc, "doc1", "c1")
+	execResult := runDocsCommentsLocateJSON(t, driveSvc, docSvc, "doc1", "c1")
 	if execResult.err != nil {
 		t.Fatalf("locate: %v", execResult.err)
 	}
@@ -132,9 +125,6 @@ func TestDocsCommentsLocatePreservesLiteralEntities(t *testing.T) {
 }
 
 func TestDocsCommentsLocateFallbackDecodesEntitiesOnce(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	driveSvc, driveCleanup := newDriveCommentsTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || strings.TrimPrefix(r.URL.Path, "/drive/v3") != "/files/doc1/comments/c1" {
 			http.NotFound(w, r)
@@ -159,9 +149,8 @@ func TestDocsCommentsLocateFallbackDecodesEntitiesOnce(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(docsFindRangeDoc(docsFindRangeParagraph(1, "literal &amp; marker\n")))
 	}))
 	defer docsCleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	execResult := runDocsCommentsLocateJSON(t, driveSvc, "doc1", "c1")
+	execResult := runDocsCommentsLocateJSON(t, driveSvc, docSvc, "doc1", "c1")
 	if execResult.err != nil {
 		t.Fatalf("locate: %v", execResult.err)
 	}
@@ -178,9 +167,6 @@ func TestDocsCommentsLocateFallbackDecodesEntitiesOnce(t *testing.T) {
 }
 
 func TestDocsCommentsLocateDefaultSearchesAllTabs(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	driveSvc, driveCleanup := newDriveCommentsTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || strings.TrimPrefix(r.URL.Path, "/drive/v3") != "/files/doc1/comments/c1" {
 			http.NotFound(w, r)
@@ -219,9 +205,8 @@ func TestDocsCommentsLocateDefaultSearchesAllTabs(t *testing.T) {
 		})
 	}))
 	defer docsCleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	execResult := runDocsCommentsLocateJSON(t, driveSvc, "doc1", "c1")
+	execResult := runDocsCommentsLocateJSON(t, driveSvc, docSvc, "doc1", "c1")
 	if execResult.err != nil {
 		t.Fatalf("locate: %v", execResult.err)
 	}
@@ -239,9 +224,6 @@ func TestDocsCommentsLocateDefaultSearchesAllTabs(t *testing.T) {
 }
 
 func TestDocsCommentsLocatePlainOrphanedExit(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	driveSvc, driveCleanup := newDriveCommentsTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || strings.TrimPrefix(r.URL.Path, "/drive/v3") != "/files/doc1/comments/c1" {
 			http.NotFound(w, r)
@@ -266,10 +248,12 @@ func TestDocsCommentsLocatePlainOrphanedExit(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(docsFindRangeDoc(docsFindRangeParagraph(1, "present text\n")))
 	}))
 	defer docsCleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	ctx, out := newDocsCmdOutputContext(t)
-	ctx = withDriveTestService(ctx, driveSvc)
+	var out bytes.Buffer
+	ctx := withDocsTestService(
+		withDriveTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), driveSvc),
+		docSvc,
+	)
 	err := runKong(t, &DocsCommentsLocateCmd{}, []string{"doc1", "c1"}, ctx, &RootFlags{Account: "a@b.com"})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != exitCodeOrphaned {
@@ -291,7 +275,7 @@ func TestDocsCommentsLocateJSONNoQuote(t *testing.T) {
 	}))
 	defer driveCleanup()
 
-	execResult := runDocsCommentsLocateJSON(t, driveSvc, "doc1", "c1")
+	execResult := runDocsCommentsLocateJSON(t, driveSvc, nil, "doc1", "c1")
 	if execResult.err != nil {
 		t.Fatalf("locate no quote: %v", execResult.err)
 	}
@@ -304,11 +288,19 @@ func TestDocsCommentsLocateJSONNoQuote(t *testing.T) {
 	}
 }
 
-func runDocsCommentsLocateJSON(t *testing.T, svc *drive.Service, args ...string) executeTestResult {
+func runDocsCommentsLocateJSON(t *testing.T, driveSvc *drive.Service, docsSvc *docs.Service, args ...string) executeTestResult {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
-	ctx := withDriveTestService(newCmdRuntimeJSONOutputContext(t, &stdout, &stderr), svc)
+	ctx := withDriveTestService(newCmdRuntimeJSONOutputContext(t, &stdout, &stderr), driveSvc)
+	if docsSvc == nil {
+		ctx = withDocsTestServiceFactory(ctx, func(context.Context, string) (*docs.Service, error) {
+			t.Fatal("unanchored comment must not create Docs service")
+			return nil, errors.New("unexpected Docs service creation")
+		})
+	} else {
+		ctx = withDocsTestService(ctx, docsSvc)
+	}
 	err := runKong(t, &DocsCommentsLocateCmd{}, args, ctx, &RootFlags{Account: "a@b.com"})
 	return executeTestResult{
 		stdout: stdout.String(),
