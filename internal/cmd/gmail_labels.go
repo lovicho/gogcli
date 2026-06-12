@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/gmail/v1"
@@ -57,7 +56,7 @@ func (c *GmailLabelsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"label": l})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"label": l})
 	}
 	u := ui.FromContext(ctx)
 	u.Out().Linef("id\t%s", l.Id)
@@ -108,7 +107,7 @@ func (c *GmailLabelsCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"label": label})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"label": label})
 	}
 	u.Out().Linef("Created label: %s (id: %s)", label.Name, label.Id)
 	return nil
@@ -175,7 +174,7 @@ func (c *GmailLabelsRenameCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"label": updated})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"label": updated})
 	}
 	u.Out().Linef("Renamed label: %s → %s (id: %s)", label.Name, updated.Name, updated.Id)
 	return nil
@@ -264,7 +263,7 @@ func (c *GmailLabelsStyleCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"label": updated})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"label": updated})
 	}
 	u.Out().Linef("Styled label: %s (id: %s)", updated.Name, updated.Id)
 	return nil
@@ -302,7 +301,7 @@ func (c *GmailLabelsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"labels": resp.Labels})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"labels": resp.Labels})
 	}
 	if len(resp.Labels) == 0 {
 		u.Err().Println("No labels")
@@ -387,7 +386,7 @@ func (c *GmailLabelsModifyCmd) Run(ctx context.Context, flags *RootFlags) error 
 		}
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"results": results})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"results": results})
 	}
 	return nil
 }
