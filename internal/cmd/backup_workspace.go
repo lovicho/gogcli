@@ -203,8 +203,8 @@ func fetchWorkspaceNativeRows(ctx context.Context, flags *RootFlags, driveSvc *d
 	var slidesSvc *slides.Service
 	if opts.Native {
 		docsSvc, _ = newDocsService(ctx, account)
-		sheetsSvc, _ = newSheetsService(ctx, account)
-		slidesSvc, _ = newSlidesService(ctx, account)
+		sheetsSvc, _ = sheetsService(ctx, account)
+		slidesSvc, _ = slidesService(ctx, account)
 	}
 	docRows := make([]workspaceBackupDoc, 0, len(docFiles))
 	for _, file := range docFiles {

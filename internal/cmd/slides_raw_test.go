@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,10 +33,9 @@ func newSlidesRawTestServer(t *testing.T, status int, body map[string]any) *http
 	}))
 }
 
-func installMockSlidesService(t *testing.T, srv *httptest.Server) {
+func newMockSlidesService(t *testing.T, srv *httptest.Server) *slides.Service {
 	t.Helper()
-	svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", slides.NewService)
-	stubGoogleTestService(t, &newSlidesService, svc)
+	return newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", slides.NewService)
 }
 
 func fullPresentationResponse(id string) map[string]any {
@@ -62,19 +63,20 @@ func fullPresentationResponse(id string) map[string]any {
 func TestSlidesRaw_HappyPath(t *testing.T) {
 	srv := newSlidesRawTestServer(t, 0, fullPresentationResponse("p1"))
 	defer srv.Close()
-	installMockSlidesService(t, srv)
 
-	ctx := rawTestContext(t)
+	var out bytes.Buffer
+	ctx := withSlidesTestService(
+		newCmdRuntimeOutputContext(t, &out, io.Discard),
+		newMockSlidesService(t, srv),
+	)
 	flags := &RootFlags{Account: "a@b.com"}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SlidesRawCmd{}, []string{"p1"}, ctx, flags); err != nil {
-			t.Fatalf("run: %v", err)
-		}
-	})
+	if err := runKong(t, &SlidesRawCmd{}, []string{"p1"}, ctx, flags); err != nil {
+		t.Fatalf("run: %v", err)
+	}
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\nraw: %s", err, out.String())
 	}
 	if got["presentationId"] != "p1" {
 		t.Fatalf("expected presentationId=p1, got: %v", got["presentationId"])
@@ -87,29 +89,29 @@ func TestSlidesRaw_HappyPath(t *testing.T) {
 func TestSlidesRaw_APIError(t *testing.T) {
 	srv := newSlidesRawTestServer(t, http.StatusInternalServerError, nil)
 	defer srv.Close()
-	installMockSlidesService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx := withSlidesTestService(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		newMockSlidesService(t, srv),
+	)
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &SlidesRawCmd{}, []string{"p1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 500")
-		}
-	})
+	if err := runKong(t, &SlidesRawCmd{}, []string{"p1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 500")
+	}
 }
 
 func TestSlidesRaw_NotFound(t *testing.T) {
 	srv := newSlidesRawTestServer(t, http.StatusNotFound, nil)
 	defer srv.Close()
-	installMockSlidesService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx := withSlidesTestService(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		newMockSlidesService(t, srv),
+	)
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &SlidesRawCmd{}, []string{"p1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 404")
-		}
-	})
+	if err := runKong(t, &SlidesRawCmd{}, []string{"p1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 404")
+	}
 }
 
 func TestSlidesRaw_EmptyID(t *testing.T) {

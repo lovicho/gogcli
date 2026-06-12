@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,18 +8,9 @@ import (
 	"testing"
 
 	"google.golang.org/api/drive/v3"
-	"google.golang.org/api/option"
-	"google.golang.org/api/sheets/v4"
 )
 
 func TestSheetsCreateCmd_ParentMoveSuccess(t *testing.T) {
-	origSheets := newSheetsService
-	origDrive := newDriveService
-	t.Cleanup(func() {
-		newSheetsService = origSheets
-		newDriveService = origDrive
-	})
-
 	sheetsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || !strings.Contains(r.URL.Path, "/v4/spreadsheets") {
 			http.NotFound(w, r)
@@ -74,36 +64,17 @@ func TestSheetsCreateCmd_ParentMoveSuccess(t *testing.T) {
 
 	t.Setenv("GOG_ACCOUNT", "a@b.com")
 
-	sheetsSvc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(sheetsSrv.Client()),
-		option.WithEndpoint(sheetsSrv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("sheets.NewService: %v", err)
-	}
-	driveSvc, err := drive.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(driveSrv.Client()),
-		option.WithEndpoint(driveSrv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("drive.NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return sheetsSvc, nil }
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return driveSvc, nil }
+	sheetsSvc := newSheetsServiceFromServer(t, sheetsSrv)
+	driveSvc := newGoogleTestServiceWithEndpoint(t, driveSrv.Client(), driveSrv.URL+"/", drive.NewService)
 
+	result := executeWithSheetsAndDriveTestServices(t, []string{"--json", "sheets", "create", "Budget", "--parent", "folder123"}, sheetsSvc, driveSvc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 	var payload map[string]any
-	stderr := captureStderr(t, func() {
-		stdout := captureStdout(t, func() {
-			if err := Execute([]string{"--json", "sheets", "create", "Budget", "--parent", "folder123"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-		if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
-			t.Fatalf("json.Unmarshal: %v\nstdout=%q", err, stdout)
-		}
-	})
+	if err := json.Unmarshal([]byte(result.stdout), &payload); err != nil {
+		t.Fatalf("json.Unmarshal: %v\nstdout=%q", err, result.stdout)
+	}
 
 	if !sawGet || !sawPatch {
 		t.Fatalf("expected drive get+patch, sawGet=%v sawPatch=%v", sawGet, sawPatch)
@@ -117,19 +88,12 @@ func TestSheetsCreateCmd_ParentMoveSuccess(t *testing.T) {
 	if _, ok := payload["moveError"]; ok {
 		t.Fatalf("unexpected moveError=%v", payload["moveError"])
 	}
-	if strings.TrimSpace(stderr) != "" {
-		t.Fatalf("unexpected stderr=%q", stderr)
+	if strings.TrimSpace(result.stderr) != "" {
+		t.Fatalf("unexpected stderr=%q", result.stderr)
 	}
 }
 
 func TestSheetsCreateCmd_ParentMoveFailureReportedInJSON(t *testing.T) {
-	origSheets := newSheetsService
-	origDrive := newDriveService
-	t.Cleanup(func() {
-		newSheetsService = origSheets
-		newDriveService = origDrive
-	})
-
 	sheetsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || !strings.Contains(r.URL.Path, "/v4/spreadsheets") {
 			http.NotFound(w, r)
@@ -173,36 +137,17 @@ func TestSheetsCreateCmd_ParentMoveFailureReportedInJSON(t *testing.T) {
 
 	t.Setenv("GOG_ACCOUNT", "a@b.com")
 
-	sheetsSvc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(sheetsSrv.Client()),
-		option.WithEndpoint(sheetsSrv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("sheets.NewService: %v", err)
-	}
-	driveSvc, err := drive.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(driveSrv.Client()),
-		option.WithEndpoint(driveSrv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("drive.NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return sheetsSvc, nil }
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return driveSvc, nil }
+	sheetsSvc := newSheetsServiceFromServer(t, sheetsSrv)
+	driveSvc := newGoogleTestServiceWithEndpoint(t, driveSrv.Client(), driveSrv.URL+"/", drive.NewService)
 
+	result := executeWithSheetsAndDriveTestServices(t, []string{"--json", "sheets", "create", "Budget", "--parent", "folder123"}, sheetsSvc, driveSvc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
 	var payload map[string]any
-	stderr := captureStderr(t, func() {
-		stdout := captureStdout(t, func() {
-			if err := Execute([]string{"--json", "sheets", "create", "Budget", "--parent", "folder123"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-		if err := json.Unmarshal([]byte(stdout), &payload); err != nil {
-			t.Fatalf("json.Unmarshal: %v\nstdout=%q", err, stdout)
-		}
-	})
+	if err := json.Unmarshal([]byte(result.stdout), &payload); err != nil {
+		t.Fatalf("json.Unmarshal: %v\nstdout=%q", err, result.stdout)
+	}
 
 	if got := payload["parent"]; got != "folder123" {
 		t.Fatalf("parent=%v", got)
@@ -214,10 +159,10 @@ func TestSheetsCreateCmd_ParentMoveFailureReportedInJSON(t *testing.T) {
 	if !strings.Contains(moveError, "forbidden") {
 		t.Fatalf("moveError=%q", moveError)
 	}
-	if !strings.Contains(stderr, "failed to move spreadsheet to folder") {
-		t.Fatalf("stderr=%q", stderr)
+	if !strings.Contains(result.stderr, "failed to move spreadsheet to folder") {
+		t.Fatalf("stderr=%q", result.stderr)
 	}
-	if !strings.Contains(stderr, "Spreadsheet created in Drive root") {
-		t.Fatalf("stderr=%q", stderr)
+	if !strings.Contains(result.stderr, "Spreadsheet created in Drive root") {
+		t.Fatalf("stderr=%q", result.stderr)
 	}
 }

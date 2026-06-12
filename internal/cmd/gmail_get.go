@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -49,7 +48,7 @@ func (c *GmailGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("--sanitize-content cannot be used with --format raw")
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -81,7 +80,7 @@ func (c *GmailGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if format == gmailFormatFull && output.Body != "" {
 				payload["body"] = output.Body
 			}
-			return outfmt.WriteJSON(ctx, os.Stdout, payload)
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 		}
 		// Include a flattened headers map for easier querying
 		// (e.g., jq '.headers.to' instead of complex nested queries)
@@ -114,7 +113,7 @@ func (c *GmailGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 				payload["attachments"] = attachmentOutputs(attachments)
 			}
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("id\t%s", msg.Id)

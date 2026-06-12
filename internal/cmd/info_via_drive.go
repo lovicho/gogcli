@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -35,7 +34,7 @@ func infoViaDrive(ctx context.Context, flags *RootFlags, opts infoViaDriveOption
 		return usage(fmt.Sprintf("empty %s", argName))
 	}
 
-	svc, err := newDriveService(ctx, account)
+	svc, err := driveService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -60,7 +59,7 @@ func infoViaDrive(ctx context.Context, flags *RootFlags, opts infoViaDriveOption
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{strFile: f})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{strFile: f})
 	}
 
 	u.Out().Linef("id\t%s", f.Id)

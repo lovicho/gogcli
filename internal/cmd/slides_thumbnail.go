@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
-
-var slidesThumbnailHTTPClient = http.DefaultClient
 
 type SlidesThumbnailCmd struct {
 	PresentationID string `arg:"" name:"presentationId" help:"Presentation ID"`
@@ -48,7 +45,7 @@ func (c *SlidesThumbnailCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	slidesSvc, err := newSlidesService(ctx, account)
+	slidesSvc, err := slidesService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -87,7 +84,7 @@ func (c *SlidesThumbnailCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, result)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), result)
 	}
 
 	u.Out().Linef("presentationId\t%s", presentationID)
@@ -141,7 +138,7 @@ func downloadSlidesThumbnail(ctx context.Context, url, outputPath string) (int64
 		return 0, "", fmt.Errorf("build thumbnail download request: %w", err)
 	}
 
-	resp, err := slidesThumbnailHTTPClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, "", fmt.Errorf("download thumbnail: %w", err)
 	}

@@ -1,21 +1,16 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 
-	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func linksHandler() http.Handler {
@@ -76,37 +71,30 @@ func linksHandler() http.Handler {
 	})
 }
 
+func newSheetsLinksTestContext(t *testing.T, handler http.Handler, jsonOutput bool) (context.Context, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	svc := newSheetsServiceFromServer(t, srv)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	var ctx context.Context
+	if jsonOutput {
+		ctx = newCmdRuntimeJSONOutputContext(t, stdout, stderr)
+	} else {
+		ctx = newCmdRuntimeOutputContext(t, stdout, stderr)
+	}
+	return withSheetsTestService(ctx, svc), stdout, stderr
+}
+
 func TestSheetsLinksCmd_JSON(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
-	srv := httptest.NewServer(linksHandler())
-	defer srv.Close()
-
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
+	ctx, output, _ := newSheetsLinksTestContext(t, linksHandler(), true)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!A1:B3"}, ctx, flags); err != nil {
+		t.Fatalf("links: %v", err)
 	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		cmd := &SheetsLinksCmd{}
-		if err := runKong(t, cmd, []string{"s1", "Sheet1!A1:B3"}, ctx, flags); err != nil {
-			t.Fatalf("links: %v", err)
-		}
-	})
+	out := output.String()
 
 	var result map[string]any
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -143,35 +131,12 @@ func TestSheetsLinksCmd_JSON(t *testing.T) {
 }
 
 func TestSheetsLinksCmd_Text(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
-	srv := httptest.NewServer(linksHandler())
-	defer srv.Close()
-
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
+	ctx, output, _ := newSheetsLinksTestContext(t, linksHandler(), false)
 	flags := &RootFlags{Account: "a@b.com"}
-
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!A1:B3"}, ctx, flags); err != nil {
-			t.Fatalf("links: %v", err)
-		}
-	})
+	if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!A1:B3"}, ctx, flags); err != nil {
+		t.Fatalf("links: %v", err)
+	}
+	out := output.String()
 
 	if !strings.Contains(out, "https://google.com") {
 		t.Errorf("expected 'https://google.com' in output: %q", out)
@@ -185,35 +150,12 @@ func TestSheetsLinksCmd_Text(t *testing.T) {
 }
 
 func TestSheetsLinksCmd_OffsetRange_JSON(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
-	srv := httptest.NewServer(linksHandler())
-	defer srv.Close()
-
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
+	ctx, output, _ := newSheetsLinksTestContext(t, linksHandler(), true)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!B2:C3"}, ctx, flags); err != nil {
+		t.Fatalf("links: %v", err)
 	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!B2:C3"}, ctx, flags); err != nil {
-			t.Fatalf("links: %v", err)
-		}
-	})
+	out := output.String()
 
 	var result map[string]any
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -234,10 +176,7 @@ func TestSheetsLinksCmd_OffsetRange_JSON(t *testing.T) {
 }
 
 func TestSheetsLinksCmd_NoLinks(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"sheets": []map[string]any{
@@ -256,31 +195,14 @@ func TestSheetsLinksCmd_NoLinks(t *testing.T) {
 				},
 			},
 		})
-	}))
-	defer srv.Close()
-
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com"}
-	errOut := captureStderr(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: os.Stderr, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!A1"}, ctx, flags); err != nil {
-			t.Fatalf("links: %v", err)
-		}
 	})
+
+	ctx, _, errOutput := newSheetsLinksTestContext(t, handler, false)
+	flags := &RootFlags{Account: "a@b.com"}
+	if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!A1"}, ctx, flags); err != nil {
+		t.Fatalf("links: %v", err)
+	}
+	errOut := errOutput.String()
 
 	if !strings.Contains(errOut, "No links found") {
 		t.Errorf("expected 'No links found' on stderr: %q", errOut)
@@ -288,10 +210,7 @@ func TestSheetsLinksCmd_NoLinks(t *testing.T) {
 }
 
 func TestSheetsLinksCmd_RichTextRunsAndCellLevelLinks(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"sheets": []map[string]any{
@@ -327,32 +246,14 @@ func TestSheetsLinksCmd_RichTextRunsAndCellLevelLinks(t *testing.T) {
 				},
 			},
 		})
-	}))
-	defer srv.Close()
-
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!C3"}, ctx, flags); err != nil {
-			t.Fatalf("links: %v", err)
-		}
 	})
+
+	ctx, output, _ := newSheetsLinksTestContext(t, handler, true)
+	flags := &RootFlags{Account: "a@b.com"}
+	if err := runKong(t, &SheetsLinksCmd{}, []string{"s1", "Sheet1!C3"}, ctx, flags); err != nil {
+		t.Fatalf("links: %v", err)
+	}
+	out := output.String()
 
 	var result map[string]any
 	if err := json.Unmarshal([]byte(out), &result); err != nil {

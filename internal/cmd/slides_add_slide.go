@@ -72,11 +72,11 @@ func (c *SlidesAddSlideCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	slidesSvc, err := newSlidesService(ctx, account)
+	slidesSvc, err := slidesService(ctx, account)
 	if err != nil {
 		return err
 	}
-	driveSvc, err := newDriveService(ctx, account)
+	driveSvc, err := driveService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -240,7 +240,7 @@ func (c *SlidesAddSlideCmd) Run(ctx context.Context, flags *RootFlags) error {
 	link := fmt.Sprintf("https://docs.google.com/presentation/d/%s/edit", presentationID)
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"slideNumber":    slideNum,
 			"slideObjectId":  slideID,
 			"presentationId": presentationID,

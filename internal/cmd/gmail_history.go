@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -34,7 +33,7 @@ func (c *GmailHistoryCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage(err.Error())
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -59,7 +58,7 @@ func (c *GmailHistoryCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"historyId":     historyID,
 			"messages":      ids,
 			"nextPageToken": nextPageToken,

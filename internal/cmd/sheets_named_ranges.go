@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,7 +37,7 @@ func (c *SheetsNamedRangesListCmd) Run(ctx context.Context, flags *RootFlags) er
 		return usage("empty spreadsheetId")
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -64,7 +63,7 @@ func (c *SheetsNamedRangesListCmd) Run(ctx context.Context, flags *RootFlags) er
 	})
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"namedRanges": items})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"namedRanges": items})
 	}
 
 	if len(items) == 0 {
@@ -112,7 +111,7 @@ func (c *SheetsNamedRangesGetCmd) Run(ctx context.Context, flags *RootFlags) err
 		return usage("empty nameOrId")
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -132,7 +131,7 @@ func (c *SheetsNamedRangesGetCmd) Run(ctx context.Context, flags *RootFlags) err
 
 	it := namedRangeToItem(nr, catalog)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"namedRange": it})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"namedRange": it})
 	}
 
 	u.Out().Linef("name\t%s", it.Name)
@@ -179,7 +178,7 @@ func (c *SheetsNamedRangesAddCmd) Run(ctx context.Context, flags *RootFlags) err
 		return err
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -223,7 +222,7 @@ func (c *SheetsNamedRangesAddCmd) Run(ctx context.Context, flags *RootFlags) err
 
 	it := namedRangeToItem(created, catalog)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"namedRange": it})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"namedRange": it})
 	}
 
 	u.Out().Linef("name\t%s", it.Name)
@@ -274,7 +273,7 @@ func (c *SheetsNamedRangesUpdateCmd) Run(ctx context.Context, flags *RootFlags) 
 		return err
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -341,7 +340,7 @@ func (c *SheetsNamedRangesUpdateCmd) Run(ctx context.Context, flags *RootFlags) 
 
 	it := namedRangeToItem(updated, updatedCatalog)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"namedRange": it})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"namedRange": it})
 	}
 
 	u.Out().Linef("name\t%s", it.Name)
@@ -378,7 +377,7 @@ func (c *SheetsNamedRangesDeleteCmd) Run(ctx context.Context, flags *RootFlags) 
 		return err
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -409,7 +408,7 @@ func (c *SheetsNamedRangesDeleteCmd) Run(ctx context.Context, flags *RootFlags) 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"deleted": map[string]any{"namedRangeId": id, "name": strings.TrimSpace(existing.Name)},
 		})
 	}

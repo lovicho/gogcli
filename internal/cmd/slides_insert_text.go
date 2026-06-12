@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"google.golang.org/api/slides/v1"
@@ -40,7 +39,7 @@ func (c *SlidesInsertTextCmd) Run(ctx context.Context, flags *RootFlags) error {
 	// Resolve text: '-' means read from stdin.
 	text := c.Text
 	if text == "-" {
-		data, err := io.ReadAll(os.Stdin)
+		data, err := io.ReadAll(commandIO(ctx).In)
 		if err != nil {
 			return fmt.Errorf("read text from stdin: %w", err)
 		}
@@ -85,7 +84,7 @@ func (c *SlidesInsertTextCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	slidesSvc, err := newSlidesService(ctx, account)
+	slidesSvc, err := slidesService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -96,7 +95,7 @@ func (c *SlidesInsertTextCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, resp)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), resp)
 	}
 
 	revisionID := ""

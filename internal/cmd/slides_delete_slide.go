@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/slides/v1"
@@ -41,7 +40,7 @@ func (c *SlidesDeleteSlideCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	slidesSvc, err := newSlidesService(ctx, account)
+	slidesSvc, err := slidesService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -60,7 +59,7 @@ func (c *SlidesDeleteSlideCmd) Run(ctx context.Context, flags *RootFlags) error 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"presentationId": presentationID,
 			"slideObjectId":  slideID,
 			"deleted":        true,

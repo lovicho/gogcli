@@ -35,7 +35,7 @@ func (c *ContactsExportCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return validateErr
 	}
 
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}

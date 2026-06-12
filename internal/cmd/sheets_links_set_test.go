@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,12 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/option"
-	"google.golang.org/api/sheets/v4"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 type linksSetRecorder struct {
@@ -61,29 +56,19 @@ func linksSetHandler(recorder *linksSetRecorder) http.Handler {
 	})
 }
 
-func newLinksSetService(t *testing.T, recorder *linksSetRecorder) *sheets.Service {
+func newLinksSetTestContext(t *testing.T, recorder *linksSetRecorder) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	srv := httptest.NewServer(linksSetHandler(recorder))
 	t.Cleanup(srv.Close)
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	return svc
+	svc := newSheetsServiceFromServer(t, srv)
+	output := &bytes.Buffer{}
+	ctx := newCmdRuntimeJSONOutputContext(t, output, io.Discard)
+	return withSheetsTestService(ctx, svc), output
 }
 
 func linksSetCtx(t *testing.T) context.Context {
 	t.Helper()
-	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := ui.WithUI(context.Background(), u)
-	return outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
+	return newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard)
 }
 
 // updateCellsCell digs the single CellData map out of recorded request index i.
@@ -121,18 +106,14 @@ func runLink(run any) (start float64, uri string) {
 }
 
 func TestSheetsLinksSet_SingleLink(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
 	rec := &linksSetRecorder{}
-	svc := newLinksSetService(t, rec)
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	ctx, output := newLinksSetTestContext(t, rec)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!B2", "https://x.test/a", "Act A"}, linksSetCtx(t), flags); err != nil {
-			t.Fatalf("links set: %v", err)
-		}
-	})
+	if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!B2", "https://x.test/a", "Act A"}, ctx, flags); err != nil {
+		t.Fatalf("links set: %v", err)
+	}
+	out := output.String()
 
 	var result map[string]any
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
@@ -163,18 +144,13 @@ func TestSheetsLinksSet_SingleLink(t *testing.T) {
 }
 
 func TestSheetsLinksSet_ClearsStaleWholeCellLink(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
 	rec := &linksSetRecorder{}
-	svc := newLinksSetService(t, rec)
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	ctx, _ := newLinksSetTestContext(t, rec)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!B2", "https://x.test/a", "A"}, linksSetCtx(t), flags); err != nil {
-			t.Fatalf("links set: %v", err)
-		}
-	})
+	if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!B2", "https://x.test/a", "A"}, ctx, flags); err != nil {
+		t.Fatalf("links set: %v", err)
+	}
 	// The field mask must clear a pre-existing whole-cell link, else a replaced
 	// cell keeps the stale URL and `links get` reports it (does not round-trip).
 	fields := rec.requests[0]["updateCells"].(map[string]any)["fields"]
@@ -184,18 +160,13 @@ func TestSheetsLinksSet_ClearsStaleWholeCellLink(t *testing.T) {
 }
 
 func TestSheetsLinksSet_DefaultTextIsURL(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
 	rec := &linksSetRecorder{}
-	svc := newLinksSetService(t, rec)
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	ctx, _ := newLinksSetTestContext(t, rec)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!A1", "https://only.url/"}, linksSetCtx(t), flags); err != nil {
-			t.Fatalf("links set: %v", err)
-		}
-	})
+	if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!A1", "https://only.url/"}, ctx, flags); err != nil {
+		t.Fatalf("links set: %v", err)
+	}
 	cell := updateCellsCell(t, rec, 0)
 	if got := cell["userEnteredValue"].(map[string]any)["stringValue"]; got != "https://only.url/" {
 		t.Errorf("stringValue = %v, want the url", got)
@@ -203,19 +174,14 @@ func TestSheetsLinksSet_DefaultTextIsURL(t *testing.T) {
 }
 
 func TestSheetsLinksSet_MultiLinkRuns(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
 	rec := &linksSetRecorder{}
-	svc := newLinksSetService(t, rec)
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	ctx, _ := newLinksSetTestContext(t, rec)
 
 	runsJSON := `[{"text":"Act A","uri":"https://a"},{"text":" / "},{"text":"Act B","uri":"https://b"}]`
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!C3", "--runs-json", runsJSON}, linksSetCtx(t), flags); err != nil {
-			t.Fatalf("links set: %v", err)
-		}
-	})
+	if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "Sheet1!C3", "--runs-json", runsJSON}, ctx, flags); err != nil {
+		t.Fatalf("links set: %v", err)
+	}
 	cell := updateCellsCell(t, rec, 0)
 	if got := cell["userEnteredValue"].(map[string]any)["stringValue"]; got != "Act A / Act B" {
 		t.Errorf("stringValue = %q, want concat", got)
@@ -240,19 +206,15 @@ func TestSheetsLinksSet_MultiLinkRuns(t *testing.T) {
 }
 
 func TestSheetsLinksSet_BatchCellsJSON(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
 	rec := &linksSetRecorder{}
-	svc := newLinksSetService(t, rec)
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	ctx, output := newLinksSetTestContext(t, rec)
 
 	cellsJSON := `[{"cell":"Sheet1!B2","url":"https://b2","text":"B2"},{"cell":"Sheet1!B3","runs":[{"text":"x","uri":"https://x"}]}]`
 	flags := &RootFlags{Account: "a@b.com"}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "--cells-json", cellsJSON}, linksSetCtx(t), flags); err != nil {
-			t.Fatalf("links set: %v", err)
-		}
-	})
+	if err := runKong(t, &SheetsLinksSetCmd{}, []string{"s1", "--cells-json", cellsJSON}, ctx, flags); err != nil {
+		t.Fatalf("links set: %v", err)
+	}
+	out := output.String()
 	var result map[string]any
 	_ = json.Unmarshal([]byte(out), &result)
 	if result["cellsUpdated"] != float64(2) {
@@ -264,20 +226,16 @@ func TestSheetsLinksSet_BatchCellsJSON(t *testing.T) {
 }
 
 func TestSheetsLinksSet_DryRun(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
 	rec := &linksSetRecorder{}
-	svc := newLinksSetService(t, rec)
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	ctx, output := newLinksSetTestContext(t, rec)
 
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
-	out := captureStdout(t, func() {
-		err := (&SheetsLinksSetCmd{SpreadsheetID: "s1", Cell: "Sheet1!B2", URL: "https://x", Text: "L"}).Run(linksSetCtx(t), flags)
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("expected dry-run exit 0, got %v", err)
-		}
-	})
+	err := (&SheetsLinksSetCmd{SpreadsheetID: "s1", Cell: "Sheet1!B2", URL: "https://x", Text: "L"}).Run(ctx, flags)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("expected dry-run exit 0, got %v", err)
+	}
+	out := output.String()
 	var result map[string]any
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("unmarshal %q: %v", out, err)

@@ -159,7 +159,7 @@ func buildContactsBackupSnapshot(ctx context.Context, flags *RootFlags, shardMax
 	}
 	accountHash := backupAccountHash(account)
 	var peopleRows []contactsBackupPerson
-	contactsSvc, err := newPeopleContactsService(ctx, account)
+	contactsSvc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -47,11 +48,7 @@ func TestDocsInsertImageResolveSourceURL(t *testing.T) {
 
 func TestDocsInsertImageURLRunSkipsDrive(t *testing.T) {
 	origDocs := newDocsService
-	origDrive := newDriveService
-	t.Cleanup(func() {
-		newDocsService = origDocs
-		newDriveService = origDrive
-	})
+	t.Cleanup(func() { newDocsService = origDocs })
 
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,20 +67,19 @@ func TestDocsInsertImageURLRunSkipsDrive(t *testing.T) {
 	}))
 	defer cleanup()
 	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
-	newDriveService = func(context.Context, string) (*drive.Service, error) {
+	driveFactory := func(context.Context, string) (*drive.Service, error) {
 		t.Fatal("URL insertion must not create a Drive service")
 		return nil, errors.New("unexpected Drive service call")
 	}
 
-	var runErr error
-	out := captureStdout(t, func() {
-		runErr = runKong(t, &DocsInsertImageCmd{}, []string{
-			"doc1",
-			"--url", "https://example.com/image.png?sig=abc",
-			"--width", "320",
-			"--height", "180",
-		}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
+	var stdout, stderr bytes.Buffer
+	ctx := withDriveTestServiceFactory(newCmdRuntimeJSONOutputContext(t, &stdout, &stderr), driveFactory)
+	runErr := runKong(t, &DocsInsertImageCmd{}, []string{
+		"doc1",
+		"--url", "https://example.com/image.png?sig=abc",
+		"--width", "320",
+		"--height", "180",
+	}, ctx, &RootFlags{Account: "a@b.com"})
 	if runErr != nil {
 		t.Fatalf("docs insert-image --url: %v", runErr)
 	}
@@ -99,8 +95,8 @@ func TestDocsInsertImageURLRunSkipsDrive(t *testing.T) {
 	}
 
 	var payload map[string]any
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("decode output: %v\n%s", err, out)
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("decode output: %v\n%s", err, stdout.String())
 	}
 	if payload["documentId"] != "doc1" || payload["url"] != "https://example.com/image.png?sig=abc" {
 		t.Fatalf("unexpected output: %#v", payload)
@@ -112,38 +108,34 @@ func TestDocsInsertImageURLRunSkipsDrive(t *testing.T) {
 
 func TestDocsInsertImageURLDryRunSkipsServices(t *testing.T) {
 	origDocs := newDocsService
-	origDrive := newDriveService
-	t.Cleanup(func() {
-		newDocsService = origDocs
-		newDriveService = origDrive
-	})
+	t.Cleanup(func() { newDocsService = origDocs })
 	newDocsService = func(context.Context, string) (*docs.Service, error) {
 		t.Fatal("dry-run must not create a Docs service")
 		return nil, errors.New("unexpected Docs service call")
 	}
-	newDriveService = func(context.Context, string) (*drive.Service, error) {
+	driveFactory := func(context.Context, string) (*drive.Service, error) {
 		t.Fatal("dry-run must not create a Drive service")
 		return nil, errors.New("unexpected Drive service call")
 	}
 
-	out := captureStdout(t, func() {
-		err := runKong(t, &DocsInsertImageCmd{}, []string{
-			"doc1",
-			"--url", "https://example.com/image.png",
-		}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com", DryRun: true, NoInput: true})
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("dry-run error = %v", err)
-		}
-	})
+	var stdout, stderr bytes.Buffer
+	ctx := withDriveTestServiceFactory(newCmdRuntimeJSONOutputContext(t, &stdout, &stderr), driveFactory)
+	err := runKong(t, &DocsInsertImageCmd{}, []string{
+		"doc1",
+		"--url", "https://example.com/image.png",
+	}, ctx, &RootFlags{Account: "a@b.com", DryRun: true, NoInput: true})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("dry-run error = %v", err)
+	}
 	var payload struct {
 		Op      string `json:"op"`
 		Request struct {
 			URL string `json:"url"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("decode dry-run output: %v\n%s", err, out)
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("decode dry-run output: %v\n%s", err, stdout.String())
 	}
 	if payload.Op != "docs.insert-image" || payload.Request.URL != "https://example.com/image.png" {
 		t.Fatalf("unexpected dry-run output: %#v", payload)

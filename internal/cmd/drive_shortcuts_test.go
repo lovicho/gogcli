@@ -15,13 +15,9 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestDriveShortcutCreateCmd_DefaultNameAndJSON(t *testing.T) {
-	origNew := newDriveService
-	t.Cleanup(func() { newDriveService = origNew })
-
 	var createBody drive.File
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -61,19 +57,13 @@ func TestDriveShortcutCreateCmd_DefaultNameAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return svc, nil }
 
-	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
+	var out bytes.Buffer
+	ctx := withDriveTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	cmd := &DriveShortcutCreateCmd{}
+	if execErr := runKong(t, cmd, []string{"target1", "--parent", "folder1"}, ctx, &RootFlags{Account: "a@example.com"}); execErr != nil {
+		t.Fatalf("execute: %v", execErr)
 	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-	out := captureStdout(t, func() {
-		cmd := &DriveShortcutCreateCmd{}
-		if execErr := runKong(t, cmd, []string{"target1", "--parent", "folder1"}, ctx, &RootFlags{Account: "a@example.com"}); execErr != nil {
-			t.Fatalf("execute: %v", execErr)
-		}
-	})
 
 	if createBody.Name != "Target Folder" || createBody.MimeType != driveMimeShortcut {
 		t.Fatalf("unexpected create body: %#v", createBody)
@@ -88,8 +78,8 @@ func TestDriveShortcutCreateCmd_DefaultNameAndJSON(t *testing.T) {
 	var parsed struct {
 		Shortcut *drive.File `json:"shortcut"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
-		t.Fatalf("unmarshal output: %v\n%s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshal output: %v\n%s", err, out.String())
 	}
 	if parsed.Shortcut == nil || parsed.Shortcut.Id != "shortcut1" {
 		t.Fatalf("unexpected output: %#v", parsed.Shortcut)
@@ -100,9 +90,6 @@ func TestDriveShortcutCreateCmd_DefaultNameAndJSON(t *testing.T) {
 }
 
 func TestDriveShortcutCreateCmd_ExplicitNameSkipsTargetLookup(t *testing.T) {
-	origNew := newDriveService
-	t.Cleanup(func() { newDriveService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/files") {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -132,14 +119,9 @@ func TestDriveShortcutCreateCmd_ExplicitNameSkipsTargetLookup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return svc, nil }
 
 	var stdout bytes.Buffer
-	u, err := ui.New(ui.Options{Stdout: &stdout, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withDriveTestService(newCmdRuntimeOutputContext(t, &stdout, io.Discard), svc)
 	cmd := &DriveShortcutCreateCmd{}
 	if execErr := runKong(t, cmd, []string{"target1", "--parent", "folder1", "--name", "Alias"}, ctx, &RootFlags{Account: "a@example.com"}); execErr != nil {
 		t.Fatalf("execute: %v", execErr)
@@ -150,7 +132,7 @@ func TestDriveShortcutCreateCmd_ExplicitNameSkipsTargetLookup(t *testing.T) {
 }
 
 func TestDriveShortcutCreateCmd_ValidationAndDryRun(t *testing.T) {
-	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 	flags := &RootFlags{Account: "a@example.com"}
 	for _, tc := range []struct {
 		name string
@@ -168,26 +150,22 @@ func TestDriveShortcutCreateCmd_ValidationAndDryRun(t *testing.T) {
 		})
 	}
 
-	dryCtx := outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-	out := captureStdout(t, func() {
-		err := (&DriveShortcutCreateCmd{
-			TargetID: "target1",
-			Parent:   "folder1",
-		}).Run(dryCtx, &RootFlags{DryRun: true})
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("dry run exit = %v", err)
-		}
-	})
-	if !strings.Contains(out, "drive.shortcut.create") {
-		t.Fatalf("unexpected dry-run output: %q", out)
+	var out bytes.Buffer
+	dryCtx := outfmt.WithMode(newCmdRuntimeOutputContext(t, &out, io.Discard), outfmt.Mode{JSON: true})
+	err := (&DriveShortcutCreateCmd{
+		TargetID: "target1",
+		Parent:   "folder1",
+	}).Run(dryCtx, &RootFlags{DryRun: true})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("dry run exit = %v", err)
+	}
+	if !strings.Contains(out.String(), "drive.shortcut.create") {
+		t.Fatalf("unexpected dry-run output: %q", out.String())
 	}
 }
 
 func TestDriveGetCmd_ShortcutDetails(t *testing.T) {
-	origNew := newDriveService
-	t.Cleanup(func() { newDriveService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/files/shortcut1") {
 			http.NotFound(w, r)
@@ -219,14 +197,9 @@ func TestDriveGetCmd_ShortcutDetails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return svc, nil }
 
 	var stdout bytes.Buffer
-	u, err := ui.New(ui.Options{Stdout: &stdout, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withDriveTestService(newCmdRuntimeOutputContext(t, &stdout, io.Discard), svc)
 	if err := (&DriveGetCmd{FileID: "shortcut1"}).Run(ctx, &RootFlags{Account: "a@example.com"}); err != nil {
 		t.Fatalf("get shortcut: %v", err)
 	}
@@ -245,9 +218,6 @@ func TestDriveGetCmd_ShortcutDetails(t *testing.T) {
 }
 
 func TestDriveMoveCmd_ReplacesAllLegacyParents(t *testing.T) {
-	origNew := newDriveService
-	t.Cleanup(func() { newDriveService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -278,9 +248,8 @@ func TestDriveMoveCmd_ReplacesAllLegacyParents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return svc, nil }
 
-	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
+	ctx := withDriveTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 	if err := (&DriveMoveCmd{FileID: "file1", Parent: "new-parent"}).Run(ctx, &RootFlags{Account: "a@example.com"}); err != nil {
 		t.Fatalf("move legacy file: %v", err)
 	}

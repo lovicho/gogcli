@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/steipete/gogcli/internal/outfmt"
@@ -131,7 +130,7 @@ func (c *GmailFiltersDeleteCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"success":  true,
 			"filterId": filterID,
 		})
@@ -172,7 +171,7 @@ func (c *GmailFiltersExportCmd) Run(ctx context.Context, flags *RootFlags) error
 	switch format {
 	case "json":
 		if outPath == "" {
-			return outfmt.WriteJSON(ctx, os.Stdout, payload)
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 		}
 		data, err = json.MarshalIndent(payload, "", "  ")
 		if err != nil {
@@ -189,7 +188,7 @@ func (c *GmailFiltersExportCmd) Run(ctx context.Context, flags *RootFlags) error
 			return err
 		}
 		if outPath == "" {
-			_, err = os.Stdout.Write(data)
+			_, err = stdoutWriter(ctx).Write(data)
 			return err
 		}
 	default:
@@ -211,7 +210,7 @@ func (c *GmailFiltersExportCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"exported": true,
 			"path":     outPath,
 			"count":    len(filters),

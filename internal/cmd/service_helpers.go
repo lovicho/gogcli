@@ -22,7 +22,7 @@ func requireDocsService(ctx context.Context, flags *RootFlags) (*docs.Service, e
 }
 
 func requireDriveService(ctx context.Context, flags *RootFlags) (string, *drive.Service, error) {
-	return requireGoogleService(ctx, flags, newDriveService)
+	return requireGoogleService(ctx, flags, driveService)
 }
 
 func requireDriveActivityService(ctx context.Context, flags *RootFlags) (string, *driveactivity.Service, error) {
@@ -34,7 +34,7 @@ func requireCalendarService(ctx context.Context, flags *RootFlags) (string, *cal
 }
 
 func requireGmailService(ctx context.Context, flags *RootFlags) (string, *gmail.Service, error) {
-	return requireGoogleService(ctx, flags, newGmailService)
+	return requireGoogleService(ctx, flags, gmailService)
 }
 
 func requireClassroomService(ctx context.Context, flags *RootFlags) (string, *classroom.Service, error) {
@@ -46,7 +46,7 @@ func requireMeetService(ctx context.Context, flags *RootFlags) (string, *meet.Se
 }
 
 func requireSheetsService(ctx context.Context, flags *RootFlags) (string, *sheets.Service, error) {
-	return requireGoogleService(ctx, flags, newSheetsService)
+	return requireGoogleService(ctx, flags, sheetsService)
 }
 
 func requireGoogleService[T any](ctx context.Context, flags *RootFlags, newService func(context.Context, string) (*T, error)) (string, *T, error) {

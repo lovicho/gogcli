@@ -452,7 +452,7 @@ func deleteOtherContact(ctx context.Context, account, resourceName string) error
 		return fmt.Errorf("copy to my contacts: empty resource name")
 	}
 
-	contactsSvc, err := newPeopleContactsService(ctx, account)
+	contactsSvc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}

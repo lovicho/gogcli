@@ -1,19 +1,17 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/option"
 	"google.golang.org/api/slides/v1"
-
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 // mockSlidesBatchUpdateServer spins up an httptest.Server that captures the
@@ -54,9 +52,6 @@ func newSlidesServiceFromServer(t *testing.T, srv *httptest.Server) *slides.Serv
 }
 
 func TestSlidesInsertText(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	var captured []*slides.Request
 	srv := mockSlidesBatchUpdateServer(t, &captured, map[string]any{
 		"presentationId": "pres1",
@@ -66,30 +61,22 @@ func TestSlidesInsertText(t *testing.T) {
 	defer srv.Close()
 
 	svc := newSlidesServiceFromServer(t, srv)
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
-
 	flags := &RootFlags{Account: "a@b.com"}
+	var out bytes.Buffer
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
 
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
+	cmd := &SlidesInsertTextCmd{
+		PresentationID: "pres1",
+		ObjectID:       "shape_1",
+		Text:           "hello world",
+		InsertionIndex: 3,
+	}
+	if err := cmd.Run(ctx, flags); err != nil && ExitCode(err) != 0 {
+		t.Fatalf("Run: %v", err)
+	}
 
-		cmd := &SlidesInsertTextCmd{
-			PresentationID: "pres1",
-			ObjectID:       "shape_1",
-			Text:           "hello world",
-			InsertionIndex: 3,
-		}
-		if err := cmd.Run(ctx, flags); err != nil && ExitCode(err) != 0 {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-
-	if !strings.Contains(out, "ok | revisionId=rev-123 | replies=1") {
-		t.Errorf("expected plain confirmation with revisionId and replies, got: %q", out)
+	if !strings.Contains(out.String(), "ok | revisionId=rev-123 | replies=1") {
+		t.Errorf("expected plain confirmation with revisionId and replies, got: %q", out.String())
 	}
 	if len(captured) != 1 {
 		t.Fatalf("expected 1 request in batch, got %d", len(captured))
@@ -109,9 +96,6 @@ func TestSlidesInsertText(t *testing.T) {
 }
 
 func TestSlidesInsertText_ReplaceEmitsDeleteThenInsert(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	var captured []*slides.Request
 	srv := mockSlidesBatchUpdateServer(t, &captured, map[string]any{
 		"presentationId": "pres1",
@@ -120,26 +104,18 @@ func TestSlidesInsertText_ReplaceEmitsDeleteThenInsert(t *testing.T) {
 	defer srv.Close()
 
 	svc := newSlidesServiceFromServer(t, srv)
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
-
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
-	_ = captureStdout(t, func() {
-		cmd := &SlidesInsertTextCmd{
-			PresentationID: "pres1",
-			ObjectID:       "shape_1",
-			Text:           "replacement",
-			Replace:        true,
-		}
-		if err := cmd.Run(ctx, flags); err != nil && ExitCode(err) != 0 {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	cmd := &SlidesInsertTextCmd{
+		PresentationID: "pres1",
+		ObjectID:       "shape_1",
+		Text:           "replacement",
+		Replace:        true,
+	}
+	if err := cmd.Run(ctx, flags); err != nil && ExitCode(err) != 0 {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if len(captured) != 2 {
 		t.Fatalf("expected 2 requests (DeleteText + InsertText), got %d", len(captured))
@@ -157,9 +133,6 @@ func TestSlidesInsertText_ReplaceEmitsDeleteThenInsert(t *testing.T) {
 }
 
 func TestSlidesInsertText_ReplaceEmptyClearsOnly(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	var captured []*slides.Request
 	srv := mockSlidesBatchUpdateServer(t, &captured, map[string]any{
 		"presentationId": "pres1",
@@ -168,26 +141,18 @@ func TestSlidesInsertText_ReplaceEmptyClearsOnly(t *testing.T) {
 	defer srv.Close()
 
 	svc := newSlidesServiceFromServer(t, srv)
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
-
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
-	_ = captureStdout(t, func() {
-		cmd := &SlidesInsertTextCmd{
-			PresentationID: "pres1",
-			ObjectID:       "shape_1",
-			Text:           "",
-			Replace:        true,
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	cmd := &SlidesInsertTextCmd{
+		PresentationID: "pres1",
+		ObjectID:       "shape_1",
+		Text:           "",
+		Replace:        true,
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if len(captured) != 1 {
 		t.Fatalf("expected 1 DeleteText request, got %d", len(captured))
@@ -198,9 +163,6 @@ func TestSlidesInsertText_ReplaceEmptyClearsOnly(t *testing.T) {
 }
 
 func TestSlidesInsertText_StdinDash(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	var captured []*slides.Request
 	srv := mockSlidesBatchUpdateServer(t, &captured, map[string]any{
 		"presentationId": "pres1",
@@ -209,40 +171,21 @@ func TestSlidesInsertText_StdinDash(t *testing.T) {
 	defer srv.Close()
 
 	svc := newSlidesServiceFromServer(t, srv)
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
-
-	// Pipe text into stdin.
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	origStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() { os.Stdin = origStdin })
-
 	const piped = "from-stdin content\nline 2\n"
-	go func() {
-		_, _ = w.Write([]byte(piped))
-		_ = w.Close()
-	}()
-
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestService(
+		newCmdRuntimeIOContext(t, strings.NewReader(piped), io.Discard, io.Discard),
+		svc,
+	)
 
-	_ = captureStdout(t, func() {
-		cmd := &SlidesInsertTextCmd{
-			PresentationID: "pres1",
-			ObjectID:       "shape_1",
-			Text:           "-",
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	cmd := &SlidesInsertTextCmd{
+		PresentationID: "pres1",
+		ObjectID:       "shape_1",
+		Text:           "-",
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if len(captured) != 1 || captured[0].InsertText == nil {
 		t.Fatalf("expected single InsertText request, got %+v", captured)
@@ -253,28 +196,24 @@ func TestSlidesInsertText_StdinDash(t *testing.T) {
 }
 
 func TestSlidesInsertText_DryRunNoAPICall(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
-		t.Fatal("slides service should not be created during dry-run")
-		return nil, context.Canceled
-	}
-
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
-	ctx := newCmdJSONContext(t)
-
-	out := captureStdout(t, func() {
-		cmd := &SlidesInsertTextCmd{
-			PresentationID: "pres1",
-			ObjectID:       "shape_1",
-			Text:           "dry",
-			Replace:        true,
-		}
-		if err := cmd.Run(ctx, flags); err != nil && ExitCode(err) != 0 {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	var out bytes.Buffer
+	ctx := withSlidesTestServiceFactory(
+		newCmdRuntimeJSONOutputContext(t, &out, io.Discard),
+		func(context.Context, string) (*slides.Service, error) {
+			t.Fatal("slides service should not be created during dry-run")
+			return nil, context.Canceled
+		},
+	)
+	cmd := &SlidesInsertTextCmd{
+		PresentationID: "pres1",
+		ObjectID:       "shape_1",
+		Text:           "dry",
+		Replace:        true,
+	}
+	if err := cmd.Run(ctx, flags); err != nil && ExitCode(err) != 0 {
+		t.Fatalf("Run: %v", err)
+	}
 
 	var got struct {
 		DryRun  bool `json:"dry_run"`
@@ -282,8 +221,8 @@ func TestSlidesInsertText_DryRunNoAPICall(t *testing.T) {
 			BatchUpdate slides.BatchUpdatePresentationRequest `json:"batch_update"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("dry-run output should be valid JSON: %v\nout=%s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("dry-run output should be valid JSON: %v\nout=%s", err, out.String())
 	}
 	if !got.DryRun {
 		t.Fatalf("expected dry_run=true, got %#v", got)
@@ -298,20 +237,14 @@ func TestSlidesInsertText_DryRunNoAPICall(t *testing.T) {
 }
 
 func TestSlidesInsertText_InvalidInsertionIndexIsUsageErrorBeforeDryRun(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
-		t.Fatal("slides service should not be created")
-		return nil, context.Canceled
-	}
-
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestServiceFactory(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		func(context.Context, string) (*slides.Service, error) {
+			t.Fatal("slides service should not be created")
+			return nil, context.Canceled
+		},
+	)
 
 	cmd := &SlidesInsertTextCmd{
 		PresentationID: "pres1",
@@ -329,20 +262,14 @@ func TestSlidesInsertText_InvalidInsertionIndexIsUsageErrorBeforeDryRun(t *testi
 }
 
 func TestSlidesInsertText_EmptyTextWithoutReplace(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
-		t.Fatal("slides service should not be created")
-		return nil, context.Canceled
-	}
-
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestServiceFactory(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		func(context.Context, string) (*slides.Service, error) {
+			t.Fatal("slides service should not be created")
+			return nil, context.Canceled
+		},
+	)
 
 	cmd := &SlidesInsertTextCmd{
 		PresentationID: "pres1",
@@ -356,20 +283,14 @@ func TestSlidesInsertText_EmptyTextWithoutReplace(t *testing.T) {
 }
 
 func TestSlidesInsertText_EmptyObjectID(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
-		t.Fatal("slides service should not be created")
-		return nil, context.Canceled
-	}
-
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestServiceFactory(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		func(context.Context, string) (*slides.Service, error) {
+			t.Fatal("slides service should not be created")
+			return nil, context.Canceled
+		},
+	)
 
 	cmd := &SlidesInsertTextCmd{
 		PresentationID: "pres1",

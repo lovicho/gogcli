@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,7 +12,7 @@ import (
 func TestGmailLabelsCreateCmd_NestedNameCreatesWhenAvailable(t *testing.T) {
 	createCalled := false
 
-	newLabelsDeleteService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := newLabelsDeleteService(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && isLabelsListPath(r.URL.Path):
 			w.Header().Set("Content-Type", "application/json")
@@ -46,13 +48,11 @@ func TestGmailLabelsCreateCmd_NestedNameCreatesWhenAvailable(t *testing.T) {
 	})
 
 	flags := &RootFlags{Account: "a@b.com"}
-	ctx := newLabelsDeleteContext(t, true)
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &GmailLabelsCreateCmd{}, []string{"Projects/Review"}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	var out bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &GmailLabelsCreateCmd{}, []string{"Projects/Review"}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 
 	if !createCalled {
 		t.Fatal("expected label create call")
@@ -64,8 +64,8 @@ func TestGmailLabelsCreateCmd_NestedNameCreatesWhenAvailable(t *testing.T) {
 			Name string `json:"name"`
 		} `json:"label"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
-		t.Fatalf("json parse: %v\nout=%q", err, out)
+	if err := json.Unmarshal(out.Bytes(), &parsed); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, out.String())
 	}
 	if parsed.Label.ID != "Label_nested" || parsed.Label.Name != "Projects/Review" {
 		t.Fatalf("unexpected label: %#v", parsed.Label)
@@ -75,7 +75,7 @@ func TestGmailLabelsCreateCmd_NestedNameCreatesWhenAvailable(t *testing.T) {
 func TestGmailLabelsCreateCmd_NestedNameConflictsWithHyphenatedSibling(t *testing.T) {
 	createCalled := false
 
-	newLabelsDeleteService(t, func(w http.ResponseWriter, r *http.Request) {
+	svc := newLabelsDeleteService(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && isLabelsListPath(r.URL.Path):
 			w.Header().Set("Content-Type", "application/json")
@@ -93,7 +93,7 @@ func TestGmailLabelsCreateCmd_NestedNameConflictsWithHyphenatedSibling(t *testin
 	})
 
 	flags := &RootFlags{Account: "a@b.com"}
-	ctx := newLabelsDeleteContext(t, true)
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
 
 	err := runKong(t, &GmailLabelsCreateCmd{}, []string{"gog/pr-review"}, ctx, flags)
 	if err == nil {

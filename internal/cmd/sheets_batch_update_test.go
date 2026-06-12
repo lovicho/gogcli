@@ -1,22 +1,20 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
 
 func TestSheetsBatchUpdateCmd_JSON(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
 	var gotReq sheets.BatchUpdateValuesRequest
 	var gotPath string
 
@@ -59,31 +57,21 @@ func TestSheetsBatchUpdateCmd_JSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	svc := newSheetsServiceFromServer(t, srv)
+	var out bytes.Buffer
+	ctx := withSheetsTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &SheetsBatchUpdateCmd{}, []string{
+		"s1",
+		"--input", "RAW",
+		"--include-values-in-response",
+		"--response-render", "UNFORMATTED_VALUE",
+		"--data-json", `[
+			{"range":"Sheet1\\!A1:B1","values":[["a","b"]]},
+			{"range":"Sheet1!A2:B2","values":[["c","d"]]}
+		]`,
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("batch update: %v", err)
 	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		err := runKong(t, &SheetsBatchUpdateCmd{}, []string{
-			"s1",
-			"--input", "RAW",
-			"--include-values-in-response",
-			"--response-render", "UNFORMATTED_VALUE",
-			"--data-json", `[
-				{"range":"Sheet1\\!A1:B1","values":[["a","b"]]},
-				{"range":"Sheet1!A2:B2","values":[["c","d"]]}
-			]`,
-		}, newCmdJSONContext(t), &RootFlags{Account: "a@b.com"})
-		if err != nil {
-			t.Fatalf("batch update: %v", err)
-		}
-	})
 
 	if gotPath != "/spreadsheets/s1/values:batchUpdate" {
 		t.Fatalf("unexpected request path: %q", gotPath)
@@ -117,8 +105,8 @@ func TestSheetsBatchUpdateCmd_JSON(t *testing.T) {
 			UpdatedRange string `json:"updatedRange"`
 		} `json:"responses"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("decode output: %v\nout=%s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("decode output: %v\nout=%s", err, out.String())
 	}
 	if payload.SpreadsheetID != "s1" || payload.TotalUpdatedCells != 4 || len(payload.Responses) != 2 {
 		t.Fatalf("unexpected output: %#v", payload)
@@ -126,23 +114,20 @@ func TestSheetsBatchUpdateCmd_JSON(t *testing.T) {
 }
 
 func TestSheetsBatchUpdateCmd_DryRunSkipsService(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) {
-		t.Fatal("newSheetsService should not be called during dry-run")
+	var out bytes.Buffer
+	ctx := withSheetsTestServiceFactory(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), func(context.Context, string) (*sheets.Service, error) {
+		t.Fatal("Sheets service should not be called during dry-run")
 		return nil, errors.New("unexpected sheets service call")
-	}
-
-	out := captureStdout(t, func() {
-		err := runKong(t, &SheetsBatchUpdateCmd{}, []string{
-			"s1",
-			"--data-json", `[{"range":"Sheet1!A1","values":[["a"]]}]`,
-		}, newCmdJSONContext(t), &RootFlags{DryRun: true, NoInput: true})
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("dry-run batch update: %v", err)
-		}
 	})
+
+	err := runKong(t, &SheetsBatchUpdateCmd{}, []string{
+		"s1",
+		"--data-json", `[{"range":"Sheet1!A1","values":[["a"]]}]`,
+	}, ctx, &RootFlags{DryRun: true, NoInput: true})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("dry-run batch update: %v", err)
+	}
 
 	var payload struct {
 		DryRun  bool   `json:"dry_run"`
@@ -155,8 +140,8 @@ func TestSheetsBatchUpdateCmd_DryRunSkipsService(t *testing.T) {
 			} `json:"data"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("decode dry-run: %v\nout=%s", err, out)
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("decode dry-run: %v\nout=%s", err, out.String())
 	}
 	if !payload.DryRun || payload.Op != "sheets.batch-update" || payload.Request.SpreadsheetID != "s1" {
 		t.Fatalf("unexpected dry-run payload: %#v", payload)

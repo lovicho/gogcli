@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
@@ -17,9 +16,10 @@ func dryRunExit(ctx context.Context, flags *RootFlags, op string, request any) e
 		return nil
 	}
 
+	out := stdoutWriter(ctx)
 	if outfmt.IsJSON(ctx) {
 		jsonCtx := outfmt.WithJSONTransform(ctx, outfmt.JSONTransform{})
-		_ = outfmt.WriteJSON(jsonCtx, os.Stdout, map[string]any{
+		_ = outfmt.WriteJSON(jsonCtx, out, map[string]any{
 			"dry_run": true,
 			"op":      op,
 			"request": request,
@@ -28,11 +28,11 @@ func dryRunExit(ctx context.Context, flags *RootFlags, op string, request any) e
 	}
 
 	if outfmt.IsPlain(ctx) {
-		fmt.Fprintf(os.Stdout, "dry_run\ttrue\n")
-		fmt.Fprintf(os.Stdout, "op\t%s\n", op)
+		fmt.Fprintf(out, "dry_run\ttrue\n")
+		fmt.Fprintf(out, "op\t%s\n", op)
 		if request != nil {
 			if b, err := json.Marshal(request); err == nil {
-				fmt.Fprintf(os.Stdout, "request_json\t%s\n", string(b))
+				fmt.Fprintf(out, "request_json\t%s\n", string(b))
 			}
 		}
 		return &ExitError{Code: 0, Err: nil}
@@ -48,6 +48,6 @@ func dryRunExit(ctx context.Context, flags *RootFlags, op string, request any) e
 		return &ExitError{Code: 0, Err: nil}
 	}
 
-	fmt.Printf("Dry run: would %s\n", op)
+	fmt.Fprintf(out, "Dry run: would %s\n", op)
 	return &ExitError{Code: 0, Err: nil}
 }

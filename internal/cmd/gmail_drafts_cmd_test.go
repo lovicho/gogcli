@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -13,16 +13,9 @@ import (
 	"testing"
 
 	"google.golang.org/api/gmail/v1"
-	"google.golang.org/api/option"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestGmailDraftsListCmd_TextAndJSON(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts") && r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
@@ -39,48 +32,23 @@ func TestGmailDraftsListCmd_TextAndJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	textOut := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{})
-
-		cmd := &GmailDraftsListCmd{}
-		if err := runKong(t, cmd, []string{}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
-	if !strings.Contains(textOut, "ID") || !strings.Contains(textOut, "d1") {
-		t.Fatalf("unexpected text: %q", textOut)
+	var textOut bytes.Buffer
+	textCtx := withGmailTestService(newCmdRuntimeOutputContext(t, &textOut, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsListCmd{}, []string{}, textCtx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !strings.Contains(textOut.String(), "ID") || !strings.Contains(textOut.String(), "d1") {
+		t.Fatalf("unexpected text: %q", textOut.String())
 	}
 
-	jsonOut := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		cmd := &GmailDraftsListCmd{}
-		if err := runKong(t, cmd, []string{}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	var jsonOut bytes.Buffer
+	jsonCtx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &jsonOut, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsListCmd{}, []string{}, jsonCtx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 
 	var parsed struct {
 		Drafts []struct {
@@ -90,7 +58,7 @@ func TestGmailDraftsListCmd_TextAndJSON(t *testing.T) {
 		} `json:"drafts"`
 		NextPageToken string `json:"nextPageToken"`
 	}
-	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if len(parsed.Drafts) != 2 || parsed.Drafts[0].ID != "d1" || parsed.NextPageToken != "next" {
@@ -99,9 +67,6 @@ func TestGmailDraftsListCmd_TextAndJSON(t *testing.T) {
 }
 
 func TestGmailDraftsGetCmd_Text(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	payloadText := base64.RawURLEncoding.EncodeToString([]byte("Hello"))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodGet {
@@ -134,47 +99,27 @@ func TestGmailDraftsGetCmd_Text(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{})
-
-		cmd := &GmailDraftsGetCmd{}
-		if err := runKong(t, cmd, []string{"d1"}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
-
-	if !strings.Contains(out, "Draft-ID:") || !strings.Contains(out, "Subject:") {
-		t.Fatalf("unexpected output: %q", out)
+	var out bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsGetCmd{}, []string{"d1"}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
 	}
-	if !strings.Contains(out, "Attachments:") || !strings.Contains(out, "file.txt") {
-		t.Fatalf("expected attachment output: %q", out)
+
+	if !strings.Contains(out.String(), "Draft-ID:") || !strings.Contains(out.String(), "Subject:") {
+		t.Fatalf("unexpected output: %q", out.String())
 	}
-	if !strings.Contains(out, "attachment\tfile.txt\t10 B\ttext/plain\tatt1") {
-		t.Fatalf("expected attachment line output: %q", out)
+	if !strings.Contains(out.String(), "Attachments:") || !strings.Contains(out.String(), "file.txt") {
+		t.Fatalf("expected attachment output: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "attachment\tfile.txt\t10 B\ttext/plain\tatt1") {
+		t.Fatalf("expected attachment line output: %q", out.String())
 	}
 }
 
 func TestGmailDraftsDeleteCmd_JSON(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodDelete {
 			w.WriteHeader(http.StatusNoContent)
@@ -184,37 +129,20 @@ func TestGmailDraftsDeleteCmd_JSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com", Force: true}
 
-	jsonOut := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		cmd := &GmailDraftsDeleteCmd{}
-		if err := runKong(t, cmd, []string{"d1"}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	var jsonOut bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &jsonOut, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsDeleteCmd{}, []string{"d1"}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 
 	var parsed struct {
 		Deleted bool   `json:"deleted"`
 		DraftID string `json:"draftId"`
 	}
-	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if !parsed.Deleted || parsed.DraftID != "d1" {
@@ -223,11 +151,7 @@ func TestGmailDraftsDeleteCmd_JSON(t *testing.T) {
 }
 
 func TestGmailDraftsCreateCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testing.T) {
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
 
 	for _, cmd := range []GmailDraftsCreateCmd{
@@ -246,11 +170,7 @@ func TestGmailDraftsCreateCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testin
 }
 
 func TestGmailDraftsUpdateCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testing.T) {
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
 	validTo := "a@example.com"
 	badTo := "bad\ncc:evil@example.com"
@@ -271,9 +191,6 @@ func TestGmailDraftsUpdateCmd_InvalidHeadersAreUsageErrorsBeforeDryRun(t *testin
 }
 
 func TestGmailDraftsSendCmd_Text(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/send") && r.Method == http.MethodPost {
 			w.Header().Set("Content-Type", "application/json")
@@ -287,41 +204,21 @@ func TestGmailDraftsSendCmd_Text(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{})
+	var out bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsSendCmd{}, []string{"d1"}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 
-		cmd := &GmailDraftsSendCmd{}
-		if err := runKong(t, cmd, []string{"d1"}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
-
-	if !strings.Contains(out, "message_id\tm1") || !strings.Contains(out, "thread_id\tt1") {
-		t.Fatalf("unexpected output: %q", out)
+	if !strings.Contains(out.String(), "message_id\tm1") || !strings.Contains(out.String(), "thread_id\tt1") {
+		t.Fatalf("unexpected output: %q", out.String())
 	}
 }
 
 func TestGmailDraftsCreateCmd_JSON(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts") && r.Method == http.MethodPost {
 			w.Header().Set("Content-Type", "application/json")
@@ -337,36 +234,20 @@ func TestGmailDraftsCreateCmd_JSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	jsonOut := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsCreateCmd{}, []string{"--to", "a@example.com", "--subject", "S", "--body", "Hello"}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	var jsonOut bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &jsonOut, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsCreateCmd{}, []string{"--to", "a@example.com", "--subject", "S", "--body", "Hello"}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 
 	var parsed struct {
 		DraftID  string `json:"draftId"`
 		ThreadID string `json:"threadId"`
 	}
-	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if parsed.DraftID != "d1" {
@@ -375,9 +256,6 @@ func TestGmailDraftsCreateCmd_JSON(t *testing.T) {
 }
 
 func TestGmailDraftsCreateCmd_NoTo(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts") && r.Method == http.MethodPost {
 			body, err := io.ReadAll(r.Body)
@@ -415,36 +293,16 @@ func TestGmailDraftsCreateCmd_NoTo(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	_ = captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsCreateCmd{}, []string{"--subject", "S", "--body", "Hello"}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsCreateCmd{}, []string{"--subject", "S", "--body", "Hello"}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 }
 
 func TestGmailDraftsCreateCmd_WithFromAndReply(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	attachPath := filepath.Join(t.TempDir(), "note.txt")
 	if err := os.WriteFile(attachPath, []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write attach: %v", err)
@@ -492,40 +350,24 @@ func TestGmailDraftsCreateCmd_WithFromAndReply(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	var jsonOut bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &jsonOut, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
+		"--to", "a@example.com",
+		"--subject", "S",
+		"--body", "Hello",
+		"--from", "alias@example.com",
+		"--reply-to-message-id", "m1",
+		"--attach", attachPath,
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
 	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	jsonOut := captureStdout(t, func() {
-		if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
-			"--to", "a@example.com",
-			"--subject", "S",
-			"--body", "Hello",
-			"--from", "alias@example.com",
-			"--reply-to-message-id", "m1",
-			"--attach", attachPath,
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
 	var parsed struct {
 		Attachments []mailAttachmentMetadata `json:"attachments"`
 	}
-	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
 	if len(parsed.Attachments) != 1 || parsed.Attachments[0].Filename != "note.txt" || parsed.Attachments[0].Size != 5 {
@@ -534,9 +376,6 @@ func TestGmailDraftsCreateCmd_WithFromAndReply(t *testing.T) {
 }
 
 func TestGmailDraftsCreateCmd_WithQuote(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	originalPlain := "Original plain line"
 	originalHTML := "<p>Original <b>HTML</b></p>"
 
@@ -620,42 +459,22 @@ func TestGmailDraftsCreateCmd_WithQuote(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	_ = captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
-			"--to", "a@example.com",
-			"--subject", "S",
-			"--body", "Hello reply",
-			"--reply-to-message-id", "m1",
-			"--quote",
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
+		"--to", "a@example.com",
+		"--subject", "S",
+		"--body", "Hello reply",
+		"--reply-to-message-id", "m1",
+		"--quote",
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 }
 
 func TestGmailDraftsCreateCmd_WithFromWorkspaceAliasNoVerificationStatus(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/settings/sendAs/workspace-alias@example.com") && r.Method == http.MethodGet:
@@ -700,40 +519,20 @@ func TestGmailDraftsCreateCmd_WithFromWorkspaceAliasNoVerificationStatus(t *test
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
+		"--to", "a@example.com",
+		"--subject", "S",
+		"--body", "Hello",
+		"--from", "workspace-alias@example.com",
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
 	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &GmailDraftsCreateCmd{}, []string{
-			"--to", "a@example.com",
-			"--subject", "S",
-			"--body", "Hello",
-			"--from", "workspace-alias@example.com",
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
 }
 
 func TestGmailDraftsUpdateCmd_JSON(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	attData := []byte("attachment")
 	attachPath := filepath.Join(t.TempDir(), "note.txt")
 	if err := os.WriteFile(attachPath, attData, 0o600); err != nil {
@@ -826,46 +625,30 @@ func TestGmailDraftsUpdateCmd_JSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	jsonOut := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
-			"d1",
-			"--to", "a@example.com",
-			"--cc", "cc@example.com",
-			"--bcc", "bcc@example.com",
-			"--subject", "Updated",
-			"--body", "Hello",
-			"--reply-to", "reply@example.com",
-			"--attach", attachPath,
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	var jsonOut bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &jsonOut, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
+		"d1",
+		"--to", "a@example.com",
+		"--cc", "cc@example.com",
+		"--bcc", "bcc@example.com",
+		"--subject", "Updated",
+		"--body", "Hello",
+		"--reply-to", "reply@example.com",
+		"--attach", attachPath,
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 
 	var parsed struct {
 		DraftID     string                   `json:"draftId"`
 		ThreadID    string                   `json:"threadId"`
 		Attachments []mailAttachmentMetadata `json:"attachments"`
 	}
-	if err := json.Unmarshal([]byte(jsonOut), &parsed); err != nil {
+	if err := json.Unmarshal(jsonOut.Bytes(), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if parsed.DraftID != "d1" || parsed.ThreadID != "t1" {
@@ -877,9 +660,6 @@ func TestGmailDraftsUpdateCmd_JSON(t *testing.T) {
 }
 
 func TestGmailDraftsUpdateCmd_PreservesToWhenNotProvided(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodGet:
@@ -947,40 +727,20 @@ func TestGmailDraftsUpdateCmd_PreservesToWhenNotProvided(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	_ = captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
-			"d1",
-			"--subject", "Updated",
-			"--body", "Hello",
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
+		"d1",
+		"--subject", "Updated",
+		"--body", "Hello",
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 }
 
 func TestGmailDraftsUpdateCmd_WithQuoteFromExistingThread(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	originalPlain := "Original thread message"
 	originalHTML := "<div>Original <i>thread</i> HTML</div>"
 
@@ -1127,41 +887,21 @@ func TestGmailDraftsUpdateCmd_WithQuoteFromExistingThread(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	_ = captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
-			"d1",
-			"--subject", "Updated",
-			"--body", "Updated body",
-			"--quote",
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
+		"d1",
+		"--subject", "Updated",
+		"--body", "Updated body",
+		"--quote",
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 }
 
 func TestGmailDraftsUpdateCmd_QuoteRequiresNonDraftNonSelfThreadMessage(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodGet:
@@ -1220,24 +960,10 @@ func TestGmailDraftsUpdateCmd_QuoteRequiresNonDraftNonSelfThreadMessage(t *testi
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
-
-	err = runKong(t, &GmailDraftsUpdateCmd{}, []string{
+	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+	err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
 		"d1",
 		"--subject", "Updated",
 		"--body", "Updated body",
@@ -1249,9 +975,6 @@ func TestGmailDraftsUpdateCmd_QuoteRequiresNonDraftNonSelfThreadMessage(t *testi
 }
 
 func TestGmailDraftsUpdateCmd_WithQuoteAndReplyToMessageID(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	originalPlain := "Quoted from explicit message id"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1337,43 +1060,23 @@ func TestGmailDraftsUpdateCmd_WithQuoteAndReplyToMessageID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
 
-	_ = captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
-			"d1",
-			"--to", "keep@example.com",
-			"--subject", "Updated",
-			"--body", "Updated body",
-			"--reply-to-message-id", "m1",
-			"--quote",
-		}, ctx, flags); err != nil {
-			t.Fatalf("execute: %v", err)
-		}
-	})
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
+		"d1",
+		"--to", "keep@example.com",
+		"--subject", "Updated",
+		"--body", "Updated body",
+		"--reply-to-message-id", "m1",
+		"--quote",
+	}, ctx, flags); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
 }
 
 func TestGmailDraftsUpdateCmd_QuoteRequiresReplyContext(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/drafts/d1") && r.Method == http.MethodGet:
@@ -1397,24 +1100,10 @@ func TestGmailDraftsUpdateCmd_QuoteRequiresReplyContext(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
-
-	err = runKong(t, &GmailDraftsUpdateCmd{}, []string{
+	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+	err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
 		"d1",
 		"--subject", "Updated",
 		"--body", "Updated body",
@@ -1428,9 +1117,6 @@ func TestGmailDraftsUpdateCmd_QuoteRequiresReplyContext(t *testing.T) {
 // --thread-id on drafts create anchors In-Reply-To/References to the thread's
 // latest message and stamps the draft's threadId (parity with `gmail send`).
 func TestGmailDraftsCreateCmd_WithThreadID(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	var posted gmail.Draft
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -1470,27 +1156,14 @@ func TestGmailDraftsCreateCmd_WithThreadID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(), option.WithHTTPClient(srv.Client()), option.WithEndpoint(srv.URL+"/"))
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if runErr := runKong(t, &GmailDraftsCreateCmd{}, []string{
+		"--to", "a@example.com", "--subject", "Re: hi", "--body", "Hello", "--thread-id", "t1",
+	}, ctx, flags); runErr != nil {
+		t.Fatalf("execute: %v", runErr)
 	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	_ = captureStdout(t, func() {
-		if runErr := runKong(t, &GmailDraftsCreateCmd{}, []string{
-			"--to", "a@example.com", "--subject", "Re: hi", "--body", "Hello", "--thread-id", "t1",
-		}, ctx, flags); runErr != nil {
-			t.Fatalf("execute: %v", runErr)
-		}
-	})
 
 	if posted.Message == nil {
 		t.Fatal("no draft posted")
@@ -1514,11 +1187,7 @@ func TestGmailDraftsCreateCmd_WithThreadID(t *testing.T) {
 // --thread-id and --reply-to-message-id are mutually exclusive on drafts create.
 func TestGmailDraftsCreateCmd_ThreadIDAndMessageIDMutuallyExclusive(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 	err := runKong(t, &GmailDraftsCreateCmd{}, []string{
 		"--subject", "S", "--body", "B", "--reply-to-message-id", "m1", "--thread-id", "t1",
 	}, ctx, flags)
@@ -1530,9 +1199,6 @@ func TestGmailDraftsCreateCmd_ThreadIDAndMessageIDMutuallyExclusive(t *testing.T
 // A caller-provided --thread-id on drafts update overrides the draft's own
 // existing thread when anchoring reply headers.
 func TestGmailDraftsUpdateCmd_WithThreadIDOverridesExisting(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	var posted gmail.Draft
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -1573,27 +1239,14 @@ func TestGmailDraftsUpdateCmd_WithThreadIDOverridesExisting(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(), option.WithHTTPClient(srv.Client()), option.WithEndpoint(srv.URL+"/"))
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), svc)
+	if runErr := runKong(t, &GmailDraftsUpdateCmd{}, []string{
+		"d1", "--to", "a@example.com", "--body", "Hello", "--thread-id", "t1",
+	}, ctx, flags); runErr != nil {
+		t.Fatalf("execute: %v", runErr)
 	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	_ = captureStdout(t, func() {
-		if runErr := runKong(t, &GmailDraftsUpdateCmd{}, []string{
-			"d1", "--to", "a@example.com", "--body", "Hello", "--thread-id", "t1",
-		}, ctx, flags); runErr != nil {
-			t.Fatalf("execute: %v", runErr)
-		}
-	})
 
 	if posted.Message == nil {
 		t.Fatal("no draft posted")
@@ -1660,25 +1313,14 @@ func draftUpdateAttachmentServer(t *testing.T, posted *gmail.Draft, attBytesHit 
 
 func runDraftUpdate(t *testing.T, srv *httptest.Server, args []string) string {
 	t.Helper()
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(), option.WithHTTPClient(srv.Client()), option.WithEndpoint(srv.URL+"/"))
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
+	svc := newGmailServiceFromServer(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	var out bytes.Buffer
+	ctx := withGmailTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	if runErr := runKong(t, &GmailDraftsUpdateCmd{}, args, ctx, flags); runErr != nil {
+		t.Fatalf("execute: %v", runErr)
 	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-	return captureStdout(t, func() {
-		if runErr := runKong(t, &GmailDraftsUpdateCmd{}, args, ctx, flags); runErr != nil {
-			t.Fatalf("execute: %v", runErr)
-		}
-	})
+	return out.String()
 }
 
 // Omitting --attach on update preserves the draft's existing attachments.
@@ -1772,11 +1414,7 @@ func TestGmailDraftsUpdateCmd_AttachAndClearMutuallyExclusive(t *testing.T) {
 	if err := os.WriteFile(attachPath, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write attach: %v", err)
 	}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 	flags := &RootFlags{Account: "a@b.com"}
 	err := runKong(t, &GmailDraftsUpdateCmd{}, []string{
 		"d1", "--subject", "S", "--body", "B", "--attach", attachPath, "--clear-attachments",

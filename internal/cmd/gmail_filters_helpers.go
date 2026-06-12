@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -40,7 +39,7 @@ var sleepBeforeGmailFilterRetry = func(ctx context.Context, d time.Duration) err
 func writeGmailFiltersList(ctx context.Context, filters []*gmail.Filter) error {
 	filters = normalizeGmailFilters(filters)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"filters": filters})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"filters": filters})
 	}
 
 	u := ui.FromContext(ctx)
@@ -49,7 +48,7 @@ func writeGmailFiltersList(ctx context.Context, filters []*gmail.Filter) error {
 		return nil
 	}
 
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	tw := tabwriter.NewWriter(stdoutWriter(ctx), 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tFROM\tTO\tSUBJECT\tQUERY")
 	for _, f := range filters {
 		criteria := f.Criteria
@@ -82,7 +81,7 @@ func normalizeGmailFilters(filters []*gmail.Filter) []*gmail.Filter {
 
 func writeGmailFilter(ctx context.Context, filter *gmail.Filter) error {
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"filter": filter})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"filter": filter})
 	}
 	printGmailFilterDetails(ui.FromContext(ctx), filter, true)
 	return nil
@@ -90,7 +89,7 @@ func writeGmailFilter(ctx context.Context, filter *gmail.Filter) error {
 
 func writeCreatedGmailFilter(ctx context.Context, filter *gmail.Filter) error {
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"filter": filter})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"filter": filter})
 	}
 
 	u := ui.FromContext(ctx)

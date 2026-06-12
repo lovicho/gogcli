@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 	"strconv"
 	"strings"
 
@@ -53,7 +52,7 @@ func (c *SheetsReorderTabCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -102,7 +101,7 @@ func (c *SheetsReorderTabCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if target.Title != "" {
 			payload["title"] = target.Title
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	if target.Title != "" {

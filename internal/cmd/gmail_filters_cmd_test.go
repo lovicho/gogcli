@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,10 +14,8 @@ import (
 	"time"
 
 	"google.golang.org/api/gmail/v1"
-	"google.golang.org/api/option"
 
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
+	"github.com/steipete/gogcli/internal/app"
 )
 
 func TestGmailFiltersCreate_Validation(t *testing.T) {
@@ -45,26 +42,20 @@ func TestGmailFiltersCreate_Forward_NoInputRequiresForce(t *testing.T) {
 }
 
 func TestGmailFiltersCreate_InvalidForwardFailsBeforeDryRun(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-	newGmailService = func(context.Context, string) (*gmail.Service, error) {
-		t.Fatalf("expected validation to fail before creating gmail service")
-		return nil, errors.New("unexpected gmail service call")
+	result := executeWithTestRuntime(t,
+		[]string{"--account", "a@b.com", "--dry-run", "gmail", "filters", "create", "--from", "a@example.com", "--forward", "nope"},
+		&app.Runtime{Services: app.Services{Gmail: func(context.Context, string) (*gmail.Service, error) {
+			t.Fatal("expected validation to fail before creating gmail service")
+			return nil, errors.New("unexpected gmail service call")
+		}}},
+	)
+	var exitErr *ExitError
+	if !errors.As(result.err, &exitErr) || exitErr.Code != 2 || !strings.Contains(result.err.Error(), "invalid --forward") {
+		t.Fatalf("unexpected err: %v", result.err)
 	}
-
-	_ = captureStderr(t, func() {
-		err := Execute([]string{"--account", "a@b.com", "--dry-run", "gmail", "filters", "create", "--from", "a@example.com", "--forward", "nope"})
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "invalid --forward") {
-			t.Fatalf("unexpected err: %v", err)
-		}
-	})
 }
 
 func TestGmailFilters_TextPaths(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	var createReq gmail.Filter
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -133,34 +124,13 @@ func TestGmailFilters_TextPaths(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com", Force: true}
-
-	_ = captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		if err := runKong(t, &GmailFiltersListCmd{}, []string{}, ctx, flags); err != nil {
-			t.Fatalf("list: %v", err)
-		}
-
-		if err := runKong(t, &GmailFiltersGetCmd{}, []string{"f1"}, ctx, flags); err != nil {
-			t.Fatalf("get: %v", err)
-		}
-
-		if err := runKong(t, &GmailFiltersCreateCmd{}, []string{
+	svc := newGmailServiceFromServer(t, srv)
+	for name, args := range map[string][]string{
+		"list": {"--plain", "--account", "a@b.com", "gmail", "filters", "list"},
+		"get":  {"--plain", "--account", "a@b.com", "gmail", "filters", "get", "f1"},
+		"create": {
+			"--plain", "--force", "--account", "a@b.com",
+			"gmail", "filters", "create",
 			"--from", "a@example.com",
 			"--to", "b@example.com",
 			"--subject", "hi",
@@ -175,14 +145,14 @@ func TestGmailFilters_TextPaths(t *testing.T) {
 			"--trash",
 			"--never-spam",
 			"--important",
-		}, ctx, flags); err != nil {
-			t.Fatalf("create: %v", err)
+		},
+		"delete": {"--plain", "--force", "--account", "a@b.com", "gmail", "filters", "delete", "f2"},
+	} {
+		result := executeWithGmailTestService(t, args, svc)
+		if result.err != nil {
+			t.Fatalf("%s: %v\nstderr=%q", name, result.err, result.stderr)
 		}
-
-		if err := runKong(t, &GmailFiltersDeleteCmd{}, []string{"f2"}, ctx, flags); err != nil {
-			t.Fatalf("delete: %v", err)
-		}
-	})
+	}
 
 	if createReq.Action == nil || len(createReq.Action.AddLabelIds) == 0 {
 		t.Fatalf("expected add labels in create request")
@@ -190,9 +160,6 @@ func TestGmailFilters_TextPaths(t *testing.T) {
 }
 
 func TestGmailFiltersList_NoFilters(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/settings/filters") {
 			w.Header().Set("Content-Type", "application/json")
@@ -203,34 +170,20 @@ func TestGmailFiltersList_NoFilters(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	result := executeWithGmailTestService(
+		t,
+		[]string{"--plain", "--account", "a@b.com", "gmail", "filters", "list"},
+		newGmailServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if result.err != nil {
+		t.Fatalf("list: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStderr(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		if err := runKong(t, &GmailFiltersListCmd{}, []string{}, ctx, flags); err != nil {
-			t.Fatalf("list: %v", err)
-		}
-	})
+	if !strings.Contains(result.stderr, "No filters") {
+		t.Fatalf("unexpected stderr: %q", result.stderr)
+	}
 }
 
 func TestGmailFiltersList_JSONEmptyArray(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/settings/filters") {
 			w.Header().Set("Content-Type", "application/json")
@@ -241,32 +194,23 @@ func TestGmailFiltersList_JSONEmptyArray(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	result := executeWithGmailTestService(
+		t,
+		[]string{"--json", "--account", "a@b.com", "gmail", "filters", "list"},
+		newGmailServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if result.err != nil {
+		t.Fatalf("list: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com", JSON: true}
-	ctx := outfmt.WithMode(newQuietUIContext(t), outfmt.Mode{JSON: true})
-	out := captureStdout(t, func() {
-		if err := runKong(t, &GmailFiltersListCmd{}, []string{}, ctx, flags); err != nil {
-			t.Fatalf("list: %v", err)
-		}
-	})
 
 	var parsed struct {
 		Filters []json.RawMessage `json:"filters"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Filters == nil {
-		t.Fatalf("filters must be an empty array, got nil: %s", out)
+		t.Fatalf("filters must be an empty array, got nil: %s", result.stdout)
 	}
 	if len(parsed.Filters) != 0 {
 		t.Fatalf("filters len = %d, want 0", len(parsed.Filters))
@@ -274,9 +218,6 @@ func TestGmailFiltersList_JSONEmptyArray(t *testing.T) {
 }
 
 func TestGmailFiltersExport_JSONEmptyArray(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/gmail/v1/users/me/settings/filters") && r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
@@ -287,32 +228,23 @@ func TestGmailFiltersExport_JSONEmptyArray(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	result := executeWithGmailTestService(
+		t,
+		[]string{"--plain", "--account", "a@b.com", "gmail", "filters", "export", "--format", "json"},
+		newGmailServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if result.err != nil {
+		t.Fatalf("export: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com"}
-	ctx := newQuietUIContext(t)
-	out := captureStdout(t, func() {
-		if err := runKong(t, &GmailFiltersExportCmd{}, []string{"--format", "json"}, ctx, flags); err != nil {
-			t.Fatalf("export: %v", err)
-		}
-	})
 
 	var parsed struct {
 		Filters []json.RawMessage `json:"filters"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if parsed.Filters == nil {
-		t.Fatalf("filters must be an empty array, got nil: %s", out)
+		t.Fatalf("filters must be an empty array, got nil: %s", result.stdout)
 	}
 	if len(parsed.Filters) != 0 {
 		t.Fatalf("filters len = %d, want 0", len(parsed.Filters))
@@ -320,10 +252,8 @@ func TestGmailFiltersExport_JSONEmptyArray(t *testing.T) {
 }
 
 func TestGmailFiltersExport(t *testing.T) {
-	origNew := newGmailService
 	origNow := nowGmailFiltersExport
 	t.Cleanup(func() {
-		newGmailService = origNew
 		nowGmailFiltersExport = origNow
 	})
 	nowGmailFiltersExport = func() time.Time { return time.Date(2026, 5, 5, 1, 2, 3, 0, time.UTC) }
@@ -370,37 +300,23 @@ func TestGmailFiltersExport(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	svc := newGmailServiceFromServer(t, srv)
 
 	t.Run("stdout xml", func(t *testing.T) {
-		out := captureStdout(t, func() {
-			if err := runKong(t, &GmailFiltersExportCmd{}, []string{}, ctx, flags); err != nil {
-				t.Fatalf("export stdout: %v", err)
-			}
-		})
-		if !strings.HasPrefix(out, xml.Header) {
-			t.Fatalf("missing XML header: %q", out)
+		result := executeWithGmailTestService(t, []string{
+			"--plain", "--account", "a@b.com", "gmail", "filters", "export",
+		}, svc)
+		if result.err != nil {
+			t.Fatalf("export stdout: %v\nstderr=%q", result.err, result.stderr)
 		}
-		if !strings.Contains(out, `xmlns:apps="http://schemas.google.com/apps/2006"`) {
-			t.Fatalf("missing apps namespace: %q", out)
+		if !strings.HasPrefix(result.stdout, xml.Header) {
+			t.Fatalf("missing XML header: %q", result.stdout)
 		}
-		if !strings.Contains(out, `name="label" value="Notifications &amp; Alerts"`) {
-			t.Fatalf("missing escaped label name: %q", out)
+		if !strings.Contains(result.stdout, `xmlns:apps="http://schemas.google.com/apps/2006"`) {
+			t.Fatalf("missing apps namespace: %q", result.stdout)
+		}
+		if !strings.Contains(result.stdout, `name="label" value="Notifications &amp; Alerts"`) {
+			t.Fatalf("missing escaped label name: %q", result.stdout)
 		}
 		for _, want := range []string{
 			`name="from" value="a@example.com"`,
@@ -420,12 +336,12 @@ func TestGmailFiltersExport(t *testing.T) {
 			`name="shouldNeverSpam" value="true"`,
 			`name="forwardTo" value="f@example.com"`,
 		} {
-			if !strings.Contains(out, want) {
-				t.Fatalf("missing %s in XML:\n%s", want, out)
+			if !strings.Contains(result.stdout, want) {
+				t.Fatalf("missing %s in XML:\n%s", want, result.stdout)
 			}
 		}
 		var parsed gmailFiltersXMLFeed
-		if err := xml.Unmarshal([]byte(out), &parsed); err != nil {
+		if err := xml.Unmarshal([]byte(result.stdout), &parsed); err != nil {
 			t.Fatalf("xml parse: %v", err)
 		}
 		if parsed.Author.Email != "a@b.com" || len(parsed.Entries) != 1 {
@@ -434,13 +350,14 @@ func TestGmailFiltersExport(t *testing.T) {
 	})
 
 	t.Run("stdout json compatibility", func(t *testing.T) {
-		out := captureStdout(t, func() {
-			if err := runKong(t, &GmailFiltersExportCmd{}, []string{"--format", "json"}, ctx, flags); err != nil {
-				t.Fatalf("export stdout: %v", err)
-			}
-		})
+		result := executeWithGmailTestService(t, []string{
+			"--plain", "--account", "a@b.com", "gmail", "filters", "export", "--format", "json",
+		}, svc)
+		if result.err != nil {
+			t.Fatalf("export stdout: %v\nstderr=%q", result.err, result.stderr)
+		}
 		var payload map[string]any
-		if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		if err := json.Unmarshal([]byte(result.stdout), &payload); err != nil {
 			t.Fatalf("json parse: %v", err)
 		}
 		filters, ok := payload["filters"].([]any)
@@ -450,16 +367,14 @@ func TestGmailFiltersExport(t *testing.T) {
 	})
 
 	t.Run("global json keeps old stdout json", func(t *testing.T) {
-		jsonCtx := outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-		jsonFlags := *flags
-		jsonFlags.JSON = true
-		out := captureStdout(t, func() {
-			if err := runKong(t, &GmailFiltersExportCmd{}, []string{}, jsonCtx, &jsonFlags); err != nil {
-				t.Fatalf("export stdout: %v", err)
-			}
-		})
+		result := executeWithGmailTestService(t, []string{
+			"--json", "--account", "a@b.com", "gmail", "filters", "export",
+		}, svc)
+		if result.err != nil {
+			t.Fatalf("export stdout: %v\nstderr=%q", result.err, result.stderr)
+		}
 		var payload map[string]any
-		if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		if err := json.Unmarshal([]byte(result.stdout), &payload); err != nil {
 			t.Fatalf("json parse: %v", err)
 		}
 		filters, ok := payload["filters"].([]any)
@@ -470,8 +385,11 @@ func TestGmailFiltersExport(t *testing.T) {
 
 	t.Run("file xml export", func(t *testing.T) {
 		path := t.TempDir() + "/mailFilters.xml"
-		if err := runKong(t, &GmailFiltersExportCmd{}, []string{"--out", path}, ctx, flags); err != nil {
-			t.Fatalf("export file: %v", err)
+		result := executeWithGmailTestService(t, []string{
+			"--plain", "--account", "a@b.com", "gmail", "filters", "export", "--out", path,
+		}, svc)
+		if result.err != nil {
+			t.Fatalf("export file: %v\nstderr=%q", result.err, result.stderr)
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -484,8 +402,11 @@ func TestGmailFiltersExport(t *testing.T) {
 
 	t.Run("file json export", func(t *testing.T) {
 		path := t.TempDir() + "/filters.json"
-		if err := runKong(t, &GmailFiltersExportCmd{}, []string{"--format", "json", "--out", path}, ctx, flags); err != nil {
-			t.Fatalf("export file: %v", err)
+		result := executeWithGmailTestService(t, []string{
+			"--plain", "--account", "a@b.com", "gmail", "filters", "export", "--format", "json", "--out", path,
+		}, svc)
+		if result.err != nil {
+			t.Fatalf("export file: %v\nstderr=%q", result.err, result.stderr)
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
@@ -499,10 +420,8 @@ func TestGmailFiltersExport(t *testing.T) {
 }
 
 func TestGmailFiltersCreate_RetriesFailedPrecondition(t *testing.T) {
-	origNew := newGmailService
 	origSleep := sleepBeforeGmailFilterRetry
 	t.Cleanup(func() {
-		newGmailService = origNew
 		sleepBeforeGmailFilterRetry = origSleep
 	})
 
@@ -544,31 +463,15 @@ func TestGmailFiltersCreate_RetriesFailedPrecondition(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	result := executeWithGmailTestService(t, []string{
+		"--plain", "--force", "--account", "a@b.com",
+		"gmail", "filters", "create",
+		"--query", "subject:\"retry-me\"",
+		"--archive",
+	}, newGmailServiceFromServer(t, srv))
+	if result.err != nil {
+		t.Fatalf("create with retry: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com", Force: true}
-	captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		if err := runKong(t, &GmailFiltersCreateCmd{}, []string{
-			"--query", "subject:\"retry-me\"",
-			"--archive",
-		}, ctx, flags); err != nil {
-			t.Fatalf("create with retry: %v", err)
-		}
-	})
 
 	if posts.Load() != 3 {
 		t.Fatalf("expected 3 create attempts, got %d", posts.Load())
@@ -576,9 +479,6 @@ func TestGmailFiltersCreate_RetriesFailedPrecondition(t *testing.T) {
 }
 
 func TestGmailFiltersCreate_DuplicateReturnsExistingFilter(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	var (
 		posts int
 		lists int
@@ -623,31 +523,15 @@ func TestGmailFiltersCreate_DuplicateReturnsExistingFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	result := executeWithGmailTestService(t, []string{
+		"--json", "--force", "--account", "a@b.com",
+		"gmail", "filters", "create",
+		"--query", "subject:\"duplicate-me\"",
+		"--archive",
+	}, newGmailServiceFromServer(t, srv))
+	if result.err != nil {
+		t.Fatalf("create duplicate: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	flags := &RootFlags{Account: "a@b.com", Force: true, JSON: true}
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(outfmt.WithMode(context.Background(), outfmt.Mode{JSON: true}), u)
-
-		if err := runKong(t, &GmailFiltersCreateCmd{}, []string{
-			"--query", "subject:\"duplicate-me\"",
-			"--archive",
-		}, ctx, flags); err != nil {
-			t.Fatalf("create duplicate: %v", err)
-		}
-	})
 
 	if posts != 1 {
 		t.Fatalf("expected 1 create attempt, got %d", posts)
@@ -655,7 +539,7 @@ func TestGmailFiltersCreate_DuplicateReturnsExistingFilter(t *testing.T) {
 	if lists != 1 {
 		t.Fatalf("expected 1 filters list lookup, got %d", lists)
 	}
-	if !strings.Contains(out, "\"f-existing\"") {
-		t.Fatalf("expected existing filter output, got %q", out)
+	if !strings.Contains(result.stdout, "\"f-existing\"") {
+		t.Fatalf("expected existing filter output, got %q", result.stdout)
 	}
 }

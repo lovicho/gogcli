@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 	"strings"
 
 	"google.golang.org/api/drive/v3"
@@ -45,7 +44,7 @@ func (c *DriveShortcutCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 	if err != nil {
 		return err
 	}
-	svc, err := newDriveService(ctx, account)
+	svc, err := driveService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -82,7 +81,7 @@ func (c *DriveShortcutCreateCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"shortcut": created})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"shortcut": created})
 	}
 
 	u.Out().Linef("id\t%s", created.Id)

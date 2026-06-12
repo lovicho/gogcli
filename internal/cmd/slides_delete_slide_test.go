@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,14 +12,9 @@ import (
 
 	"google.golang.org/api/option"
 	"google.golang.org/api/slides/v1"
-
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestSlidesDeleteSlide(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	var deletedObjectID string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -52,36 +48,24 @@ func TestSlidesDeleteSlide(t *testing.T) {
 	if err != nil {
 		t.Fatalf("slides.NewService: %v", err)
 	}
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
 
 	flags := &RootFlags{Account: "a@b.com", Force: true}
+	var out bytes.Buffer
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
 
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		cmd := &SlidesDeleteSlideCmd{
-			PresentationID: "pres1",
-			SlideID:        "slide_abc",
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-
-	_ = out
+	cmd := &SlidesDeleteSlideCmd{
+		PresentationID: "pres1",
+		SlideID:        "slide_abc",
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 	if deletedObjectID != "slide_abc" {
 		t.Errorf("expected delete of slide_abc, got %q", deletedObjectID)
 	}
 }
 
 func TestSlidesDeleteSlide_JSON(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -104,28 +88,25 @@ func TestSlidesDeleteSlide_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("slides.NewService: %v", err)
 	}
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
 
 	flags := &RootFlags{Account: "a@b.com", Force: true}
-	ctx := newCmdJSONContext(t)
-
-	out := captureStdout(t, func() {
-		cmd := &SlidesDeleteSlideCmd{
-			PresentationID: "pres1",
-			SlideID:        "slide_abc",
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	var out bytes.Buffer
+	ctx := withSlidesTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	cmd := &SlidesDeleteSlideCmd{
+		PresentationID: "pres1",
+		SlideID:        "slide_abc",
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	var got struct {
 		PresentationID string `json:"presentationId"`
 		SlideObjectID  string `json:"slideObjectId"`
 		Deleted        bool   `json:"deleted"`
 	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("JSON parse: %v\noutput: %q", err, out)
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("JSON parse: %v\noutput: %q", err, out.String())
 	}
 	if got.PresentationID != "pres1" || got.SlideObjectID != "slide_abc" || !got.Deleted {
 		t.Fatalf("unexpected JSON output: %#v", got)
@@ -133,16 +114,15 @@ func TestSlidesDeleteSlide_JSON(t *testing.T) {
 }
 
 func TestSlidesDeleteSlide_NoInputRequiresForce(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
-		t.Fatal("slides service should not be created without --force")
-		return nil, context.Canceled
-	}
+	ctx := withSlidesTestServiceFactory(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		func(context.Context, string) (*slides.Service, error) {
+			t.Fatal("slides service should not be created without --force")
+			return nil, context.Canceled
+		},
+	)
 
 	flags := &RootFlags{Account: "a@b.com", NoInput: true}
-	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
 
 	cmd := &SlidesDeleteSlideCmd{
 		PresentationID: "pres1",
@@ -155,20 +135,14 @@ func TestSlidesDeleteSlide_NoInputRequiresForce(t *testing.T) {
 }
 
 func TestSlidesDeleteSlide_EmptyID(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
-		t.Fatal("slides service should not be created")
-		return nil, context.Canceled
-	}
-
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestServiceFactory(
+		newCmdRuntimeOutputContext(t, io.Discard, io.Discard),
+		func(context.Context, string) (*slides.Service, error) {
+			t.Fatal("slides service should not be created")
+			return nil, context.Canceled
+		},
+	)
 
 	cmd := &SlidesDeleteSlideCmd{
 		PresentationID: "pres1",

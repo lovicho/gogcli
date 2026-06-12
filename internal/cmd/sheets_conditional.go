@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -71,7 +70,7 @@ func (c *SheetsConditionalAddCmd) Run(ctx context.Context, flags *RootFlags) err
 	if err != nil {
 		return err
 	}
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -105,7 +104,7 @@ func (c *SheetsConditionalAddCmd) Run(ctx context.Context, flags *RootFlags) err
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"spreadsheetId": spreadsheetID,
 			"range":         rangeSpec,
 			"type":          conditionType,
@@ -132,7 +131,7 @@ func (c *SheetsConditionalListCmd) Run(ctx context.Context, flags *RootFlags) er
 		return usage("empty spreadsheetId")
 	}
 
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -146,7 +145,7 @@ func (c *SheetsConditionalListCmd) Run(ctx context.Context, flags *RootFlags) er
 
 	items := conditionalRuleItems(resp, strings.TrimSpace(c.Sheet))
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"rules": items})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"rules": items})
 	}
 	if len(items) == 0 {
 		u.Err().Println("No conditional format rules")
@@ -201,7 +200,7 @@ func (c *SheetsConditionalClearCmd) Run(ctx context.Context, flags *RootFlags) e
 	if err != nil {
 		return err
 	}
-	svc, err := newSheetsService(ctx, account)
+	svc, err := sheetsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -223,7 +222,7 @@ func (c *SheetsConditionalClearCmd) Run(ctx context.Context, flags *RootFlags) e
 	}
 	if len(requests) == 0 {
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"removed": 0})
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"removed": 0})
 		}
 		ui.FromContext(ctx).Out().Println("No conditional format rules to remove")
 		return nil
@@ -243,7 +242,7 @@ func (c *SheetsConditionalClearCmd) Run(ctx context.Context, flags *RootFlags) e
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"spreadsheetId": spreadsheetID,
 			"sheet":         sheetName,
 			"removed":       len(requests),

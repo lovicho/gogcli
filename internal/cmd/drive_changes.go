@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"google.golang.org/api/drive/v3"
@@ -16,12 +15,17 @@ import (
 	"github.com/steipete/gogcli/internal/ui"
 )
 
-const driveChangesFields = "nextPageToken,newStartPageToken,changes(kind,type,removed,time,fileId,driveId,file(id,name,mimeType,modifiedTime,trashed,webViewLink))"
+const (
+	driveChangesFields             = "nextPageToken,newStartPageToken,changes(kind,type,removed,time,fileId,driveId,file(id,name,mimeType,modifiedTime,trashed,webViewLink))"
+	driveChangesWebhookSchemeHTTPS = "https"
+	driveChangesServerSchemeHTTP   = "http"
+)
 
 type DriveChangesCmd struct {
 	StartToken DriveChangesStartTokenCmd `cmd:"" name:"start-token" aliases:"token" help:"Get a Drive changes start page token"`
 	List       DriveChangesListCmd       `cmd:"" name:"list" aliases:"ls" help:"List Drive changes since a page token"`
 	Poll       DriveChangesPollCmd       `cmd:"" name:"poll" help:"Poll Drive changes with a persisted page token"`
+	Serve      DriveChangesServeCmd      `cmd:"" name:"serve" help:"Receive Drive change notifications and run a local hook"`
 	Watch      DriveChangesWatchCmd      `cmd:"" name:"watch" help:"Watch Drive changes with a webhook channel"`
 	Stop       DriveChangesStopCmd       `cmd:"" name:"stop" help:"Stop a Drive changes webhook channel"`
 }
@@ -43,7 +47,7 @@ func (c *DriveChangesStartTokenCmd) Run(ctx context.Context, flags *RootFlags) e
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"startPageToken": startPageToken})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"startPageToken": startPageToken})
 	}
 	u.Out().Linef("startPageToken\t%s", startPageToken)
 	return nil
@@ -279,7 +283,7 @@ func (c *DriveChangesWatchCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"channel": resp})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"channel": resp})
 	}
 	u.Out().Linef("id\t%s", resp.Id)
 	u.Out().Linef("resourceId\t%s", resp.ResourceId)
@@ -290,7 +294,7 @@ func (c *DriveChangesWatchCmd) Run(ctx context.Context, flags *RootFlags) error 
 
 func validateDriveChangesWebhookURL(rawURL string) error {
 	u, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || u.Scheme != "https" || u.Host == "" {
+	if err != nil || u.Scheme != driveChangesWebhookSchemeHTTPS || u.Host == "" {
 		return usage("--webhook-url must be an absolute HTTPS URL")
 	}
 	return nil
@@ -324,7 +328,7 @@ func (c *DriveChangesStopCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"stopped": true, "channelId": channelID, "resourceId": resourceID})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"stopped": true, "channelId": channelID, "resourceId": resourceID})
 	}
 	u.Out().Linef("stopped\ttrue")
 	return nil

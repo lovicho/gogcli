@@ -1,21 +1,14 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/gmail/v1"
-	"google.golang.org/api/option"
 )
 
 func TestExecute_GmailMessagesSearch_Text(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {
@@ -74,32 +67,20 @@ func TestExecute_GmailMessagesSearch_Text(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	result := executeWithGmailTestService(
+		t,
+		[]string{"--plain", "--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--max", "2"},
+		newGmailServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--max", "2"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
-	if !strings.Contains(out, "m1") || !strings.Contains(out, "m2") {
-		t.Fatalf("expected both message IDs, got: %q", out)
+	if !strings.Contains(result.stdout, "m1") || !strings.Contains(result.stdout, "m2") {
+		t.Fatalf("expected both message IDs, got: %q", result.stdout)
 	}
 }
 
 func TestExecute_GmailMessagesSearch_JSON_IncludeBody(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {
@@ -168,23 +149,16 @@ func TestExecute_GmailMessagesSearch_JSON_IncludeBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	svc := newGmailServiceFromServer(t, srv)
+	result := executeWithGmailTestService(
+		t,
+		[]string{"--json", "--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--include-body"},
+		svc,
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--include-body"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 	if !strings.Contains(out, "Total €99.99") {
 		t.Fatalf("expected decoded body, got: %q", out)
 	}
@@ -212,22 +186,20 @@ func TestExecute_GmailMessagesSearch_JSON_IncludeBody(t *testing.T) {
 		t.Fatalf("unexpected attachment: %#v", att)
 	}
 
-	htmlOut := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--include-body", "--body-format", "html"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
-	if !strings.Contains(htmlOut, "<strong>Total €99.99</strong>") {
-		t.Fatalf("expected html body, got: %q", htmlOut)
+	htmlResult := executeWithGmailTestService(
+		t,
+		[]string{"--json", "--account", "a@b.com", "gmail", "messages", "search", "from:example.com", "--include-body", "--body-format", "html"},
+		svc,
+	)
+	if htmlResult.err != nil {
+		t.Fatalf("Execute HTML: %v\nstderr=%q", htmlResult.err, htmlResult.stderr)
+	}
+	if !strings.Contains(htmlResult.stdout, "<strong>Total €99.99</strong>") {
+		t.Fatalf("expected html body, got: %q", htmlResult.stdout)
 	}
 }
 
 func TestExecute_GmailMessagesSearch_AppliesSystemLabelFilters(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	var gotQuery string
 	var gotLabels []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -248,21 +220,14 @@ func TestExecute_GmailMessagesSearch_AppliesSystemLabelFilters(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	result := executeWithGmailTestService(
+		t,
+		[]string{"--plain", "--account", "a@b.com", "gmail", "messages", "search", "in:spam is:unread", "--max", "1000"},
+		newGmailServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
 	}
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
-
-	_ = captureStderr(t, func() {
-		if err := Execute([]string{"--account", "a@b.com", "gmail", "messages", "search", "in:spam is:unread", "--max", "1000"}); err != nil {
-			t.Fatalf("Execute: %v", err)
-		}
-	})
 
 	if gotQuery != "in:spam is:unread" {
 		t.Fatalf("unexpected query: %q", gotQuery)

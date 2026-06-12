@@ -2,14 +2,19 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"google.golang.org/api/drive/v3"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+)
+
+const (
+	driveChangesPollStateKind  = "drive_changes_poll"
+	driveChangesServeStateKind = "drive_changes_serve"
 )
 
 type DriveChangesPollCmd struct {
@@ -25,6 +30,7 @@ type DriveChangesPollCmd struct {
 
 type driveChangesPollState struct {
 	Version   int    `json:"version"`
+	Kind      string `json:"kind,omitempty"`
 	PageToken string `json:"page_token"`
 	DriveID   string `json:"drive_id,omitempty"`
 	UpdatedAt string `json:"updated_at"`
@@ -98,6 +104,7 @@ func (c *DriveChangesPollCmd) run(ctx context.Context, flags *RootFlags, runtime
 		}
 		state = driveChangesPollState{
 			Version:   pollStateVersion,
+			Kind:      driveChangesPollStateKind,
 			PageToken: startPageToken,
 			DriveID:   driveID,
 			UpdatedAt: runtime.now().UTC().Format(time.RFC3339Nano),
@@ -139,6 +146,7 @@ func (c *DriveChangesPollCmd) run(ctx context.Context, flags *RootFlags, runtime
 
 		nextState := driveChangesPollState{
 			Version:   pollStateVersion,
+			Kind:      driveChangesPollStateKind,
 			PageToken: nextPageToken,
 			DriveID:   driveID,
 			UpdatedAt: runtime.now().UTC().Format(time.RFC3339Nano),
@@ -165,6 +173,14 @@ func readDriveChangesPollState(path string) (driveChangesPollState, bool, error)
 	}
 	if state.Version != pollStateVersion {
 		return driveChangesPollState{}, false, fmt.Errorf("unsupported Drive changes poll state version %d", state.Version)
+	}
+	switch state.Kind {
+	case "", driveChangesPollStateKind:
+		state.Kind = driveChangesPollStateKind
+	case driveChangesServeStateKind:
+		return driveChangesPollState{}, false, errors.New("state file belongs to drive changes serve; use a separate --state-file")
+	default:
+		return driveChangesPollState{}, false, fmt.Errorf("unsupported Drive changes poll state kind %q", state.Kind)
 	}
 	if strings.TrimSpace(state.PageToken) == "" {
 		return driveChangesPollState{}, false, fmt.Errorf("drive changes poll state has empty page_token")
@@ -200,7 +216,7 @@ func writeDriveChangesPollEvent(ctx context.Context, event driveChangesPollEvent
 			name = change.File.Name
 		}
 		if _, err := fmt.Fprintf(
-			os.Stdout,
+			stdoutWriter(ctx),
 			"change\t%s\t%s\t%s\t%s\t%t\n",
 			change.Time,
 			change.Type,

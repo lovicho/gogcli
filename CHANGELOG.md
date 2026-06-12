@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.24.1 - Unreleased
+## 0.25.1 - Unreleased
+
+## 0.25.0 - 2026-06-12
 
 ### Added
 
@@ -13,6 +15,12 @@
 - Gmail: add explicit `gmail archive --thread` semantics so IDs from thread search can archive every message in each thread. (#752) — thanks @sebsnyk.
 - Drive/Docs: add persisted polling for Drive changes and Docs comments, with bounded runs, filters, retry-safe cursors, and sequential JSON hooks. (#690, #751)
 - Drive: expose shortcut targets in JSON and human-readable folder reports without changing stable `--plain` columns, classify shortcuts distinctly, keep tree scans from following folder targets, and add `drive shortcut create`. (#763)
+- Drive: add a secure push-notification receiver with persisted cursors, authenticated callbacks, sequential hooks, and optional channel auto-renewal. (#689, #764)
+
+### Fixed
+
+- Docs: recognize valid one-column Markdown tables, while preserving separator-shaped rows after the delimiter as table data.
+- Docs: scope default-tab named-range replace and delete requests correctly in multi-tab documents.
 
 ## 0.24.0 - 2026-06-11
 

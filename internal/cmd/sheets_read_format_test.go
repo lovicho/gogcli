@@ -1,20 +1,13 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/option"
-	"google.golang.org/api/sheets/v4"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func readFormatHandler(t *testing.T) http.Handler {
@@ -79,39 +72,21 @@ func readFormatHandler(t *testing.T) http.Handler {
 }
 
 func TestSheetsReadFormatCmd_JSON(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
 	srv := httptest.NewServer(readFormatHandler(t))
 	defer srv.Close()
 
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	svc := newSheetsServiceFromServer(t, srv)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	var out bytes.Buffer
+	ctx := withSheetsTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &SheetsReadFormatCmd{}, []string{"s1", "Sheet1!A1:B1"}, ctx, flags); err != nil {
+		t.Fatalf("read-format: %v", err)
 	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SheetsReadFormatCmd{}, []string{"s1", "Sheet1!A1:B1"}, ctx, flags); err != nil {
-			t.Fatalf("read-format: %v", err)
-		}
-	})
 
 	var result map[string]any
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("unmarshal: %v (output: %q)", err, out)
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v (output: %q)", err, out.String())
 	}
 	if result["source"] != "userEnteredFormat" {
 		t.Fatalf("expected userEnteredFormat source, got %v", result["source"])
@@ -137,39 +112,21 @@ func TestSheetsReadFormatCmd_JSON(t *testing.T) {
 }
 
 func TestSheetsReadFormatCmd_Effective_JSON(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
 	srv := httptest.NewServer(readFormatHandler(t))
 	defer srv.Close()
 
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	svc := newSheetsServiceFromServer(t, srv)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
+	var out bytes.Buffer
+	ctx := withSheetsTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &SheetsReadFormatCmd{}, []string{"s1", "Sheet1!A1:B1", "--effective"}, ctx, flags); err != nil {
+		t.Fatalf("read-format effective: %v", err)
 	}
-	ctx := ui.WithUI(context.Background(), u)
-	ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &SheetsReadFormatCmd{}, []string{"s1", "Sheet1!A1:B1", "--effective"}, ctx, flags); err != nil {
-			t.Fatalf("read-format effective: %v", err)
-		}
-	})
 
 	var result map[string]any
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("unmarshal: %v (output: %q)", err, out)
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v (output: %q)", err, out.String())
 	}
 	if result["source"] != "effectiveFormat" {
 		t.Fatalf("expected effectiveFormat source, got %v", result["source"])
@@ -186,43 +143,26 @@ func TestSheetsReadFormatCmd_Effective_JSON(t *testing.T) {
 }
 
 func TestSheetsReadFormatCmd_Text(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
 	srv := httptest.NewServer(readFormatHandler(t))
 	defer srv.Close()
 
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	svc := newSheetsServiceFromServer(t, srv)
 
 	flags := &RootFlags{Account: "a@b.com"}
 
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		if err := runKong(t, &SheetsReadFormatCmd{}, []string{"s1", "Sheet1!A1:B1"}, ctx, flags); err != nil {
-			t.Fatalf("read-format text: %v", err)
-		}
-	})
-
-	if !strings.Contains(out, "A1") {
-		t.Fatalf("expected header in output: %q", out)
+	var out bytes.Buffer
+	ctx := withSheetsTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
+	if err := runKong(t, &SheetsReadFormatCmd{}, []string{"s1", "Sheet1!A1:B1"}, ctx, flags); err != nil {
+		t.Fatalf("read-format text: %v", err)
 	}
-	if !strings.Contains(out, "Sheet1!A1") {
-		t.Fatalf("expected A1 in output: %q", out)
+
+	if !strings.Contains(out.String(), "A1") {
+		t.Fatalf("expected header in output: %q", out.String())
 	}
-	if !strings.Contains(out, "\"bold\":true") {
-		t.Fatalf("expected JSON format payload in output: %q", out)
+	if !strings.Contains(out.String(), "Sheet1!A1") {
+		t.Fatalf("expected A1 in output: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "\"bold\":true") {
+		t.Fatalf("expected JSON format payload in output: %q", out.String())
 	}
 }

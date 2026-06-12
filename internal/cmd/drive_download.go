@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -53,7 +52,7 @@ func (c *DriveDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newDriveService(ctx, account)
+	svc, err := driveService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -87,7 +86,7 @@ func (c *DriveDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"path": downloadedPath,
 			"size": size,
 		})
@@ -137,10 +136,10 @@ func downloadDriveFile(ctx context.Context, svc *drive.Service, meta *drive.File
 		} else {
 			outPath = replaceExt(destPath, driveExportExtension(exportMimeType))
 		}
-		resp, err = driveExportDownload(ctx, svc, meta.Id, exportMimeType)
+		resp, err = driveExportRequest(ctx, svc, meta.Id, exportMimeType)
 	} else {
 		outPath = destPath
-		resp, err = driveDownload(ctx, svc, meta.Id)
+		resp, err = driveDownloadRequest(ctx, svc, meta.Id)
 	}
 	if err != nil {
 		return "", 0, err
@@ -153,7 +152,7 @@ func downloadDriveFile(ctx context.Context, svc *drive.Service, meta *drive.File
 	}
 
 	if isStdoutPath(outPath) {
-		n, copyErr := io.Copy(os.Stdout, resp.Body)
+		n, copyErr := io.Copy(stdoutWriter(ctx), resp.Body)
 		return stdoutPath, n, copyErr
 	}
 

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,17 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestSheetsFindReplaceCmd(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
 	var gotFind *sheets.FindReplaceRequest
 	var response any = map[string]any{
 		"replies": []map[string]any{
@@ -64,22 +57,10 @@ func TestSheetsFindReplaceCmd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
+	svc := newSheetsServiceFromServer(t, srv)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSheetsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
 	t.Run("basic replace", func(t *testing.T) {
 		gotFind = nil
@@ -119,15 +100,14 @@ func TestSheetsFindReplaceCmd(t *testing.T) {
 
 	t.Run("json output", func(t *testing.T) {
 		gotFind = nil
-		jsonCtx := outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-		out := captureStdout(t, func() {
-			cmd := &SheetsFindReplaceCmd{}
-			if err := runKong(t, cmd, []string{"s1", "foo", "bar"}, jsonCtx, flags); err != nil {
-				t.Fatalf("find-replace json: %v", err)
-			}
-		})
+		var out bytes.Buffer
+		jsonCtx := withSheetsTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+		cmd := &SheetsFindReplaceCmd{}
+		if err := runKong(t, cmd, []string{"s1", "foo", "bar"}, jsonCtx, flags); err != nil {
+			t.Fatalf("find-replace json: %v", err)
+		}
 		var payload map[string]any
-		if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
 			t.Fatalf("json decode: %v", err)
 		}
 		if payload["occurrences_changed"] != float64(5) || payload["formulas_changed"] != float64(1) {
@@ -172,15 +152,14 @@ func TestSheetsFindReplaceCmd(t *testing.T) {
 			}
 		})
 		gotFind = nil
-		jsonCtx := outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-		out := captureStdout(t, func() {
-			cmd := &SheetsFindReplaceCmd{}
-			if err := runKong(t, cmd, []string{"s1", "foo", "bar"}, jsonCtx, flags); err != nil {
-				t.Fatalf("find-replace zero json: %v", err)
-			}
-		})
+		var out bytes.Buffer
+		jsonCtx := withSheetsTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+		cmd := &SheetsFindReplaceCmd{}
+		if err := runKong(t, cmd, []string{"s1", "foo", "bar"}, jsonCtx, flags); err != nil {
+			t.Fatalf("find-replace zero json: %v", err)
+		}
 		var payload map[string]any
-		if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
 			t.Fatalf("json decode: %v", err)
 		}
 		if payload["occurrences_changed"] != float64(0) {

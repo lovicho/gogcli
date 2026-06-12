@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -10,7 +11,6 @@ import (
 
 	"google.golang.org/api/gmail/v1"
 
-	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -57,9 +57,6 @@ func TestSelectLatestThreadMessage_Extra(t *testing.T) {
 }
 
 func TestFetchReplyInfoFromThread(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	svc, cleanup := newGmailServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/gmail/v1")
 		switch {
@@ -87,7 +84,6 @@ func TestFetchReplyInfoFromThread(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
 
 	info, err := fetchReplyInfo(context.Background(), svc, "", "t1", false)
 	if err != nil {
@@ -102,9 +98,6 @@ func TestFetchReplyInfoFromThread(t *testing.T) {
 }
 
 func TestFetchReplyInfoNoMessageIDFails(t *testing.T) {
-	origNew := newGmailService
-	t.Cleanup(func() { newGmailService = origNew })
-
 	svc, cleanup := newGmailServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/gmail/v1")
 		if r.Method != http.MethodGet || path != "/users/me/messages/m0" {
@@ -124,7 +117,6 @@ func TestFetchReplyInfoNoMessageIDFails(t *testing.T) {
 		})
 	})
 	defer cleanup()
-	newGmailService = func(context.Context, string) (*gmail.Service, error) { return svc, nil }
 
 	_, err := fetchReplyInfo(context.Background(), svc, "m0", "", false)
 	if err == nil {
@@ -136,21 +128,16 @@ func TestFetchReplyInfoNoMessageIDFails(t *testing.T) {
 }
 
 func TestWriteSendResults_JSON(t *testing.T) {
-	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
+	var out bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &out, io.Discard)
+	u := ui.FromContext(ctx)
+	if err := writeSendResults(ctx, u, "from@example.com", []sendResult{
+		{MessageID: "m1", ThreadID: "t1", TrackingID: "trk"},
+	}, nil); err != nil {
+		t.Fatalf("writeSendResults: %v", err)
 	}
-	ctx := outfmt.WithMode(context.Background(), outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := writeSendResults(ctx, u, "from@example.com", []sendResult{
-			{MessageID: "m1", ThreadID: "t1", TrackingID: "trk"},
-		}, nil); err != nil {
-			t.Fatalf("writeSendResults: %v", err)
-		}
-	})
 	var payload map[string]string
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
 		t.Fatalf("decode json: %v", err)
 	}
 	if payload["messageId"] != "m1" || payload["threadId"] != "t1" || payload["tracking_id"] != "trk" {

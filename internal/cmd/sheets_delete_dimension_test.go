@@ -1,22 +1,20 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
 
 func TestSheetsDeleteDimensionCmdTableAwareRows(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-
 	var got sheets.BatchUpdateSpreadsheetRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -58,22 +56,13 @@ func TestSheetsDeleteDimensionCmdTableAwareRows(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := sheets.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) { return svc, nil }
-
-	out := captureStdout(t, func() {
-		cmd := &SheetsDeleteDimensionCmd{}
-		err = runKong(t, cmd, []string{
-			"s1", "Data", "--dimension", "ROWS", "--start", "2", "--end", "3",
-		}, newCmdJSONContext(t), &RootFlags{Account: "a@b.com", Force: true})
-	})
+	svc := newSheetsServiceFromServer(t, srv)
+	var out bytes.Buffer
+	ctx := withSheetsTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	cmd := &SheetsDeleteDimensionCmd{}
+	err := runKong(t, cmd, []string{
+		"s1", "Data", "--dimension", "ROWS", "--start", "2", "--end", "3",
+	}, ctx, &RootFlags{Account: "a@b.com", Force: true})
 	if err != nil {
 		t.Fatalf("delete rows: %v", err)
 	}
@@ -92,8 +81,8 @@ func TestSheetsDeleteDimensionCmdTableAwareRows(t *testing.T) {
 		gotRange.StartColumnIndex != 0 || gotRange.EndColumnIndex != 3 {
 		t.Fatalf("updated table range = %#v", gotRange)
 	}
-	if !strings.Contains(out, `"beforeA1": "Data!A1:C5"`) || !strings.Contains(out, `"afterA1": "Data!A1:C3"`) {
-		t.Fatalf("output = %s", out)
+	if !strings.Contains(out.String(), `"beforeA1": "Data!A1:C5"`) || !strings.Contains(out.String(), `"afterA1": "Data!A1:C3"`) {
+		t.Fatalf("output = %s", out.String())
 	}
 }
 
@@ -193,26 +182,23 @@ func TestSheetsDeleteDimensionValidation(t *testing.T) {
 }
 
 func TestSheetsDeleteDimensionDryRunIsOffline(t *testing.T) {
-	origNew := newSheetsService
-	t.Cleanup(func() { newSheetsService = origNew })
-	newSheetsService = func(context.Context, string) (*sheets.Service, error) {
+	var out bytes.Buffer
+	ctx := withSheetsTestServiceFactory(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), func(context.Context, string) (*sheets.Service, error) {
 		t.Fatal("dry-run must not create Sheets service")
 		return nil, errors.New("unexpected Sheets service creation")
-	}
-
-	out := captureStdout(t, func() {
-		err := (&SheetsDeleteDimensionCmd{
-			SpreadsheetID: "s1",
-			Target:        "Data!2:4",
-			Dimension:     "ROWS",
-		}).Run(newCmdJSONContext(t), &RootFlags{DryRun: true})
-		if ExitCode(err) != 0 {
-			t.Fatalf("dry-run exit: %v", err)
-		}
 	})
-	if !strings.Contains(out, `"op": "sheets.delete-dimension"`) ||
-		!strings.Contains(out, `"start_index": 1`) ||
-		!strings.Contains(out, `"end_index": 4`) {
-		t.Fatalf("dry-run output = %s", out)
+
+	err := (&SheetsDeleteDimensionCmd{
+		SpreadsheetID: "s1",
+		Target:        "Data!2:4",
+		Dimension:     "ROWS",
+	}).Run(ctx, &RootFlags{DryRun: true})
+	if ExitCode(err) != 0 {
+		t.Fatalf("dry-run exit: %v", err)
+	}
+	if !strings.Contains(out.String(), `"op": "sheets.delete-dimension"`) ||
+		!strings.Contains(out.String(), `"start_index": 1`) ||
+		!strings.Contains(out.String(), `"end_index": 4`) {
+		t.Fatalf("dry-run output = %s", out.String())
 	}
 }
