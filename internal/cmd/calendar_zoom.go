@@ -11,16 +11,12 @@ import (
 
 	"google.golang.org/api/calendar/v3"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/ui"
 	"github.com/steipete/gogcli/internal/zoom"
 )
 
-type zoomMeetingClient interface {
-	CreateMeeting(context.Context, string, zoom.CreateMeetingRequest) (*zoom.Meeting, error)
-	DeleteMeeting(context.Context, string) error
-}
-
-var newZoomMeetingClient = func(alias string) (zoomMeetingClient, error) {
+func newZoomMeetingClient(alias string) (app.ZoomMeetingClient, error) {
 	creds, err := zoom.LoadCredentials(alias)
 	if err != nil {
 		return nil, err
@@ -29,7 +25,7 @@ var newZoomMeetingClient = func(alias string) (zoomMeetingClient, error) {
 }
 
 func createZoomMeetingForEvent(ctx context.Context, event *calendar.Event) (*zoom.Meeting, error) {
-	client, err := newZoomMeetingClient("")
+	client, err := zoomMeetingClient(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +67,11 @@ func eventDurationMinutes(event *calendar.Event) int {
 }
 
 func cancelZoomMeeting(ctx context.Context, meetingID, action string) error {
-	client, err := newZoomMeetingClient("")
+	client, err := zoomMeetingClient(ctx, "")
 	if err != nil {
 		return err
 	}
-	logZoomAudit(meetingID, action)
+	logZoomAudit(ctx, meetingID, action)
 	return client.DeleteMeeting(ctx, meetingID)
 }
 
@@ -89,8 +85,8 @@ func zoomMeetingID(meeting *zoom.Meeting) string {
 	return strings.TrimSpace(meeting.UUID)
 }
 
-func logZoomAudit(meetingID, action string) {
-	fmt.Fprintf(os.Stderr, "[zoom] meeting=%s action=%s ts=%s cmd=%s\n",
+func logZoomAudit(ctx context.Context, meetingID, action string) {
+	fmt.Fprintf(stderrWriter(ctx), "[zoom] meeting=%s action=%s ts=%s cmd=%s\n",
 		meetingID,
 		action,
 		time.Now().UTC().Format(time.RFC3339),
@@ -235,10 +231,10 @@ func redactCalendarEventsForOutput(ctx context.Context, events []*calendar.Event
 	}
 }
 
-func warnUnparseableZoomMeeting(u *ui.UI) {
+func warnUnparseableZoomMeeting(ctx context.Context, u *ui.UI) {
 	if u != nil {
 		u.Err().Println("warning\tcould not find prior Zoom meeting ID; Calendar conference data will still be replaced")
 		return
 	}
-	fmt.Fprintln(os.Stderr, "warning\tcould not find prior Zoom meeting ID; Calendar conference data will still be replaced")
+	fmt.Fprintln(stderrWriter(ctx), "warning\tcould not find prior Zoom meeting ID; Calendar conference data will still be replaced")
 }

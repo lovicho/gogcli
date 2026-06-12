@@ -13,6 +13,8 @@ import (
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/sheets/v4"
 	"google.golang.org/api/slides/v1"
+
+	"github.com/steipete/gogcli/internal/zoom"
 )
 
 type IO struct {
@@ -31,9 +33,15 @@ type (
 	PeopleServiceFactory        func(context.Context, string) (*people.Service, error)
 	SheetsServiceFactory        func(context.Context, string) (*sheets.Service, error)
 	SlidesServiceFactory        func(context.Context, string) (*slides.Service, error)
+	ZoomMeetingClientFactory    func(string) (ZoomMeetingClient, error)
 	DriveDownloadFunc           func(context.Context, *drive.Service, string) (*http.Response, error)
 	DriveExportFunc             func(context.Context, *drive.Service, string, string) (*http.Response, error)
 )
+
+type ZoomMeetingClient interface {
+	CreateMeeting(context.Context, string, zoom.CreateMeetingRequest) (*zoom.Meeting, error)
+	DeleteMeeting(context.Context, string) error
+}
 
 type Services struct {
 	Calendar        CalendarServiceFactory
@@ -46,6 +54,7 @@ type Services struct {
 	PeopleDirectory PeopleServiceFactory
 	Sheets          SheetsServiceFactory
 	Slides          SlidesServiceFactory
+	Zoom            ZoomMeetingClientFactory
 	DriveDownload   DriveDownloadFunc
 	DriveExport     DriveExportFunc
 }

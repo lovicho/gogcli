@@ -984,7 +984,7 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 				return patch, changed, err
 			}
 		} else {
-			warnUnparseableZoomMeeting(mutation.u)
+			warnUnparseableZoomMeeting(ctx, mutation.u)
 		}
 		meeting, createErr := createZoomMeetingForEvent(ctx, mergeEventPatch(existing, patch))
 		if createErr != nil {
@@ -1002,7 +1002,7 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 				}
 			}
 		} else {
-			warnUnparseableZoomMeeting(mutation.u)
+			warnUnparseableZoomMeeting(ctx, mutation.u)
 		}
 		// Strip the gog-managed Zoom block from the description. Also clear
 		// any legacy ConferenceData (events created by the Zoom for Google

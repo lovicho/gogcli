@@ -40,6 +40,7 @@ func newDefaultRuntime() *app.Runtime {
 			PeopleDirectory: newPeopleDirectoryService,
 			Sheets:          googleapi.NewSheets,
 			Slides:          googleapi.NewSlides,
+			Zoom:            newZoomMeetingClient,
 			DriveDownload:   driveDownload,
 			DriveExport:     driveExportDownload,
 		},
@@ -91,6 +92,9 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 	if normalized.Services.Slides == nil {
 		normalized.Services.Slides = defaults.Services.Slides
 	}
+	if normalized.Services.Zoom == nil {
+		normalized.Services.Zoom = defaults.Services.Zoom
+	}
 	if normalized.Services.DriveDownload == nil {
 		normalized.Services.DriveDownload = defaults.Services.DriveDownload
 	}
@@ -118,6 +122,10 @@ func commandIO(ctx context.Context) app.IO {
 
 func stdoutWriter(ctx context.Context) io.Writer {
 	return commandIO(ctx).Out
+}
+
+func stderrWriter(ctx context.Context) io.Writer {
+	return commandIO(ctx).Err
 }
 
 func calendarService(ctx context.Context, account string) (*calendar.Service, error) {
@@ -192,6 +200,13 @@ func slidesService(ctx context.Context, account string) (*slides.Service, error)
 		return runtime.Services.Slides(ctx, account)
 	}
 	return googleapi.NewSlides(ctx, account)
+}
+
+func zoomMeetingClient(ctx context.Context, alias string) (app.ZoomMeetingClient, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Zoom != nil {
+		return runtime.Services.Zoom(alias)
+	}
+	return newZoomMeetingClient(alias)
 }
 
 func driveDownloadRequest(ctx context.Context, svc *drive.Service, fileID string) (*http.Response, error) {
