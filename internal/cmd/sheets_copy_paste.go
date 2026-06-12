@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"google.golang.org/api/sheets/v4"
+
+	"github.com/steipete/gogcli/internal/sheetsvalidation"
 )
 
 // pasteNormal is the default paste type / orientation keyword shared by the
@@ -100,7 +102,7 @@ func (c *SheetsCopyPasteCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if err != nil {
 				return nil, "", err
 			}
-			supplemental, err := buildTableValidationCopyRequests(
+			supplemental, err := sheetsvalidation.BuildCopyRequests(
 				srcGrid,
 				dstGrid,
 				c.Transpose,
@@ -108,7 +110,7 @@ func (c *SheetsCopyPasteCmd) Run(ctx context.Context, flags *RootFlags) error {
 				copyOptions,
 			)
 			if err != nil {
-				return nil, "", err
+				return nil, "", sheetsValidationPlannerError(err)
 			}
 			requests = append(requests, supplemental...)
 			tableManagedRules = len(supplemental)
