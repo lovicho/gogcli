@@ -12,11 +12,8 @@ import (
 	"google.golang.org/api/option"
 )
 
-func stubCalendarExecuteService(t *testing.T, handler http.Handler) {
+func newCalendarExecuteTestService(t *testing.T, handler http.Handler) *calendar.Service {
 	t.Helper()
-
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
@@ -29,26 +26,22 @@ func stubCalendarExecuteService(t *testing.T, handler http.Handler) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
+	return svc
 }
 
-func executeWithCapturedOutput(t *testing.T, args ...string) (string, error) {
+func executeWithCalendarCapturedOutput(t *testing.T, svc *calendar.Service, args ...string) (string, error) {
 	t.Helper()
 
-	var execErr error
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			execErr = Execute(args)
-		})
-	})
-
-	return out, execErr
+	if svc == nil {
+		result := executeWithTestRuntime(t, args, nil)
+		return result.stdout, result.err
+	}
+	result := executeWithCalendarTestService(t, args, svc)
+	return result.stdout, result.err
 }
 
 func TestExecute_CalendarCalendars_JSON(t *testing.T) {
-	stubCalendarExecuteService(t, withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCalendarExecuteTestService(t, withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "calendarList") && r.Method == http.MethodGet) {
 			http.NotFound(w, r)
 			return
@@ -62,7 +55,7 @@ func TestExecute_CalendarCalendars_JSON(t *testing.T) {
 		})
 	})))
 
-	out, err := executeWithCapturedOutput(t, "--json", "--account", "a@b.com", "calendar", "calendars")
+	out, err := executeWithCalendarCapturedOutput(t, svc, "--json", "--account", "a@b.com", "calendar", "calendars")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -84,7 +77,7 @@ func TestExecute_CalendarCalendars_JSON(t *testing.T) {
 }
 
 func TestExecute_CalendarSubscribe_JSON(t *testing.T) {
-	stubCalendarExecuteService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCalendarExecuteTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "calendarList") && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
 			return
@@ -102,7 +95,7 @@ func TestExecute_CalendarSubscribe_JSON(t *testing.T) {
 		})
 	}))
 
-	out, err := executeWithCapturedOutput(t, "--json", "--account", "a@b.com", "calendar", "subscribe", "test@example.com")
+	out, err := executeWithCalendarCapturedOutput(t, svc, "--json", "--account", "a@b.com", "calendar", "subscribe", "test@example.com")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -126,7 +119,7 @@ func TestExecute_CalendarSubscribe_JSON(t *testing.T) {
 }
 
 func TestExecute_CalendarSubscribe_Flags(t *testing.T) {
-	stubCalendarExecuteService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCalendarExecuteTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "calendarList") && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
 			return
@@ -163,35 +156,30 @@ func TestExecute_CalendarSubscribe_Flags(t *testing.T) {
 		})
 	}))
 
-	if _, err := executeWithCapturedOutput(t, "--account", "a@b.com", "calendar", "subscribe", "--color-id", "24", "--hidden", "--no-selected", "team@example.com"); err != nil {
+	if _, err := executeWithCalendarCapturedOutput(t, svc, "--account", "a@b.com", "calendar", "subscribe", "--color-id", "24", "--hidden", "--no-selected", "team@example.com"); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 }
 
 func TestExecute_CalendarSubscribe_MissingCalendarID(t *testing.T) {
-	_, err := executeWithCapturedOutput(t, "--account", "a@b.com", "calendar", "subscribe")
+	_, err := executeWithCalendarCapturedOutput(t, nil, "--account", "a@b.com", "calendar", "subscribe")
 	if err == nil || !strings.Contains(err.Error(), "<calendarId>") {
 		t.Fatalf("expected missing calendarId error, got %v", err)
 	}
 }
 
 func TestExecute_CalendarSubscribe_InvalidColor(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) {
+	result := executeWithCalendarTestServiceFactory(t, []string{"--account", "a@b.com", "calendar", "subscribe", "--color-id", "25", "team@example.com"}, func(context.Context, string) (*calendar.Service, error) {
 		t.Fatalf("newCalendarService should not be called for invalid color")
 		return &calendar.Service{}, nil
-	}
-
-	_, err := executeWithCapturedOutput(t, "--account", "a@b.com", "calendar", "subscribe", "--color-id", "25", "team@example.com")
-	if err == nil || !strings.Contains(err.Error(), "calendar color ID must be 1-24") {
-		t.Fatalf("expected invalid color error, got %v", err)
+	})
+	if result.err == nil || !strings.Contains(result.err.Error(), "calendar color ID must be 1-24") {
+		t.Fatalf("expected invalid color error, got %v", result.err)
 	}
 }
 
 func TestExecute_CalendarSubscribe_APIFailure(t *testing.T) {
-	stubCalendarExecuteService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCalendarExecuteTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "calendarList") && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
 			return
@@ -200,14 +188,14 @@ func TestExecute_CalendarSubscribe_APIFailure(t *testing.T) {
 		http.Error(w, "denied", http.StatusForbidden)
 	}))
 
-	_, err := executeWithCapturedOutput(t, "--account", "a@b.com", "calendar", "subscribe", "team@example.com")
+	_, err := executeWithCalendarCapturedOutput(t, svc, "--account", "a@b.com", "calendar", "subscribe", "team@example.com")
 	if err == nil || !strings.Contains(err.Error(), "HTTP response code 403") {
 		t.Fatalf("expected API error, got %v", err)
 	}
 }
 
 func TestExecute_CalendarSubscribe_Text(t *testing.T) {
-	stubCalendarExecuteService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	svc := newCalendarExecuteTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !(strings.Contains(r.URL.Path, "calendarList") && r.Method == http.MethodPost) {
 			http.NotFound(w, r)
 			return
@@ -220,7 +208,7 @@ func TestExecute_CalendarSubscribe_Text(t *testing.T) {
 		})
 	}))
 
-	out, err := executeWithCapturedOutput(t, "--account", "a@b.com", "calendar", "subscribe", "user@example.com")
+	out, err := executeWithCalendarCapturedOutput(t, svc, "--account", "a@b.com", "calendar", "subscribe", "user@example.com")
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

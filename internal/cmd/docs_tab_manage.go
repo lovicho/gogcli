@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/docs/v1"
@@ -91,7 +90,7 @@ func (c *DocsAddTabCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if resp.WriteControl != nil {
 			payload["writeControl"] = resp.WriteControl
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("docId\t%s", docID)
@@ -173,7 +172,7 @@ func (c *DocsRenameTabCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if resp != nil && resp.WriteControl != nil {
 			payload["writeControl"] = resp.WriteControl
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("docId\t%s", docID)
@@ -238,7 +237,7 @@ func (c *DocsDeleteTabCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if resp != nil && resp.WriteControl != nil {
 			payload["writeControl"] = resp.WriteControl
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("docId\t%s", docID)

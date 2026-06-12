@@ -1,14 +1,13 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/calendar/v3"
 
 	"github.com/steipete/gogcli/internal/config"
 )
@@ -22,9 +21,6 @@ func setupCalendarAliasHome(t *testing.T) {
 }
 
 func TestCalendarEventCmd_UsesResolvedAliasID(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	setupCalendarAliasHome(t)
 	if err := config.SetCalendarAlias("family", "family-cal@group.calendar.google.com"); err != nil {
 		t.Fatalf("SetCalendarAlias: %v", err)
@@ -52,14 +48,13 @@ func TestCalendarEventCmd_UsesResolvedAliasID(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
 
-	ctx := newCalendarJSONContext(t)
-	out := captureStdout(t, func() {
-		if err := runKong(t, &CalendarEventCmd{}, []string{"family", "evt1"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
+	var output bytes.Buffer
+	ctx := withCalendarTestService(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), svc)
+	if err := runKong(t, &CalendarEventCmd{}, []string{"family", "evt1"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
+	}
+	out := output.String()
 	var got map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("json parse: %v", err)
@@ -71,9 +66,6 @@ func TestCalendarEventCmd_UsesResolvedAliasID(t *testing.T) {
 }
 
 func TestCalendarEventsCmd_CalInput_UsesResolvedAliasID(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	setupCalendarAliasHome(t)
 	if err := config.SetCalendarAlias("family", "family-cal@group.calendar.google.com"); err != nil {
 		t.Fatalf("SetCalendarAlias: %v", err)
@@ -109,22 +101,19 @@ func TestCalendarEventsCmd_CalInput_UsesResolvedAliasID(t *testing.T) {
 		http.NotFound(w, r)
 	})))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--json",
-				"--account", "a@b.com",
-				"calendar", "events",
-				"--cal", "family",
-				"--from", "2025-01-01T00:00:00Z",
-				"--to", "2025-01-02T00:00:00Z",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithCalendarTestService(t, []string{
+		"--json",
+		"--account", "a@b.com",
+		"calendar", "events",
+		"--cal", "family",
+		"--from", "2025-01-01T00:00:00Z",
+		"--to", "2025-01-02T00:00:00Z",
+	}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 	var got map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("json parse: %v", err)
@@ -141,21 +130,19 @@ func TestCalendarCreateCmd_DryRun_UsesResolvedAliasID(t *testing.T) {
 		t.Fatalf("SetCalendarAlias: %v", err)
 	}
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--json",
-				"--dry-run",
-				"calendar", "create",
-				"family",
-				"--summary", "Meeting",
-				"--from", "2025-01-01T10:00:00Z",
-				"--to", "2025-01-01T11:00:00Z",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithTestRuntime(t, []string{
+		"--json",
+		"--dry-run",
+		"calendar", "create",
+		"family",
+		"--summary", "Meeting",
+		"--from", "2025-01-01T10:00:00Z",
+		"--to", "2025-01-01T11:00:00Z",
+	}, nil)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var got map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {

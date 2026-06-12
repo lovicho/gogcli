@@ -93,7 +93,7 @@ func TestPhotosPickerCommandWorkflow(t *testing.T) {
 		openedURI = uri
 		return nil
 	}
-	ctx := newCalendarJSONContext(t)
+	ctx := newCmdJSONContext(t)
 	flags := &RootFlags{Account: "a@example.com"}
 
 	createOut := captureStdout(t, func() {
@@ -244,7 +244,7 @@ func TestPhotosPickerListRejectsRepeatedPageToken(t *testing.T) {
 	}
 
 	cmd := &PhotosPickerListCmd{SessionID: "session-1", Max: 50, All: true}
-	err := cmd.Run(newCalendarJSONContext(t), &RootFlags{Account: "a@example.com"})
+	err := cmd.Run(newCmdJSONContext(t), &RootFlags{Account: "a@example.com"})
 	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
 		t.Fatalf("err = %v", err)
 	}
@@ -293,7 +293,7 @@ func TestPhotosPickerCreateDryRunSkipsAuth(t *testing.T) {
 
 	output := captureStdout(t, func() {
 		cmd := &PhotosPickerCreateCmd{MaxItems: 4, Open: true}
-		if err := cmd.Run(newCalendarJSONContext(t), &RootFlags{DryRun: true}); ExitCode(err) != 0 {
+		if err := cmd.Run(newCmdJSONContext(t), &RootFlags{DryRun: true}); ExitCode(err) != 0 {
 			t.Fatalf("dry-run: %v", err)
 		}
 	})

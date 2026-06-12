@@ -34,7 +34,6 @@ func TestCalendarCreateCalendarCmd_RunJSON(t *testing.T) {
 		})
 	}))
 	defer closeSvc()
-	stubCalendarServiceForTest(t, svc)
 
 	cmd := &CalendarCreateCalendarCmd{
 		Summary:     "Team Calendar",
@@ -42,11 +41,11 @@ func TestCalendarCreateCalendarCmd_RunJSON(t *testing.T) {
 		TimeZone:    "Europe/London",
 		Location:    "London",
 	}
-	out := captureStdout(t, func() {
-		if err := cmd.Run(newCalendarJSONContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	var out bytes.Buffer
+	ctx := withCalendarTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	if err := cmd.Run(ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	if got.Summary != "Team Calendar" || got.Description != "Planning" || got.TimeZone != "Europe/London" || got.Location != "London" {
 		t.Fatalf("unexpected request: %#v", got)
@@ -54,8 +53,8 @@ func TestCalendarCreateCalendarCmd_RunJSON(t *testing.T) {
 	var payload struct {
 		Calendar calendar.Calendar `json:"calendar"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("decode output: %v\nout=%q", err, out)
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("decode output: %v\nout=%q", err, out.String())
 	}
 	if payload.Calendar.Id != "created@example.com" || payload.Calendar.Summary != "Team Calendar" {
 		t.Fatalf("unexpected output: %#v", payload.Calendar)
@@ -63,9 +62,6 @@ func TestCalendarCreateCalendarCmd_RunJSON(t *testing.T) {
 }
 
 func TestCalendarCreateCalendarCmd_RunTextIncludesLocation(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	svc, closeSvc := newCalendarServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
 		if r.Method != http.MethodPost || path != "/calendars" {
@@ -81,10 +77,9 @@ func TestCalendarCreateCalendarCmd_RunTextIncludesLocation(t *testing.T) {
 		})
 	}))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
 
 	var outBuf bytes.Buffer
-	ctx := newCalendarOutputContext(t, &outBuf, io.Discard)
+	ctx := withCalendarTestService(newCmdRuntimeOutputContext(t, &outBuf, io.Discard), svc)
 	err := (&CalendarCreateCalendarCmd{Summary: "Team Calendar", TimeZone: "UTC"}).Run(ctx, &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -98,24 +93,22 @@ func TestCalendarCreateCalendarCmd_RunTextIncludesLocation(t *testing.T) {
 }
 
 func TestCalendarCreateCalendarCmd_DryRunDoesNotOpenService(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) {
-		t.Fatal("newCalendarService should not be called during dry-run")
-		return nil, errors.New("unexpected calendar service call")
+	var out bytes.Buffer
+	ctx := withCalendarTestServiceFactory(
+		newCmdRuntimeJSONOutputContext(t, &out, io.Discard),
+		func(context.Context, string) (*calendar.Service, error) {
+			t.Fatal("calendar service should not be created during dry-run")
+			return nil, errors.New("unexpected calendar service call")
+		},
+	)
+	err := (&CalendarCreateCalendarCmd{
+		Summary:  "Dry Run",
+		TimeZone: "UTC",
+	}).Run(ctx, &RootFlags{Account: "a@b.com", DryRun: true})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("expected dry-run exit 0, got %v", err)
 	}
-
-	out := captureStdout(t, func() {
-		err := (&CalendarCreateCalendarCmd{
-			Summary:  "Dry Run",
-			TimeZone: "UTC",
-		}).Run(newCalendarJSONContext(t), &RootFlags{Account: "a@b.com", DryRun: true})
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("expected dry-run exit 0, got %v", err)
-		}
-	})
 
 	var payload struct {
 		DryRun  bool   `json:"dry_run"`
@@ -124,8 +117,8 @@ func TestCalendarCreateCalendarCmd_DryRunDoesNotOpenService(t *testing.T) {
 			Calendar calendar.Calendar `json:"calendar"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
-		t.Fatalf("decode dry-run: %v\nout=%q", err, out)
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("decode dry-run: %v\nout=%q", err, out.String())
 	}
 	if !payload.DryRun || payload.Op != "calendar.create-calendar" || payload.Request.Calendar.Summary != "Dry Run" {
 		t.Fatalf("unexpected dry-run output: %#v", payload)
@@ -133,17 +126,17 @@ func TestCalendarCreateCalendarCmd_DryRunDoesNotOpenService(t *testing.T) {
 }
 
 func TestCalendarCreateCalendarCmd_InvalidTimezone(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) {
-		t.Fatal("newCalendarService should not be called for invalid timezone")
-		return nil, errors.New("unexpected calendar service call")
-	}
-
+	ctx := withCalendarTestServiceFactory(
+		newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard),
+		func(context.Context, string) (*calendar.Service, error) {
+			t.Fatal("calendar service should not be created for invalid timezone")
+			return nil, errors.New("unexpected calendar service call")
+		},
+	)
 	err := (&CalendarCreateCalendarCmd{
 		Summary:  "Bad TZ",
 		TimeZone: "Nope/Zone",
-	}).Run(newCalendarJSONContext(t), &RootFlags{Account: "a@b.com"})
+	}).Run(ctx, &RootFlags{Account: "a@b.com"})
 	if err == nil || !strings.Contains(err.Error(), `invalid timezone "Nope/Zone"`) {
 		t.Fatalf("expected invalid timezone error, got %v", err)
 	}

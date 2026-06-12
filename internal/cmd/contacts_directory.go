@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -40,7 +39,7 @@ func (c *ContactsDirectoryListCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	svc, err := newPeopleDirectoryService(ctx, account)
+	svc, err := peopleDirectoryService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -86,7 +85,7 @@ func (c *ContactsDirectoryListCmd) Run(ctx context.Context, flags *RootFlags) er
 				Email:    primaryEmail(p),
 			})
 		}
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"people":        items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {
@@ -139,7 +138,7 @@ func (c *ContactsDirectorySearchCmd) Run(ctx context.Context, flags *RootFlags) 
 		return err
 	}
 
-	svc, err := newPeopleDirectoryService(ctx, account)
+	svc, err := peopleDirectoryService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -185,7 +184,7 @@ func (c *ContactsDirectorySearchCmd) Run(ctx context.Context, flags *RootFlags) 
 				Email:    primaryEmail(p),
 			})
 		}
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"people":        items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {
@@ -244,7 +243,7 @@ func (c *ContactsOtherListCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	svc, err := newPeopleOtherContactsService(ctx, account)
+	svc, err := peopleOtherContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -287,7 +286,7 @@ func (c *ContactsOtherListCmd) Run(ctx context.Context, flags *RootFlags) error 
 				Phone:    primaryPhone(p),
 			})
 		}
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"contacts":      items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {
@@ -338,7 +337,7 @@ func (c *ContactsOtherSearchCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return err
 	}
 
-	svc, err := newPeopleOtherContactsService(ctx, account)
+	svc, err := peopleOtherContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -372,7 +371,7 @@ func (c *ContactsOtherSearchCmd) Run(ctx context.Context, flags *RootFlags) erro
 				Phone:    primaryPhone(p),
 			})
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"contacts": items})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"contacts": items})
 	}
 
 	if len(resp.Results) == 0 {
@@ -429,7 +428,7 @@ func (c *ContactsOtherDeleteCmd) Run(ctx context.Context, flags *RootFlags) erro
 }
 
 func deleteOtherContact(ctx context.Context, account, resourceName string) error {
-	otherSvc, err := newPeopleOtherContactsService(ctx, account)
+	otherSvc, err := peopleOtherContactsService(ctx, account)
 	if err != nil {
 		return err
 	}

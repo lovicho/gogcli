@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/alecthomas/kong"
@@ -63,73 +62,85 @@ type CalendarCreateCmd struct {
 	resolvedPlace         *calendarPlace
 }
 
+func calendarCreateFieldsFromKong(kctx *kong.Context) calendarCreateFields {
+	return calendarCreateFields{
+		Location:       flagProvided(kctx, "location"),
+		LocationSearch: flagProvided(kctx, "location-search"),
+		PlaceID:        flagProvided(kctx, "place-id"),
+		WithMeet:       flagProvided(kctx, "with-meet"),
+		WithZoom:       flagProvided(kctx, "with-zoom"),
+	}
+}
+
+func calendarCreateInputFromCommand(c *CalendarCreateCmd) calendarCreateInput {
+	return calendarCreateInput{
+		CalendarID:            c.CalendarID,
+		Summary:               c.Summary,
+		From:                  c.From,
+		To:                    c.To,
+		StartTimezone:         c.StartTimezone,
+		EndTimezone:           c.EndTimezone,
+		Description:           c.Description,
+		Location:              c.Location,
+		Attendees:             c.Attendees,
+		AllDay:                c.AllDay,
+		Recurrence:            c.Recurrence,
+		Reminders:             c.Reminders,
+		ColorID:               c.ColorId,
+		Visibility:            c.Visibility,
+		Transparency:          c.Transparency,
+		SendUpdates:           c.SendUpdates,
+		GuestsCanInviteOthers: c.GuestsCanInviteOthers,
+		GuestsCanModify:       c.GuestsCanModify,
+		GuestsCanSeeOthers:    c.GuestsCanSeeOthers,
+		WithMeet:              c.WithMeet,
+		WithZoom:              c.WithZoom,
+		SourceURL:             c.SourceUrl,
+		SourceTitle:           c.SourceTitle,
+		Attachments:           c.Attachments,
+		PrivateProps:          c.PrivateProps,
+		SharedProps:           c.SharedProps,
+		EventType:             c.EventType,
+		FocusAutoDecline:      c.FocusAutoDecline,
+		FocusDeclineMessage:   c.FocusDeclineMessage,
+		FocusChatStatus:       c.FocusChatStatus,
+		OOOAutoDecline:        c.OOOAutoDecline,
+		OOODeclineMessage:     c.OOODeclineMessage,
+		WorkingLocationType:   c.WorkingLocationType,
+		WorkingOfficeLabel:    c.WorkingOfficeLabel,
+		WorkingBuildingID:     c.WorkingBuildingId,
+		WorkingFloorID:        c.WorkingFloorId,
+		WorkingDeskID:         c.WorkingDeskId,
+		WorkingCustomLabel:    c.WorkingCustomLabel,
+		LocationSearch:        c.LocationSearch,
+		PlaceID:               c.PlaceID,
+		PlaceLanguage:         c.PlaceLanguage,
+		PlaceRegion:           c.PlaceRegion,
+		ResolvedPlace:         c.resolvedPlace,
+	}
+}
+
 func (c *CalendarCreateCmd) Run(ctx context.Context, flags *RootFlags, kctx *kong.Context) error {
 	ctx = withZoomIncludePasswords(ctx, c.IncludePasswords)
-	if kctx != nil && flagProvided(kctx, "with-meet") && flagProvided(kctx, "with-zoom") {
-		return usage("use only one of --with-zoom or --with-meet")
-	}
-	if flags != nil && flags.DryRun {
-		placeLookup, err := validateCalendarPlaceLookup(calendarPlaceLookup{
-			LocationSet:       flagProvided(kctx, "location") || strings.TrimSpace(c.Location) != "",
-			LocationSearch:    c.LocationSearch,
-			LocationSearchSet: flagProvided(kctx, "location-search"),
-			PlaceID:           c.PlaceID,
-			PlaceIDSet:        flagProvided(kctx, "place-id"),
-			LanguageCode:      c.PlaceLanguage,
-			RegionCode:        c.PlaceRegion,
-		})
-		if err != nil {
-			return err
-		}
-		plan, err := buildCalendarCreatePlan(c)
-		if err != nil {
-			return err
-		}
-		calendarID, err := prepareCalendarID(plan.CalendarID, false)
-		if err != nil {
-			return err
-		}
-		request := map[string]any{
-			"calendar_id":          calendarID,
-			"send_updates":         plan.SendUpdates,
-			"conference_version_1": plan.WithMeet,
-			"supports_attachments": len(plan.Event.Attachments) > 0,
-			"event":                plan.Event,
-		}
-		if plan.WithZoom {
-			request["zoom"] = zoomDryRunPayload("create")
-		}
-		if placeLookup != nil {
-			request["place_lookup"] = placeLookup.dryRunPayload()
-		}
-		return dryRunExit(ctx, flags, "calendar.create", request)
-	}
-
-	if err := c.resolvePlace(ctx, kctx); err != nil {
-		return err
-	}
-
-	plan, err := buildCalendarCreatePlan(c)
+	fields := calendarCreateFieldsFromKong(kctx)
+	plan, err := buildCalendarCreatePlan(calendarCreateInputFromCommand(c), fields)
 	if err != nil {
 		return err
 	}
-
-	calendarID, err := prepareCalendarID(plan.CalendarID, false)
-	if err != nil {
-		return err
-	}
-
-	if dryRunErr := dryRunExit(ctx, flags, "calendar.create", map[string]any{
-		"calendar_id":          calendarID,
-		"send_updates":         plan.SendUpdates,
-		"conference_version_1": plan.WithMeet || plan.WithZoom,
-		"supports_attachments": len(plan.Event.Attachments) > 0,
-		"event":                plan.Event,
-	}); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "calendar.create", plan.dryRunRequest()); dryRunErr != nil {
 		return dryRunErr
 	}
+	if plan.PlaceLookup != nil {
+		if placeErr := c.resolvePlace(ctx, fields); placeErr != nil {
+			return placeErr
+		}
+		plan, err = buildCalendarCreatePlan(calendarCreateInputFromCommand(c), fields)
+		if err != nil {
+			return err
+		}
+	}
 
-	mutation, err := newCalendarMutationContext(ctx, flags, calendarID)
+	mutation, err := newCalendarMutationContext(ctx, flags, plan.CalendarID)
 	if err != nil {
 		return err
 	}
@@ -155,127 +166,6 @@ func (c *CalendarCreateCmd) Run(ctx context.Context, flags *RootFlags, kctx *kon
 		return err
 	}
 	return mutation.writeEvent(ctx, created)
-}
-
-func (c *CalendarCreateCmd) resolveCreateEventType() (string, error) {
-	focusFlags := strings.TrimSpace(c.FocusAutoDecline) != "" ||
-		strings.TrimSpace(c.FocusDeclineMessage) != "" ||
-		strings.TrimSpace(c.FocusChatStatus) != ""
-	oooFlags := strings.TrimSpace(c.OOOAutoDecline) != "" ||
-		strings.TrimSpace(c.OOODeclineMessage) != ""
-	workingFlags := strings.TrimSpace(c.WorkingLocationType) != "" ||
-		strings.TrimSpace(c.WorkingOfficeLabel) != "" ||
-		strings.TrimSpace(c.WorkingBuildingId) != "" ||
-		strings.TrimSpace(c.WorkingFloorId) != "" ||
-		strings.TrimSpace(c.WorkingDeskId) != "" ||
-		strings.TrimSpace(c.WorkingCustomLabel) != ""
-
-	return resolveEventType(c.EventType, focusFlags, oooFlags, workingFlags)
-}
-
-func (c *CalendarCreateCmd) defaultSummaryForEventType(eventType string) string {
-	switch eventType {
-	case eventTypeFocusTime:
-		return defaultFocusSummary
-	case eventTypeOutOfOffice:
-		return defaultOOOSummary
-	case eventTypeWorkingLocation:
-		return workingLocationSummary(workingLocationInput{
-			Type:        c.WorkingLocationType,
-			OfficeLabel: c.WorkingOfficeLabel,
-			CustomLabel: c.WorkingCustomLabel,
-		})
-	default:
-		return ""
-	}
-}
-
-func resolveCreateAllDay(from, to string, allDay bool, eventType string) (bool, error) {
-	if eventType == eventTypeOutOfOffice {
-		if allDay {
-			return false, usage("out-of-office events cannot be all-day; provide RFC3339 datetime --from/--to without --all-day")
-		}
-		if !strings.Contains(from, "T") || !strings.Contains(to, "T") {
-			return false, usage("out-of-office requires RFC3339 datetime --from/--to; date-only out-of-office events are not supported by Google Calendar API")
-		}
-		return false, nil
-	}
-	if eventType != eventTypeWorkingLocation {
-		return allDay, nil
-	}
-	if strings.Contains(from, "T") || strings.Contains(to, "T") {
-		return false, usage("working-location requires date-only --from/--to (YYYY-MM-DD)")
-	}
-	return true, nil
-}
-
-func applyEventTypeTransparencyDefault(transparency, eventType string) string {
-	if transparency == "" && (eventType == eventTypeFocusTime || eventType == eventTypeOutOfOffice) {
-		return transparencyOpaque
-	}
-	if transparency == "" && eventType == eventTypeWorkingLocation {
-		return transparencyTransparent
-	}
-	return transparency
-}
-
-func applyEventTypeVisibilityDefault(visibility, eventType string) string {
-	if visibility == "" && eventType == eventTypeWorkingLocation {
-		return visibilityPublic
-	}
-	return visibility
-}
-
-func (c *CalendarCreateCmd) applyCreateEventType(event *calendar.Event, eventType string) error {
-	switch eventType {
-	case eventTypeDefault:
-		event.EventType = eventTypeDefault
-	case eventTypeFocusTime:
-		props, err := c.buildFocusTimeProperties()
-		if err != nil {
-			return err
-		}
-		event.EventType = eventTypeFocusTime
-		event.FocusTimeProperties = props
-	case eventTypeOutOfOffice:
-		props, err := c.buildOutOfOfficeProperties()
-		if err != nil {
-			return err
-		}
-		event.EventType = eventTypeOutOfOffice
-		event.OutOfOfficeProperties = props
-	case eventTypeWorkingLocation:
-		props, err := buildWorkingLocationProperties(workingLocationInput{
-			Type:        c.WorkingLocationType,
-			OfficeLabel: c.WorkingOfficeLabel,
-			BuildingId:  c.WorkingBuildingId,
-			FloorId:     c.WorkingFloorId,
-			DeskId:      c.WorkingDeskId,
-			CustomLabel: c.WorkingCustomLabel,
-		})
-		if err != nil {
-			return err
-		}
-		event.EventType = eventTypeWorkingLocation
-		event.WorkingLocationProperties = props
-	}
-	return nil
-}
-
-func (c *CalendarCreateCmd) buildFocusTimeProperties() (*calendar.EventFocusTimeProperties, error) {
-	return buildFocusTimeProperties(focusTimeInput{
-		AutoDecline:    c.FocusAutoDecline,
-		DeclineMessage: c.FocusDeclineMessage,
-		ChatStatus:     c.FocusChatStatus,
-	})
-}
-
-func (c *CalendarCreateCmd) buildOutOfOfficeProperties() (*calendar.EventOutOfOfficeProperties, error) {
-	return buildOutOfOfficeProperties(outOfOfficeInput{
-		AutoDecline:            c.OOOAutoDecline,
-		DeclineMessage:         c.OOODeclineMessage,
-		DeclineMessageProvided: false,
-	})
 }
 
 type CalendarUpdateCmd struct {
@@ -331,112 +221,133 @@ type CalendarUpdateCmd struct {
 	createdZoomMeetingID  string
 }
 
-//nolint:gocyclo,cyclop // Calendar update already handles many flag families; Zoom adds one narrow branch.
+func calendarUpdateFieldsFromKong(kctx *kong.Context) calendarUpdateFields {
+	return calendarUpdateFields{
+		Summary:               flagProvided(kctx, "summary"),
+		Description:           flagProvided(kctx, "description"),
+		Location:              flagProvided(kctx, "location"),
+		LocationSearch:        flagProvided(kctx, "location-search"),
+		PlaceID:               flagProvided(kctx, "place-id"),
+		From:                  flagProvided(kctx, "from"),
+		To:                    flagProvided(kctx, "to"),
+		StartTimezone:         flagProvided(kctx, "start-timezone"),
+		EndTimezone:           flagProvided(kctx, "end-timezone"),
+		AllDay:                flagProvided(kctx, "all-day"),
+		Attendees:             flagProvided(kctx, "attendees"),
+		AddAttendee:           flagProvided(kctx, "add-attendee"),
+		Attachments:           flagProvided(kctx, "attachment"),
+		Recurrence:            flagProvided(kctx, "rrule"),
+		Reminders:             flagProvided(kctx, "reminder"),
+		ColorID:               flagProvided(kctx, "event-color"),
+		Visibility:            flagProvided(kctx, "visibility"),
+		Transparency:          flagProvided(kctx, "transparency"),
+		GuestsCanInviteOthers: flagProvided(kctx, "guests-can-invite"),
+		GuestsCanModify:       flagProvided(kctx, "guests-can-modify"),
+		GuestsCanSeeOthers:    flagProvided(kctx, "guests-can-see-others"),
+		WithMeet:              flagProvided(kctx, "with-meet"),
+		RegenerateMeet:        flagProvided(kctx, "regenerate-meet"),
+		WithZoom:              flagProvided(kctx, "with-zoom"),
+		RegenerateZoom:        flagProvided(kctx, "regenerate-zoom"),
+		RemoveZoom:            flagProvided(kctx, "remove-zoom"),
+		PrivateProps:          flagProvided(kctx, "private-prop"),
+		SharedProps:           flagProvided(kctx, "shared-prop"),
+		FocusAutoDecline:      flagProvided(kctx, "focus-auto-decline"),
+		FocusDeclineMessage:   flagProvided(kctx, "focus-decline-message"),
+		FocusChatStatus:       flagProvided(kctx, "focus-chat-status"),
+		OOOAutoDecline:        flagProvided(kctx, "ooo-auto-decline"),
+		OOODeclineMessage:     flagProvided(kctx, "ooo-decline-message"),
+		WorkingLocationType:   flagProvided(kctx, "working-location-type"),
+		WorkingOfficeLabel:    flagProvided(kctx, "working-office-label"),
+		WorkingBuildingID:     flagProvided(kctx, "working-building-id"),
+		WorkingFloorID:        flagProvided(kctx, "working-floor-id"),
+		WorkingDeskID:         flagProvided(kctx, "working-desk-id"),
+		WorkingCustomLabel:    flagProvided(kctx, "working-custom-label"),
+	}
+}
+
+func calendarUpdateInputFromCommand(c *CalendarUpdateCmd) calendarUpdateInput {
+	return calendarUpdateInput{
+		CalendarID:            c.CalendarID,
+		EventID:               c.EventID,
+		Summary:               c.Summary,
+		From:                  c.From,
+		To:                    c.To,
+		StartTimezone:         c.StartTimezone,
+		EndTimezone:           c.EndTimezone,
+		Description:           c.Description,
+		Location:              c.Location,
+		LocationSearch:        c.LocationSearch,
+		PlaceID:               c.PlaceID,
+		PlaceLanguage:         c.PlaceLanguage,
+		PlaceRegion:           c.PlaceRegion,
+		Attendees:             c.Attendees,
+		AddAttendee:           c.AddAttendee,
+		Attachments:           c.Attachments,
+		AllDay:                c.AllDay,
+		Recurrence:            c.Recurrence,
+		Reminders:             c.Reminders,
+		ColorID:               c.ColorId,
+		Visibility:            c.Visibility,
+		Transparency:          c.Transparency,
+		GuestsCanInviteOthers: c.GuestsCanInviteOthers,
+		GuestsCanModify:       c.GuestsCanModify,
+		GuestsCanSeeOthers:    c.GuestsCanSeeOthers,
+		Scope:                 c.Scope,
+		OriginalStartTime:     c.OriginalStartTime,
+		PrivateProps:          c.PrivateProps,
+		SharedProps:           c.SharedProps,
+		EventType:             c.EventType,
+		FocusAutoDecline:      c.FocusAutoDecline,
+		FocusDeclineMessage:   c.FocusDeclineMessage,
+		FocusChatStatus:       c.FocusChatStatus,
+		OOOAutoDecline:        c.OOOAutoDecline,
+		OOODeclineMessage:     c.OOODeclineMessage,
+		WorkingLocationType:   c.WorkingLocationType,
+		WorkingOfficeLabel:    c.WorkingOfficeLabel,
+		WorkingBuildingID:     c.WorkingBuildingId,
+		WorkingFloorID:        c.WorkingFloorId,
+		WorkingDeskID:         c.WorkingDeskId,
+		WorkingCustomLabel:    c.WorkingCustomLabel,
+		SendUpdates:           c.SendUpdates,
+		ResolvedPlace:         c.resolvedPlace,
+	}
+}
+
 func (c *CalendarUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlags) error {
 	ctx = withZoomIncludePasswords(ctx, c.IncludePasswords)
-	calendarID, err := prepareCalendarID(c.CalendarID, false)
+	fields := calendarUpdateFieldsFromKong(kctx)
+	plan, err := buildCalendarUpdatePlan(calendarUpdateInputFromCommand(c), fields)
 	if err != nil {
 		return err
 	}
-	eventID := normalizeCalendarEventID(c.EventID)
-	if eventID == "" {
-		return usage("empty eventId")
-	}
-
-	scope, err := resolveRecurringScope(c.Scope, c.OriginalStartTime)
-	if err != nil {
-		return err
-	}
-
-	// If --all-day changed, require from/to to update both date/time fields.
-	if flagProvided(kctx, "all-day") {
-		if !flagProvided(kctx, "from") || !flagProvided(kctx, "to") {
-			return usage("when changing --all-day, also provide --from and --to")
-		}
-	}
-
-	// Cannot use both --attendees and --add-attendee at the same time.
-	if flagProvided(kctx, "attendees") && flagProvided(kctx, "add-attendee") {
-		return usage("cannot use both --attendees and --add-attendee; use --attendees to replace all, or --add-attendee to add")
-	}
-	if flagProvided(kctx, "with-meet") && flagProvided(kctx, "regenerate-meet") {
-		return usage("use only one of --with-meet or --regenerate-meet")
-	}
-	if mutexErr := validateZoomConferenceFlagMutex(kctx); mutexErr != nil {
-		return mutexErr
-	}
-	placeLookup, err := validateCalendarPlaceLookup(calendarPlaceLookup{
-		LocationSet:       flagProvided(kctx, "location"),
-		LocationSearch:    c.LocationSearch,
-		LocationSearchSet: flagProvided(kctx, "location-search"),
-		PlaceID:           c.PlaceID,
-		PlaceIDSet:        flagProvided(kctx, "place-id"),
-		LanguageCode:      c.PlaceLanguage,
-		RegionCode:        c.PlaceRegion,
-	})
-	if err != nil {
-		return err
-	}
-	if !(flags != nil && flags.DryRun) {
-		if placeErr := c.resolvePlace(ctx, kctx); placeErr != nil {
-			return placeErr
-		}
-	}
-
-	sendUpdates, err := validateSendUpdates(c.SendUpdates)
-	if err != nil {
-		return err
-	}
-	recurrenceProvided := flagProvided(kctx, "rrule")
-
-	patch, changed, err := c.buildUpdatePatch(kctx)
-	if err != nil {
-		return err
-	}
-
-	wantsAddAttendee := flagProvided(kctx, "add-attendee")
-	if wantsAddAttendee && strings.TrimSpace(c.AddAttendee) == "" {
-		return usage("empty --add-attendee")
-	}
-
-	if !changed && !wantsAddAttendee && placeLookup == nil {
-		return usage("no updates provided")
-	}
-
-	request := map[string]any{
-		"calendar_id":          calendarID,
-		"event_id":             eventID,
-		"send_updates":         sendUpdates,
-		"scope":                scope,
-		"original_start_time":  strings.TrimSpace(c.OriginalStartTime),
-		"add_attendee":         strings.TrimSpace(c.AddAttendee),
-		"patch":                patch,
-		"wants_add_attendee":   wantsAddAttendee,
-		"conference_version_1": patchHasConferenceDataMutation(patch),
-		"supports_attachments": patchHasAttachmentsMutation(patch),
-	}
-	if placeLookup != nil {
-		request["place_lookup"] = placeLookup.dryRunPayload()
-	}
-	if zoomPayload := zoomUpdateDryRunPayload(kctx); zoomPayload != nil {
-		request["zoom"] = zoomPayload
-	}
-	if dryRunErr := dryRunExit(ctx, flags, "calendar.update", request); dryRunErr != nil {
+	if dryRunErr := dryRunExit(ctx, flags, "calendar.update", plan.dryRunRequest()); dryRunErr != nil {
 		return dryRunErr
 	}
+	if plan.PlaceLookup != nil {
+		if placeErr := c.resolvePlace(ctx, fields); placeErr != nil {
+			return placeErr
+		}
+		plan, err = buildCalendarUpdatePlan(calendarUpdateInputFromCommand(c), fields)
+		if err != nil {
+			return err
+		}
+	}
 
-	mutation, err := newCalendarMutationContext(ctx, flags, calendarID)
+	mutation, err := newCalendarMutationContext(ctx, flags, plan.CalendarID)
 	if err != nil {
 		return err
 	}
 
+	patch := plan.Patch
+	changed := plan.Changed
+
 	// For --add-attendee, fetch current event to preserve existing attendees with metadata.
-	if wantsAddAttendee {
-		existing, getErr := mutation.svc.Events.Get(mutation.calendarID, eventID).Context(ctx).Do()
+	if plan.WantsAddAttendee {
+		existing, getErr := mutation.svc.Events.Get(mutation.calendarID, plan.EventID).Context(ctx).Do()
 		if getErr != nil {
 			return fmt.Errorf("failed to fetch current event: %w", getErr)
 		}
-		merged, attendeesChanged := mergeAttendeesWithChange(existing.Attendees, c.AddAttendee)
+		merged, attendeesChanged := mergeAttendeesWithChange(existing.Attendees, plan.AddAttendee)
 		if attendeesChanged {
 			patch.Attendees = merged
 			changed = true
@@ -446,9 +357,9 @@ func (c *CalendarUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 		}
 	}
 
-	if flagProvidedAny(kctx, "with-zoom", "regenerate-zoom", "remove-zoom") {
+	if fields.zoomMutation() {
 		var zoomErr error
-		patch, _, zoomErr = c.prepareZoomConferencePatch(ctx, mutation, eventID, scope, c.OriginalStartTime, patch, changed, kctx)
+		patch, _, zoomErr = c.prepareZoomConferencePatch(ctx, mutation, plan.EventID, plan.Scope, plan.OriginalStartTime, patch, changed, fields)
 		if errors.Is(zoomErr, errZoomConferenceAlreadyHandled) {
 			return nil
 		}
@@ -457,8 +368,8 @@ func (c *CalendarUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 		}
 	}
 
-	if patch.ConferenceData != nil && !flagProvided(kctx, "regenerate-meet") && !flagProvidedAny(kctx, "with-zoom", "regenerate-zoom", "remove-zoom") && patchOnlyConferenceData(patch) {
-		resolution, resolveErr := resolveRecurringScopeResolution(ctx, mutation.svc, mutation.calendarID, eventID, scope, c.OriginalStartTime)
+	if patch.ConferenceData != nil && !fields.RegenerateMeet && !fields.zoomMutation() && patchOnlyConferenceData(patch) {
+		resolution, resolveErr := resolveRecurringScopeResolution(ctx, mutation.svc, mutation.calendarID, plan.EventID, plan.Scope, plan.OriginalStartTime)
 		if resolveErr != nil {
 			return resolveErr
 		}
@@ -471,11 +382,11 @@ func (c *CalendarUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 		}
 	}
 
-	targetEventID, parentRecurrence, err := applyUpdateScope(ctx, mutation.svc, mutation.calendarID, eventID, scope, c.OriginalStartTime, patch)
+	targetEventID, parentRecurrence, err := applyUpdateScope(ctx, mutation.svc, mutation.calendarID, plan.EventID, plan.Scope, plan.OriginalStartTime, patch)
 	if err != nil {
 		return err
 	}
-	if patch.ConferenceData != nil && !flagProvided(kctx, "regenerate-meet") && !flagProvidedAny(kctx, "with-zoom", "regenerate-zoom", "remove-zoom") {
+	if patch.ConferenceData != nil && !fields.RegenerateMeet && !fields.zoomMutation() {
 		existing, getErr := mutation.svc.Events.Get(mutation.calendarID, targetEventID).Context(ctx).Do()
 		if getErr != nil {
 			return fmt.Errorf("failed to fetch current event for conference data: %w", getErr)
@@ -488,222 +399,25 @@ func (c *CalendarUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 			}
 		}
 	}
-	if recurrenceProvided {
+	if plan.RecurrenceProvided {
 		if enrichErr := ensureRecurringPatchDateTimes(ctx, mutation.svc, mutation.calendarID, targetEventID, patch); enrichErr != nil {
 			return enrichErr
 		}
 	}
 
-	updated, err := mutation.patchEvent(ctx, targetEventID, patch, sendUpdates)
+	updated, err := mutation.patchEvent(ctx, targetEventID, patch, plan.SendUpdates)
 	if err != nil {
 		if c.createdZoomMeetingID != "" {
 			_ = cancelZoomMeeting(ctx, c.createdZoomMeetingID, "delete")
 		}
 		return err
 	}
-	if scope == scopeFuture {
-		if err := truncateParentRecurrence(ctx, mutation.svc, mutation.calendarID, eventID, parentRecurrence, c.OriginalStartTime, sendUpdates); err != nil {
+	if plan.Scope == scopeFuture {
+		if err := truncateParentRecurrence(ctx, mutation.svc, mutation.calendarID, plan.EventID, parentRecurrence, plan.OriginalStartTime, plan.SendUpdates); err != nil {
 			return err
 		}
 	}
 	return mutation.writeEvent(ctx, updated)
-}
-
-func (c *CalendarUpdateCmd) buildUpdatePatch(kctx *kong.Context) (*calendar.Event, bool, error) {
-	patch := &calendar.Event{}
-	changed := false
-
-	eventType, eventTypeRequested, focusFlags, oooFlags, workingFlags, err := c.resolveUpdateEventType(kctx)
-	if err != nil {
-		return nil, false, err
-	}
-
-	if c.applyTextFields(kctx, patch) {
-		changed = true
-	}
-
-	timeChanged, err := c.applyTimeFields(kctx, patch, eventType)
-	if err != nil {
-		return nil, false, err
-	}
-	if timeChanged {
-		changed = true
-	}
-
-	if c.applyAttendees(kctx, patch) {
-		changed = true
-	}
-
-	if c.applyAttachments(kctx, patch) {
-		changed = true
-	}
-
-	if c.applyRecurrence(kctx, patch) {
-		changed = true
-	}
-
-	remindersChanged, err := c.applyReminders(kctx, patch)
-	if err != nil {
-		return nil, false, err
-	}
-	if remindersChanged {
-		changed = true
-	}
-
-	displayChanged, err := c.applyDisplayOptions(kctx, patch)
-	if err != nil {
-		return nil, false, err
-	}
-	if displayChanged {
-		changed = true
-	}
-
-	if c.applyGuestOptions(kctx, patch) {
-		changed = true
-	}
-
-	if c.applyConferenceData(kctx, patch) {
-		changed = true
-	}
-
-	if c.applyExtendedProperties(kctx, patch) {
-		changed = true
-	}
-	if c.resolvedPlace != nil {
-		applyCalendarPlaceProperties(patch, c.resolvedPlace)
-		changed = true
-	}
-
-	eventTypeChanged, err := c.applyEventTypeProperties(kctx, patch, eventType, eventTypeRequested, focusFlags, oooFlags, workingFlags)
-	if err != nil {
-		return nil, false, err
-	}
-	if eventTypeChanged {
-		changed = true
-	}
-
-	return patch, changed, nil
-}
-
-func (c *CalendarUpdateCmd) resolveUpdateEventType(kctx *kong.Context) (string, bool, bool, bool, bool, error) {
-	focusFlags := flagProvidedAny(kctx, "focus-auto-decline", "focus-decline-message", "focus-chat-status")
-	oooFlags := flagProvidedAny(kctx, "ooo-auto-decline", "ooo-decline-message")
-	workingFlags := flagProvidedAny(kctx, "working-location-type", "working-office-label", "working-building-id", "working-floor-id", "working-desk-id", "working-custom-label")
-	eventType, err := resolveEventType(c.EventType, focusFlags, oooFlags, workingFlags)
-	if err != nil {
-		return "", false, false, false, false, err
-	}
-	return eventType, eventType != "", focusFlags, oooFlags, workingFlags, nil
-}
-
-func (c *CalendarUpdateCmd) applyTextFields(kctx *kong.Context, patch *calendar.Event) bool {
-	changed := false
-	if flagProvided(kctx, "summary") {
-		patch.Summary = strings.TrimSpace(c.Summary)
-		changed = true
-	}
-	if flagProvided(kctx, "description") {
-		patch.Description = strings.TrimSpace(c.Description)
-		if patch.Description == "" {
-			patch.ForceSendFields = appendForceSendField(patch.ForceSendFields, "Description")
-		}
-		changed = true
-	}
-	if flagProvided(kctx, "location") {
-		patch.Location = strings.TrimSpace(c.Location)
-		changed = true
-	}
-	if c.resolvedPlace != nil {
-		patch.Location = formatCalendarPlaceLocation(c.resolvedPlace)
-		changed = true
-	}
-	return changed
-}
-
-func resolveUpdateAllDay(value string, allDay bool, eventType string) (bool, error) {
-	if eventType == eventTypeOutOfOffice {
-		if allDay {
-			return false, usage("out-of-office events cannot be all-day; provide RFC3339 datetime --from/--to without --all-day")
-		}
-		if !strings.Contains(value, "T") {
-			return false, usage("out-of-office requires RFC3339 datetime --from/--to; date-only out-of-office events are not supported by Google Calendar API")
-		}
-		return false, nil
-	}
-	if eventType != eventTypeWorkingLocation {
-		return allDay, nil
-	}
-	if strings.Contains(value, "T") {
-		return false, usage("working-location requires date-only --from/--to (YYYY-MM-DD)")
-	}
-	return true, nil
-}
-
-func (c *CalendarUpdateCmd) applyTimeFields(kctx *kong.Context, patch *calendar.Event, eventType string) (bool, error) {
-	changed := false
-	if flagProvided(kctx, "start-timezone") && !flagProvided(kctx, "from") {
-		return false, usage("--start-timezone requires --from")
-	}
-	if flagProvided(kctx, "end-timezone") && !flagProvided(kctx, "to") {
-		return false, usage("--end-timezone requires --to")
-	}
-	if flagProvided(kctx, "from") {
-		allDay, err := resolveUpdateAllDay(c.From, c.AllDay, eventType)
-		if err != nil {
-			return false, err
-		}
-		patch.Start, err = buildEventDateTimeWithTimezone(c.From, allDay, c.StartTimezone, "--start-timezone")
-		if err != nil {
-			return false, err
-		}
-		changed = true
-	}
-	if flagProvided(kctx, "to") {
-		allDay, err := resolveUpdateAllDay(c.To, c.AllDay, eventType)
-		if err != nil {
-			return false, err
-		}
-		patch.End, err = buildEventDateTimeWithTimezone(c.To, allDay, c.EndTimezone, "--end-timezone")
-		if err != nil {
-			return false, err
-		}
-		changed = true
-	}
-	return changed, nil
-}
-
-func (c *CalendarUpdateCmd) applyAttendees(kctx *kong.Context, patch *calendar.Event) bool {
-	if !flagProvided(kctx, "attendees") {
-		return false
-	}
-	patch.Attendees = buildAttendees(c.Attendees)
-	return true
-}
-
-func (c *CalendarUpdateCmd) applyAttachments(kctx *kong.Context, patch *calendar.Event) bool {
-	if !flagProvided(kctx, "attachment") {
-		return false
-	}
-	patch.Attachments = buildAttachments(c.Attachments)
-	if len(patch.Attachments) == 0 {
-		patch.Attachments = []*calendar.EventAttachment{}
-		patch.ForceSendFields = appendForceSendField(patch.ForceSendFields, "Attachments")
-	}
-	return true
-}
-
-func (c *CalendarUpdateCmd) applyRecurrence(kctx *kong.Context, patch *calendar.Event) bool {
-	if !flagProvided(kctx, "rrule") {
-		return false
-	}
-	recurrence := buildRecurrence(c.Recurrence)
-	if recurrence == nil {
-		patch.Recurrence = []string{}
-		patch.ForceSendFields = append(patch.ForceSendFields, "Recurrence")
-	} else {
-		patch.Recurrence = recurrence
-	}
-	return true
 }
 
 func ensureRecurringPatchDateTimes(ctx context.Context, svc *calendar.Service, calendarID, eventID string, patch *calendar.Event) error {
@@ -727,222 +441,13 @@ func ensureRecurringPatchDateTimes(ctx context.Context, svc *calendar.Service, c
 	return nil
 }
 
-func recurringPatchDateTimeNeedsFetch(dt *calendar.EventDateTime) bool {
-	if dt == nil {
-		return true
-	}
-	if strings.TrimSpace(dt.Date) != "" {
-		return false
-	}
-	return strings.TrimSpace(dt.DateTime) == "" || strings.TrimSpace(dt.TimeZone) == ""
-}
-
-func normalizeRecurringPatchDateTime(primary, fallback *calendar.EventDateTime) *calendar.EventDateTime {
-	if primary == nil && fallback == nil {
-		return nil
-	}
-
-	var out *calendar.EventDateTime
-	if primary != nil {
-		out = cloneEventDateTime(primary)
-	} else {
-		out = cloneEventDateTime(fallback)
-	}
-	if out == nil {
-		return nil
-	}
-
-	if strings.TrimSpace(out.Date) != "" {
-		out.DateTime = ""
-		out.TimeZone = ""
-		return out
-	}
-	if strings.TrimSpace(out.DateTime) == "" && fallback != nil {
-		if strings.TrimSpace(fallback.Date) != "" {
-			return &calendar.EventDateTime{Date: fallback.Date}
-		}
-		out.DateTime = fallback.DateTime
-	}
-	if strings.TrimSpace(out.TimeZone) == "" && fallback != nil {
-		out.TimeZone = strings.TrimSpace(fallback.TimeZone)
-	}
-	if strings.TrimSpace(out.TimeZone) == "" && strings.TrimSpace(out.DateTime) != "" {
-		out.TimeZone = extractTimezone(out.DateTime)
-	}
-	return out
-}
-
-func cloneEventDateTime(in *calendar.EventDateTime) *calendar.EventDateTime {
-	if in == nil {
-		return nil
-	}
-	return &calendar.EventDateTime{
-		Date:     in.Date,
-		DateTime: in.DateTime,
-		TimeZone: in.TimeZone,
-	}
-}
-
-func (c *CalendarUpdateCmd) applyReminders(kctx *kong.Context, patch *calendar.Event) (bool, error) {
-	if !flagProvided(kctx, "reminder") {
-		return false, nil
-	}
-	reminders, err := buildReminders(c.Reminders)
-	if err != nil {
-		return false, err
-	}
-	if reminders == nil {
-		patch.Reminders = &calendar.EventReminders{UseDefault: true}
-		patch.ForceSendFields = append(patch.ForceSendFields, "Reminders")
-	} else {
-		patch.Reminders = reminders
-	}
-	return true, nil
-}
-
-func (c *CalendarUpdateCmd) applyDisplayOptions(kctx *kong.Context, patch *calendar.Event) (bool, error) {
-	changed := false
-	if flagProvided(kctx, "event-color") {
-		colorId, err := validateColorId(c.ColorId)
-		if err != nil {
-			return false, err
-		}
-		patch.ColorId = colorId
-		changed = true
-	}
-	if flagProvided(kctx, "visibility") {
-		visibility, err := validateVisibility(c.Visibility)
-		if err != nil {
-			return false, err
-		}
-		patch.Visibility = visibility
-		changed = true
-	}
-	if flagProvided(kctx, "transparency") {
-		transparency, err := validateTransparency(c.Transparency)
-		if err != nil {
-			return false, err
-		}
-		patch.Transparency = transparency
-		changed = true
-	}
-	return changed, nil
-}
-
-func (c *CalendarUpdateCmd) applyGuestOptions(kctx *kong.Context, patch *calendar.Event) bool {
-	changed := false
-	if flagProvided(kctx, "guests-can-invite") {
-		if c.GuestsCanInviteOthers != nil {
-			patch.GuestsCanInviteOthers = c.GuestsCanInviteOthers
-		}
-		patch.ForceSendFields = append(patch.ForceSendFields, "GuestsCanInviteOthers")
-		changed = true
-	}
-	if flagProvided(kctx, "guests-can-modify") {
-		if c.GuestsCanModify != nil {
-			patch.GuestsCanModify = *c.GuestsCanModify
-		}
-		patch.ForceSendFields = append(patch.ForceSendFields, "GuestsCanModify")
-		changed = true
-	}
-	if flagProvided(kctx, "guests-can-see-others") {
-		if c.GuestsCanSeeOthers != nil {
-			patch.GuestsCanSeeOtherGuests = c.GuestsCanSeeOthers
-		}
-		patch.ForceSendFields = append(patch.ForceSendFields, "GuestsCanSeeOtherGuests")
-		changed = true
-	}
-	return changed
-}
-
-func (c *CalendarUpdateCmd) applyConferenceData(kctx *kong.Context, patch *calendar.Event) bool {
-	if flagProvided(kctx, "remove-zoom") {
-		patch.NullFields = append(patch.NullFields, "ConferenceData")
-		return true
-	}
-	if flagProvided(kctx, "with-zoom") || flagProvided(kctx, "regenerate-zoom") {
-		return true
-	}
-	if !flagProvided(kctx, "with-meet") && !flagProvided(kctx, "regenerate-meet") {
-		return false
-	}
-	patch.ConferenceData = buildMeetConferenceData()
-	return true
-}
-
-func eventHasConferenceLink(event *calendar.Event) bool {
-	if event == nil {
-		return false
-	}
-	if strings.TrimSpace(event.HangoutLink) != "" {
-		return true
-	}
-	if event.ConferenceData == nil {
-		return false
-	}
-	for _, ep := range event.ConferenceData.EntryPoints {
-		if ep != nil && strings.TrimSpace(ep.Uri) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func patchOnlyConferenceData(event *calendar.Event) bool {
-	if event == nil || !patchHasConferenceDataMutation(event) {
-		return false
-	}
-	clone := *event
-	clone.ConferenceData = nil
-	clone.NullFields = removeStringField(clone.NullFields, "ConferenceData")
-	return reflect.DeepEqual(clone, calendar.Event{})
-}
-
-func validateZoomConferenceFlagMutex(kctx *kong.Context) error {
-	pairs := [][2]string{
-		{"with-zoom", "regenerate-zoom"},
-		{"with-zoom", "remove-zoom"},
-		{"regenerate-zoom", "remove-zoom"},
-		{"with-zoom", "with-meet"},
-		{"with-zoom", "regenerate-meet"},
-		{"regenerate-zoom", "with-meet"},
-		{"regenerate-zoom", "regenerate-meet"},
-	}
-	for _, pair := range pairs {
-		if flagProvided(kctx, pair[0]) && flagProvided(kctx, pair[1]) {
-			return usage(fmt.Sprintf("use only one of --%s or --%s", pair[0], pair[1]))
-		}
-	}
-	return nil
-}
-
-func zoomUpdateDryRunPayload(kctx *kong.Context) map[string]any {
-	switch {
-	case flagProvided(kctx, "with-zoom"):
-		return zoomDryRunPayload("create")
-	case flagProvided(kctx, "regenerate-zoom"):
-		return zoomDryRunPayload("regenerate")
-	case flagProvided(kctx, "remove-zoom"):
-		return zoomDryRunPayload("remove")
-	default:
-		return nil
-	}
-}
-
-func zoomDryRunPayload(action string) map[string]any {
-	return map[string]any{
-		"action":           action,
-		"description_mode": true,
-	}
-}
-
 func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 	ctx context.Context,
 	mutation *calendarMutationContext,
 	eventID, scope, originalStartTime string,
 	patch *calendar.Event,
 	changed bool,
-	kctx *kong.Context,
+	fields calendarUpdateFields,
 ) (*calendar.Event, bool, error) {
 	resolution, err := resolveRecurringScopeResolution(ctx, mutation.svc, mutation.calendarID, eventID, scope, originalStartTime)
 	if err != nil {
@@ -954,7 +459,7 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 	}
 
 	switch {
-	case flagProvided(kctx, "with-zoom"):
+	case fields.WithZoom:
 		provider := eventConferenceProvider(existing)
 		switch provider {
 		case conferenceProviderZoom:
@@ -978,13 +483,13 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 		patch.Description = applyZoomDescriptionBlock(descriptionForPatch(existing, patch), buildZoomDescriptionBlock(meeting))
 		return patch, true, nil
 
-	case flagProvided(kctx, "regenerate-zoom"):
+	case fields.RegenerateZoom:
 		if meetingID, ok := extractZoomMeetingID(existing); ok {
 			if err := cancelZoomMeeting(ctx, meetingID, "regenerate"); err != nil && !errors.Is(err, zoom.ErrMeetingNotFound) {
 				return patch, changed, err
 			}
 		} else {
-			warnUnparseableZoomMeeting(mutation.u)
+			warnUnparseableZoomMeeting(ctx, mutation.u)
 		}
 		meeting, createErr := createZoomMeetingForEvent(ctx, mergeEventPatch(existing, patch))
 		if createErr != nil {
@@ -994,7 +499,7 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 		patch.Description = applyZoomDescriptionBlock(descriptionForPatch(existing, patch), buildZoomDescriptionBlock(meeting))
 		return patch, true, nil
 
-	case flagProvided(kctx, "remove-zoom"):
+	case fields.RemoveZoom:
 		if meetingID, ok := extractZoomMeetingID(existing); ok {
 			if err := cancelZoomMeeting(ctx, meetingID, "delete"); err != nil && !errors.Is(err, zoom.ErrMeetingNotFound) {
 				if mutation.u != nil {
@@ -1002,7 +507,7 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 				}
 			}
 		} else {
-			warnUnparseableZoomMeeting(mutation.u)
+			warnUnparseableZoomMeeting(ctx, mutation.u)
 		}
 		// Strip the gog-managed Zoom block from the description. Also clear
 		// any legacy ConferenceData (events created by the Zoom for Google
@@ -1019,144 +524,6 @@ func (c *CalendarUpdateCmd) prepareZoomConferencePatch(
 		return patch, true, nil
 	}
 	return patch, changed, nil
-}
-
-func mergeEventPatch(existing, patch *calendar.Event) *calendar.Event {
-	if existing == nil {
-		return patch
-	}
-	merged := *existing
-	if patch == nil {
-		return &merged
-	}
-	if strings.TrimSpace(patch.Summary) != "" {
-		merged.Summary = patch.Summary
-	}
-	if strings.TrimSpace(patch.Description) != "" || forceSendsField(patch, "Description") {
-		merged.Description = patch.Description
-	}
-	if patch.Start != nil {
-		merged.Start = patch.Start
-	}
-	if patch.End != nil {
-		merged.End = patch.End
-	}
-	return &merged
-}
-
-func patchHasConferenceDataMutation(event *calendar.Event) bool {
-	if event == nil {
-		return false
-	}
-	if event.ConferenceData != nil {
-		return true
-	}
-	for _, field := range event.NullFields {
-		if field == "ConferenceData" {
-			return true
-		}
-	}
-	return false
-}
-
-func patchEffectivelyEmpty(event *calendar.Event) bool {
-	return event == nil || reflect.DeepEqual(*event, calendar.Event{})
-}
-
-func removeStringField(fields []string, value string) []string {
-	out := fields[:0]
-	for _, field := range fields {
-		if field != value {
-			out = append(out, field)
-		}
-	}
-	return out
-}
-
-func (c *CalendarUpdateCmd) applyExtendedProperties(kctx *kong.Context, patch *calendar.Event) bool {
-	if !flagProvided(kctx, "private-prop") && !flagProvided(kctx, "shared-prop") {
-		return false
-	}
-	patch.ExtendedProperties = buildExtendedProperties(c.PrivateProps, c.SharedProps)
-	return true
-}
-
-func (c *CalendarUpdateCmd) applyEventTypeProperties(kctx *kong.Context, patch *calendar.Event, eventType string, eventTypeRequested, focusFlags, oooFlags, workingFlags bool) (bool, error) {
-	changed := false
-	if eventTypeRequested {
-		patch.EventType = eventType
-		changed = true
-		if eventType == eventTypeDefault {
-			patch.NullFields = append(patch.NullFields, "FocusTimeProperties", "OutOfOfficeProperties", "WorkingLocationProperties")
-		}
-	}
-	if eventTypeRequested && !flagProvided(kctx, "transparency") &&
-		(eventType == eventTypeFocusTime || eventType == eventTypeOutOfOffice) {
-		patch.Transparency = transparencyOpaque
-		changed = true
-	}
-	if eventTypeRequested && !flagProvided(kctx, "transparency") && eventType == eventTypeWorkingLocation {
-		patch.Transparency = transparencyTransparent
-		changed = true
-	}
-	if eventTypeRequested && !flagProvided(kctx, "visibility") && eventType == eventTypeWorkingLocation {
-		patch.Visibility = visibilityPublic
-		changed = true
-	}
-
-	switch eventType {
-	case eventTypeFocusTime:
-		if eventTypeRequested || focusFlags {
-			props, err := c.buildUpdateFocusTimeProperties()
-			if err != nil {
-				return false, err
-			}
-			patch.FocusTimeProperties = props
-			changed = true
-		}
-	case eventTypeOutOfOffice:
-		if eventTypeRequested || oooFlags {
-			props, err := c.buildUpdateOutOfOfficeProperties(flagProvided(kctx, "ooo-decline-message"))
-			if err != nil {
-				return false, err
-			}
-			patch.OutOfOfficeProperties = props
-			changed = true
-		}
-	case eventTypeWorkingLocation:
-		if eventTypeRequested || workingFlags {
-			props, err := buildWorkingLocationProperties(workingLocationInput{
-				Type:        c.WorkingLocationType,
-				OfficeLabel: c.WorkingOfficeLabel,
-				BuildingId:  c.WorkingBuildingId,
-				FloorId:     c.WorkingFloorId,
-				DeskId:      c.WorkingDeskId,
-				CustomLabel: c.WorkingCustomLabel,
-			})
-			if err != nil {
-				return false, err
-			}
-			patch.WorkingLocationProperties = props
-			changed = true
-		}
-	}
-	return changed, nil
-}
-
-func (c *CalendarUpdateCmd) buildUpdateFocusTimeProperties() (*calendar.EventFocusTimeProperties, error) {
-	return buildFocusTimeProperties(focusTimeInput{
-		AutoDecline:    c.FocusAutoDecline,
-		DeclineMessage: c.FocusDeclineMessage,
-		ChatStatus:     c.FocusChatStatus,
-	})
-}
-
-func (c *CalendarUpdateCmd) buildUpdateOutOfOfficeProperties(declineProvided bool) (*calendar.EventOutOfOfficeProperties, error) {
-	return buildOutOfOfficeProperties(outOfOfficeInput{
-		AutoDecline:            c.OOOAutoDecline,
-		DeclineMessage:         c.OOODeclineMessage,
-		DeclineMessageProvided: declineProvided,
-	})
 }
 
 func applyUpdateScope(ctx context.Context, svc *calendar.Service, calendarID, eventID, scope, originalStartTime string, patch *calendar.Event) (string, []string, error) {

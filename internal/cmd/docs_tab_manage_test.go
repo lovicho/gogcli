@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -11,8 +11,7 @@ import (
 )
 
 func TestDocsAddRenameDeleteTab(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var batchRequests [][]*docs.Request
 	var includeTabsCalls int
@@ -51,10 +50,9 @@ func TestDocsAddRenameDeleteTab(t *testing.T) {
 		}
 	}))
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com", Force: true}
-	ctx := newDocsCmdContext(t)
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
 
 	idx := int64(2)
 	if err := runKong(t, &DocsAddTabCmd{}, []string{"doc1", "--title", "Third", "--index", "2"}, ctx, flags); err != nil {
@@ -93,18 +91,16 @@ func TestDocsAddRenameDeleteTab(t *testing.T) {
 }
 
 func TestDocsRenameDeleteTab_NotFound(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(tabsDocWithEndIndex())
 	}))
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com", Force: true}
-	ctx := newDocsCmdContext(t)
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
 
 	err := runKong(t, &DocsRenameTabCmd{}, []string{"doc1", "--tab", "Missing", "--title", "X"}, ctx, flags)
 	if err == nil || !strings.Contains(err.Error(), `tab not found: "Missing"`) {

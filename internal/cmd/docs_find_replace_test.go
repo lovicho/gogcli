@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -12,10 +14,12 @@ import (
 	"google.golang.org/api/docs/v1"
 )
 
-func TestDocsFindReplace_PlainText(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+func newDocsFindReplaceTestContext(t *testing.T, svc *docs.Service) context.Context {
+	t.Helper()
+	return withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+}
 
+func TestDocsFindReplace_PlainText(t *testing.T) {
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -32,11 +36,10 @@ func TestDocsFindReplace_PlainText(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "Draft v1", "Final v2", "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "Draft v1", "Final v2", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace --first: %v", err)
 	}
 
@@ -56,9 +59,6 @@ func TestDocsFindReplace_PlainText(t *testing.T) {
 }
 
 func TestDocsFindReplace_FirstEmptyReplacementDeletesOnly(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -75,11 +75,10 @@ func TestDocsFindReplace_FirstEmptyReplacementDeletesOnly(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "delete-me", "", "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "delete-me", "", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace empty replacement: %v", err)
 	}
 
@@ -92,9 +91,6 @@ func TestDocsFindReplace_FirstEmptyReplacementDeletesOnly(t *testing.T) {
 }
 
 func TestDocsFindReplace_PlainTextMatchCase(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -112,11 +108,10 @@ func TestDocsFindReplace_PlainTextMatchCase(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "TODO", "DONE", "--match-case", "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "TODO", "DONE", "--match-case", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace --match-case --first: %v", err)
 	}
 
@@ -131,9 +126,6 @@ func TestDocsFindReplace_PlainTextMatchCase(t *testing.T) {
 }
 
 func TestDocsFindReplace_ZeroOccurrences(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -144,34 +136,31 @@ func TestDocsFindReplace_ZeroOccurrences(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
 	// Zero occurrences is not an error — no batchUpdate should be sent.
-	if err := runKong(t, cmd, []string{"doc1", "nonexistent", "whatever", "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "nonexistent", "whatever", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace --first zero occurrences: %v", err)
 	}
 }
 
 func TestDocsFindReplace_DryRunSkipsService(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-	newDocsService = func(context.Context, string) (*docs.Service, error) {
-		t.Fatal("dry-run must not create docs service")
-		return nil, errors.New("unexpected docs service")
-	}
-
-	ctx := newDocsJSONContext(t)
+	var output bytes.Buffer
+	ctx := withDocsTestServiceFactory(
+		newCmdRuntimeJSONOutputContext(t, &output, io.Discard),
+		func(context.Context, string) (*docs.Service, error) {
+			t.Fatal("dry-run must not create docs service")
+			return nil, errors.New("unexpected docs service")
+		},
+	)
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
 	cmd := &DocsFindReplaceCmd{}
-	out := captureStdout(t, func() {
-		err := runKong(t, cmd, []string{"doc1", "draft", "final"}, ctx, flags)
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("expected dry-run exit 0, got: %v", err)
-		}
-	})
+	err := runKong(t, cmd, []string{"doc1", "draft", "final"}, ctx, flags)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("expected dry-run exit 0, got: %v", err)
+	}
 
 	var got struct {
 		DryRun  bool   `json:"dry_run"`
@@ -182,8 +171,8 @@ func TestDocsFindReplace_DryRunSkipsService(t *testing.T) {
 			Replace    string `json:"replace"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("unmarshal: %v\noutput=%q", err, out)
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput=%q", err, output.String())
 	}
 	if !got.DryRun || got.Op != "docs.find-replace" || got.Request.DocumentID != "doc1" || got.Request.Find != "draft" || got.Request.Replace != "final" {
 		t.Fatalf("unexpected dry-run payload: %#v", got)
@@ -191,31 +180,29 @@ func TestDocsFindReplace_DryRunSkipsService(t *testing.T) {
 }
 
 func TestDocsFindReplace_DryRunFirstReportsIntent(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-	newDocsService = func(context.Context, string) (*docs.Service, error) {
-		t.Fatal("dry-run must not create docs service")
-		return nil, errors.New("unexpected docs service")
-	}
-
-	ctx := newDocsJSONContext(t)
+	var output bytes.Buffer
+	ctx := withDocsTestServiceFactory(
+		newCmdRuntimeJSONOutputContext(t, &output, io.Discard),
+		func(context.Context, string) (*docs.Service, error) {
+			t.Fatal("dry-run must not create docs service")
+			return nil, errors.New("unexpected docs service")
+		},
+	)
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
 	cmd := &DocsFindReplaceCmd{}
-	out := captureStdout(t, func() {
-		err := runKong(t, cmd, []string{"doc1", "needle", "thread", "--first"}, ctx, flags)
-		var exitErr *ExitError
-		if !errors.As(err, &exitErr) || exitErr.Code != 0 {
-			t.Fatalf("expected dry-run exit 0, got: %v", err)
-		}
-	})
+	err := runKong(t, cmd, []string{"doc1", "needle", "thread", "--first"}, ctx, flags)
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != 0 {
+		t.Fatalf("expected dry-run exit 0, got: %v", err)
+	}
 
 	var got struct {
 		Request struct {
 			First bool `json:"first"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("unmarshal: %v\noutput=%q", err, out)
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v\noutput=%q", err, output.String())
 	}
 	if !got.Request.First {
 		t.Fatalf("unexpected dry-run counts: %#v", got.Request)
@@ -223,9 +210,6 @@ func TestDocsFindReplace_DryRunFirstReportsIntent(t *testing.T) {
 }
 
 func TestDocsFindReplace_ContentFile(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	// Write a temp file with replacement content.
 	tmp := t.TempDir()
 	contentPath := tmp + "/replace.txt"
@@ -249,11 +233,10 @@ func TestDocsFindReplace_ContentFile(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "{{content}}", "--content-file", contentPath, "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "{{content}}", "--content-file", contentPath, "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace --content-file --first: %v", err)
 	}
 
@@ -263,9 +246,6 @@ func TestDocsFindReplace_ContentFile(t *testing.T) {
 }
 
 func TestDocsFindReplace_ContentFile_FirstPrintsResolvedReplacement(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	tmp := t.TempDir()
 	contentPath := tmp + "/replace.txt"
 	if err := os.WriteFile(contentPath, []byte("replacement from file"), 0o644); err != nil {
@@ -286,9 +266,9 @@ func TestDocsFindReplace_ContentFile_FirstPrintsResolvedReplacement(t *testing.T
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	ctx, out := newDocsCmdOutputContext(t)
+	var out bytes.Buffer
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), docSvc)
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
 	if err := runKong(t, cmd, []string{"doc1", "{{content}}", "--content-file", contentPath, "--first"}, ctx, flags); err != nil {
@@ -303,7 +283,7 @@ func TestDocsFindReplace_ContentFile_FirstPrintsResolvedReplacement(t *testing.T
 func TestDocsFindReplace_EmptyDocID(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	err := runKong(t, cmd, []string{"", "find", "replace"}, newDocsCmdContext(t), flags)
+	err := runKong(t, cmd, []string{"", "find", "replace"}, newCmdRuntimeOutputContext(t, io.Discard, io.Discard), flags)
 	if err == nil || !strings.Contains(err.Error(), "empty docId") {
 		t.Fatalf("expected empty docId error, got: %v", err)
 	}
@@ -312,16 +292,13 @@ func TestDocsFindReplace_EmptyDocID(t *testing.T) {
 func TestDocsFindReplace_EmptySearchText(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	err := runKong(t, cmd, []string{"doc1", "", "replace"}, newDocsCmdContext(t), flags)
+	err := runKong(t, cmd, []string{"doc1", "", "replace"}, newCmdRuntimeOutputContext(t, io.Discard, io.Discard), flags)
 	if err == nil || !strings.Contains(err.Error(), "find text cannot be empty") {
 		t.Fatalf("expected find text error, got: %v", err)
 	}
 }
 
 func TestDocsFindReplace_MarkdownMode(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var batchCalls []docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -368,11 +345,10 @@ func TestDocsFindReplace_MarkdownMode(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	err := runKong(t, cmd, []string{"doc1", "{{placeholder}}", "**bold text** and _italic_ and `code` and **bold _and italic_**", "--format", "markdown", "--first"}, newDocsCmdContext(t), flags)
+	err := runKong(t, cmd, []string{"doc1", "{{placeholder}}", "**bold text** and _italic_ and `code` and **bold _and italic_**", "--format", "markdown", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags)
 	if err != nil {
 		t.Fatalf("docs find-replace --format markdown --first: %v", err)
 	}
@@ -409,9 +385,6 @@ func TestDocsFindReplace_MarkdownMode(t *testing.T) {
 }
 
 func TestDocsFindReplace_MarkdownExplicitTrailingNewlinePreserved(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -428,11 +401,10 @@ func TestDocsFindReplace_MarkdownExplicitTrailingNewlinePreserved(t *testing.T) 
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	err := runKong(t, &DocsFindReplaceCmd{}, []string{
 		"doc1", "PLACEHOLDER", "**bold**\n", "--format", "markdown", "--first",
-	}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	}, newDocsFindReplaceTestContext(t, docSvc), &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("docs find-replace explicit newline: %v", err)
 	}
@@ -445,9 +417,6 @@ func TestDocsFindReplace_MarkdownExplicitTrailingNewlinePreserved(t *testing.T) 
 }
 
 func TestDocsFindReplace_MarkdownResetsInheritedStylesBeforeLeadingBold(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -464,12 +433,11 @@ func TestDocsFindReplace_MarkdownResetsInheritedStylesBeforeLeadingBold(t *testi
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	replacement := "**Alpha** keeps text. The **Bravo** keeps text."
 	err := runKong(t, &DocsFindReplaceCmd{}, []string{
 		"doc1", "PLACEHOLDER", replacement, "--format", "markdown", "--first",
-	}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	}, newDocsFindReplaceTestContext(t, docSvc), &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("docs find-replace leading bold: %v", err)
 	}
@@ -496,9 +464,6 @@ func TestDocsFindReplace_MarkdownResetsInheritedStylesBeforeLeadingBold(t *testi
 }
 
 func TestDocsFindReplace_MarkdownResetsInheritedParagraphStyle(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var got docs.BatchUpdateDocumentRequest
 	body := docBodyWithText("Section\n")
 	content := body["body"].(map[string]any)["content"].([]any)
@@ -521,12 +486,11 @@ func TestDocsFindReplace_MarkdownResetsInheritedParagraphStyle(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	replacement := "## New heading\n\nNormal prose.\n\n- bullet one\n- bullet two\n"
 	err := runKong(t, &DocsFindReplaceCmd{}, []string{
 		"doc1", "Section", replacement, "--format", "markdown", "--first",
-	}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	}, newDocsFindReplaceTestContext(t, docSvc), &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("docs find-replace --format markdown --first: %v", err)
 	}
@@ -571,9 +535,6 @@ func TestDocsFindReplace_MarkdownResetsInheritedParagraphStyle(t *testing.T) {
 }
 
 func TestDocsFindReplace_MarkdownCodeBlockStartsFreshParagraphWhenInline(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var batchCalls []docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -592,7 +553,6 @@ func TestDocsFindReplace_MarkdownCodeBlockStartsFreshParagraphWhenInline(t *test
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	contentFile := t.TempDir() + "/replacement.md"
 	if err := os.WriteFile(contentFile, []byte("```\nline1\nline2\n```"), 0o600); err != nil {
@@ -601,7 +561,7 @@ func TestDocsFindReplace_MarkdownCodeBlockStartsFreshParagraphWhenInline(t *test
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	err := runKong(t, cmd, []string{"doc1", "{{x}}", "--content-file", contentFile, "--format", "markdown", "--first"}, newDocsCmdContext(t), flags)
+	err := runKong(t, cmd, []string{"doc1", "{{x}}", "--content-file", contentFile, "--format", "markdown", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags)
 	if err != nil {
 		t.Fatalf("docs find-replace --format markdown --first: %v", err)
 	}
@@ -636,9 +596,6 @@ func hasTextStyleRequest(reqs []*docs.Request, pred func(*docs.TextStyle) bool) 
 }
 
 func TestDocsFindReplace_MarkdownNoMatch(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/") {
@@ -676,20 +633,16 @@ func TestDocsFindReplace_MarkdownNoMatch(t *testing.T) {
 		http.NotFound(w, r)
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
 	// No match should succeed with 0 replacements, not error.
-	if err := runKong(t, cmd, []string{"doc1", "nonexistent", "**bold**", "--format", "markdown", "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "nonexistent", "**bold**", "--format", "markdown", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace markdown --first no match: %v", err)
 	}
 }
 
 func TestDocsFindReplace_MarkdownReplaceAll_DoesNotLoopOnSelfMatch(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var batchCalls []docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -710,11 +663,10 @@ func TestDocsFindReplace_MarkdownReplaceAll_DoesNotLoopOnSelfMatch(t *testing.T)
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "foo", "**foo**", "--format", "markdown"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "foo", "**foo**", "--format", "markdown"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace --format markdown: %v", err)
 	}
 
@@ -724,9 +676,8 @@ func TestDocsFindReplace_MarkdownReplaceAll_DoesNotLoopOnSelfMatch(t *testing.T)
 }
 
 func TestDocsFindReplace_MarkdownWithImage(t *testing.T) {
-	origDocs := newDocsService
 	origToken := imgPlaceholderToken
-	t.Cleanup(func() { newDocsService = origDocs; imgPlaceholderToken = origToken })
+	t.Cleanup(func() { imgPlaceholderToken = origToken })
 	imgPlaceholderToken = func() string { return "test" }
 
 	var batchCalls []docs.BatchUpdateDocumentRequest
@@ -779,7 +730,6 @@ func TestDocsFindReplace_MarkdownWithImage(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
@@ -787,7 +737,7 @@ func TestDocsFindReplace_MarkdownWithImage(t *testing.T) {
 		"doc1", "{{img}}",
 		"![Screenshot](https://example.com/image.png)",
 		"--format", "markdown", "--first",
-	}, newDocsCmdContext(t), flags)
+	}, newDocsFindReplaceTestContext(t, docSvc), flags)
 	if err != nil {
 		t.Fatalf("docs find-replace markdown --first with image: %v", err)
 	}
@@ -817,9 +767,8 @@ func TestDocsFindReplace_MarkdownWithImage(t *testing.T) {
 }
 
 func TestDocsFindReplace_MarkdownImageFailure_CleansUpPlaceholders(t *testing.T) {
-	origDocs := newDocsService
 	origToken := imgPlaceholderToken
-	t.Cleanup(func() { newDocsService = origDocs; imgPlaceholderToken = origToken })
+	t.Cleanup(func() { imgPlaceholderToken = origToken })
 	imgPlaceholderToken = func() string { return "test" }
 
 	var batchCalls []docs.BatchUpdateDocumentRequest
@@ -882,7 +831,6 @@ func TestDocsFindReplace_MarkdownImageFailure_CleansUpPlaceholders(t *testing.T)
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
@@ -890,7 +838,7 @@ func TestDocsFindReplace_MarkdownImageFailure_CleansUpPlaceholders(t *testing.T)
 		"doc1", "{{img}}",
 		"![Screenshot](https://example.com/image.png)",
 		"--format", "markdown", "--first",
-	}, newDocsCmdContext(t), flags)
+	}, newDocsFindReplaceTestContext(t, docSvc), flags)
 
 	// The command should return an error (image insertion failed).
 	if err == nil {
@@ -919,9 +867,8 @@ func TestDocsFindReplace_MarkdownImageFailure_CleansUpPlaceholders(t *testing.T)
 }
 
 func TestDocsFindReplace_MarkdownImageSuccess_StillCleansUp(t *testing.T) {
-	origDocs := newDocsService
 	origToken := imgPlaceholderToken
-	t.Cleanup(func() { newDocsService = origDocs; imgPlaceholderToken = origToken })
+	t.Cleanup(func() { imgPlaceholderToken = origToken })
 	imgPlaceholderToken = func() string { return "test" }
 
 	var batchCalls []docs.BatchUpdateDocumentRequest
@@ -969,7 +916,6 @@ func TestDocsFindReplace_MarkdownImageSuccess_StillCleansUp(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
@@ -977,7 +923,7 @@ func TestDocsFindReplace_MarkdownImageSuccess_StillCleansUp(t *testing.T) {
 		"doc1", "{{img}}",
 		"![Screenshot](https://example.com/image.png)",
 		"--format", "markdown", "--first",
-	}, newDocsCmdContext(t), flags)
+	}, newDocsFindReplaceTestContext(t, docSvc), flags)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1003,9 +949,6 @@ func TestDocsFindReplace_MarkdownImageSuccess_StillCleansUp(t *testing.T) {
 }
 
 func TestDocsFindReplace_PinsRevisionId(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	var got docs.BatchUpdateDocumentRequest
 	body := docBodyWithText("Replace me here")
 	body["revisionId"] = "rev-abc-123"
@@ -1025,11 +968,10 @@ func TestDocsFindReplace_PinsRevisionId(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
 	cmd := &DocsFindReplaceCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "me", "you", "--first"}, newDocsCmdContext(t), flags); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "me", "you", "--first"}, newDocsFindReplaceTestContext(t, docSvc), flags); err != nil {
 		t.Fatalf("docs find-replace --first: %v", err)
 	}
 

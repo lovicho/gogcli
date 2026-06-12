@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,9 +14,6 @@ import (
 )
 
 func TestCalendarDeleteCmd_ScopeSingle(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	svc, closeSvc := newCalendarServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
 		switch {
@@ -47,9 +46,7 @@ func TestCalendarDeleteCmd_ScopeSingle(t *testing.T) {
 		}
 	}))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
-
-	ctx := newCalendarJSONContext(t)
+	ctx, output := newCalendarTestJSONContext(t, svc)
 
 	cmd := CalendarDeleteCmd{
 		CalendarID:        "cal@example.com",
@@ -58,16 +55,14 @@ func TestCalendarDeleteCmd_ScopeSingle(t *testing.T) {
 		OriginalStartTime: "2025-01-02T10:00:00Z",
 	}
 	flags := &RootFlags{Account: "a@b.com", Force: true}
-	out := captureStdout(t, func() {
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("CalendarDeleteCmd: %v", err)
-		}
-	})
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("CalendarDeleteCmd: %v", err)
+	}
 	var payload struct {
 		Deleted bool   `json:"deleted"`
 		EventID string `json:"eventId"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
 	if !payload.Deleted || payload.EventID != "ev_1" {
@@ -76,9 +71,6 @@ func TestCalendarDeleteCmd_ScopeSingle(t *testing.T) {
 }
 
 func TestCalendarDeleteCmd_SendUpdates(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	var gotSendUpdates string
 	svc, closeSvc := newCalendarServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -111,9 +103,7 @@ func TestCalendarDeleteCmd_SendUpdates(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
-
-	ctx := newCalendarJSONContext(t)
+	ctx, _ := newCalendarTestJSONContext(t, svc)
 
 	cmd := CalendarDeleteCmd{
 		CalendarID:  "cal",
@@ -130,9 +120,6 @@ func TestCalendarDeleteCmd_SendUpdates(t *testing.T) {
 }
 
 func TestCalendarDeleteCmd_ScopeFuture(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	var patchedRecurrence []string
 	svc, closeSvc := newCalendarServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -173,9 +160,7 @@ func TestCalendarDeleteCmd_ScopeFuture(t *testing.T) {
 		}
 	}))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
-
-	ctx := newCalendarJSONContext(t)
+	ctx, output := newCalendarTestJSONContext(t, svc)
 
 	cmd := CalendarDeleteCmd{
 		CalendarID:        "cal@example.com",
@@ -184,16 +169,14 @@ func TestCalendarDeleteCmd_ScopeFuture(t *testing.T) {
 		OriginalStartTime: "2025-01-02T10:00:00Z",
 	}
 	flags := &RootFlags{Account: "a@b.com", Force: true}
-	out := captureStdout(t, func() {
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("CalendarDeleteCmd: %v", err)
-		}
-	})
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("CalendarDeleteCmd: %v", err)
+	}
 	var payload struct {
 		Deleted bool   `json:"deleted"`
 		EventID string `json:"eventId"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
 	if !payload.Deleted || payload.EventID != "ev_2" || len(patchedRecurrence) == 0 {
@@ -202,24 +185,20 @@ func TestCalendarDeleteCmd_ScopeFuture(t *testing.T) {
 }
 
 func TestCalendarDeleteCmd_DryRunSkipsService(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	called := false
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) {
+	factory := func(context.Context, string) (*calendar.Service, error) {
 		called = true
 		return nil, errors.New("unexpected service creation")
 	}
 
-	ctx := newCalendarJSONContext(t)
+	var output bytes.Buffer
+	ctx := withCalendarTestServiceFactory(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), factory)
 
 	cmd := CalendarDeleteCmd{CalendarID: "cal@example.com", EventID: "ev"}
-	out := captureStdout(t, func() {
-		err := cmd.Run(ctx, &RootFlags{Account: "a@b.com", DryRun: true, NoInput: true})
-		if ExitCode(err) != 0 {
-			t.Fatalf("expected dry-run exit, got %v", err)
-		}
-	})
+	err := cmd.Run(ctx, &RootFlags{Account: "a@b.com", DryRun: true, NoInput: true})
+	if ExitCode(err) != 0 {
+		t.Fatalf("expected dry-run exit, got %v", err)
+	}
 	if called {
 		t.Fatalf("expected no service creation during dry-run")
 	}
@@ -227,7 +206,7 @@ func TestCalendarDeleteCmd_DryRunSkipsService(t *testing.T) {
 		Op      string         `json:"op"`
 		Request map[string]any `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
 	if payload.Op != "calendar.delete" || payload.Request["event_id"] != "ev" {
@@ -236,9 +215,6 @@ func TestCalendarDeleteCmd_DryRunSkipsService(t *testing.T) {
 }
 
 func TestCalendarDeleteCmd_ScopeFuture_InstanceEventID(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	var patchedRecurrence []string
 	svc, closeSvc := newCalendarServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -286,9 +262,7 @@ func TestCalendarDeleteCmd_ScopeFuture_InstanceEventID(t *testing.T) {
 		}
 	}))
 	defer closeSvc()
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
-
-	ctx := newCalendarJSONContext(t)
+	ctx, output := newCalendarTestJSONContext(t, svc)
 
 	cmd := CalendarDeleteCmd{
 		CalendarID:        "cal@example.com",
@@ -297,16 +271,14 @@ func TestCalendarDeleteCmd_ScopeFuture_InstanceEventID(t *testing.T) {
 		OriginalStartTime: "2025-01-02T10:00:00Z",
 	}
 	flags := &RootFlags{Account: "a@b.com", Force: true}
-	out := captureStdout(t, func() {
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("CalendarDeleteCmd: %v", err)
-		}
-	})
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("CalendarDeleteCmd: %v", err)
+	}
 	var payload struct {
 		Deleted bool   `json:"deleted"`
 		EventID string `json:"eventId"`
 	}
-	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
 	if !payload.Deleted || payload.EventID != "ev_2" || len(patchedRecurrence) == 0 {

@@ -40,7 +40,7 @@ func TestDriveLabelsList_JSON(t *testing.T) {
 	newDriveLabelsService = func(context.Context, string) (*drivelabels.Service, error) { return svc, nil }
 
 	out := captureStdout(t, func() {
-		if err := (&DriveLabelsListCmd{Max: 50, PublishedOnly: true, View: "LABEL_VIEW_BASIC"}).Run(newCalendarJSONContext(t), &RootFlags{Account: "a@example.com"}); err != nil {
+		if err := (&DriveLabelsListCmd{Max: 50, PublishedOnly: true, View: "LABEL_VIEW_BASIC"}).Run(newCmdJSONContext(t), &RootFlags{Account: "a@example.com"}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})

@@ -1,19 +1,17 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestWorkingLocationProperties(t *testing.T) {
@@ -68,9 +66,6 @@ func TestWorkingLocationSummary(t *testing.T) {
 }
 
 func TestCalendarWorkingLocation_RunJSON(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	var gotEvent calendar.Event
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -97,29 +92,23 @@ func TestCalendarWorkingLocation_RunJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
 
-	u, err := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
+	var output bytes.Buffer
+	ctx := withCalendarTestService(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), svc)
 	cmd := &CalendarWorkingLocationCmd{}
-	out := captureStdout(t, func() {
-		if err := runKong(t, cmd, []string{
-			"cal@example.com",
-			"--from", "2025-01-01",
-			"--to", "2025-01-02",
-			"--type", "office",
-			"--office-label", "HQ",
-			"--building-id", "b1",
-			"--floor-id", "f1",
-			"--desk-id", "d1",
-		}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
+	if err := runKong(t, cmd, []string{
+		"cal@example.com",
+		"--from", "2025-01-01",
+		"--to", "2025-01-02",
+		"--type", "office",
+		"--office-label", "HQ",
+		"--building-id", "b1",
+		"--floor-id", "f1",
+		"--desk-id", "d1",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
+	}
+	out := output.String()
 	if !strings.Contains(out, "\"event\"") {
 		t.Fatalf("unexpected output: %q", out)
 	}

@@ -22,7 +22,7 @@ type docsNamedRangeRecorder struct {
 	includeTabs []string
 }
 
-func setupDocsNamedRangeTestService(t *testing.T, doc *docs.Document, rec *docsNamedRangeRecorder) {
+func setupDocsNamedRangeTestService(t *testing.T, doc *docs.Document, rec *docsNamedRangeRecorder) *docs.Service {
 	t.Helper()
 
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,24 +58,31 @@ func setupDocsNamedRangeTestService(t *testing.T, doc *docs.Document, rec *docsN
 		}
 	}))
 	t.Cleanup(cleanup)
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
+	return docSvc
+}
+
+func newDocsNamedRangeTestContext(t *testing.T, svc *docs.Service, jsonOutput bool) (context.Context, *bytes.Buffer) {
+	t.Helper()
+	output := &bytes.Buffer{}
+	var ctx context.Context
+	if jsonOutput {
+		ctx = newCmdRuntimeJSONOutputContext(t, output, io.Discard)
+	} else {
+		ctx = newCmdRuntimeOutputContext(t, output, io.Discard)
+	}
+	return withDocsTestService(ctx, svc), output
 }
 
 func TestDocsNamedRangesListTabJSONAndPlain(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	doc := docsNamedRangeTabbedDocument()
 	rec := &docsNamedRangeRecorder{}
-	setupDocsNamedRangeTestService(t, doc, rec)
+	svc := setupDocsNamedRangeTestService(t, doc, rec)
+	ctx, output := newDocsNamedRangeTestContext(t, svc, true)
 
-	var runErr error
-	out := captureStdout(t, func() {
-		runErr = runKong(t, &DocsNamedRangesListCmd{}, []string{"doc1", "--tab", "Work"}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if runErr != nil {
-		t.Fatalf("list: %v", runErr)
+	if err := runKong(t, &DocsNamedRangesListCmd{}, []string{"doc1", "--tab", "Work"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("list: %v", err)
 	}
+	out := output.String()
 	if len(rec.includeTabs) != 1 || rec.includeTabs[0] != "true" {
 		t.Fatalf("includeTabsContent = %#v, want true", rec.includeTabs)
 	}
@@ -100,36 +107,29 @@ func TestDocsNamedRangesListTabJSONAndPlain(t *testing.T) {
 		t.Fatalf("stable range = %#v", got)
 	}
 
-	var plainErr error
-	plain := captureStdout(t, func() {
-		ctx := outfmt.WithMode(newDocsCmdContext(t), outfmt.Mode{Plain: true})
-		plainErr = runKong(t, &DocsNamedRangesListCmd{}, []string{"doc1", "--tab", "Work", "--name", "stable"}, ctx, &RootFlags{Account: "a@b.com"})
-	})
-	if plainErr != nil {
-		t.Fatalf("plain list: %v", plainErr)
+	plainCtx, plainOutput := newDocsNamedRangeTestContext(t, svc, false)
+	plainCtx = outfmt.WithMode(plainCtx, outfmt.Mode{Plain: true})
+	if err := runKong(t, &DocsNamedRangesListCmd{}, []string{"doc1", "--tab", "Work", "--name", "stable"}, plainCtx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("plain list: %v", err)
 	}
+	plain := plainOutput.String()
 	if got, want := plain, "stable\tnr-stable\t7\t13\tt.work\t\n"; got != want {
 		t.Fatalf("plain output = %q, want %q", got, want)
 	}
 }
 
 func TestDocsNamedRangesCreateAtUsesUTF16TabAndRevision(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	doc := docsNamedRangeTabbedDocument()
 	rec := &docsNamedRangeRecorder{}
-	setupDocsNamedRangeTestService(t, doc, rec)
+	svc := setupDocsNamedRangeTestService(t, doc, rec)
+	ctx, output := newDocsNamedRangeTestContext(t, svc, true)
 
-	var runErr error
-	out := captureStdout(t, func() {
-		runErr = runKong(t, &DocsNamedRangesCreateCmd{}, []string{
-			"doc1", "--name", "new-anchor", "--at", "😀 anchor", "--tab", "Work",
-		}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if runErr != nil {
-		t.Fatalf("create: %v", runErr)
+	if err := runKong(t, &DocsNamedRangesCreateCmd{}, []string{
+		"doc1", "--name", "new-anchor", "--at", "😀 anchor", "--tab", "Work",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("create: %v", err)
 	}
+	out := output.String()
 	if len(rec.batches) != 1 {
 		t.Fatalf("batches = %d, want 1", len(rec.batches))
 	}
@@ -156,9 +156,6 @@ func TestDocsNamedRangesCreateAtUsesUTF16TabAndRevision(t *testing.T) {
 }
 
 func TestDocsNamedRangesCreateIndexAndRejectDuplicate(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	doc := docsFindRangeDoc(docsFindRangeParagraph(1, "plain body\n"))
 	doc.DocumentId = "doc1"
 	doc.RevisionId = "rev-index"
@@ -173,11 +170,12 @@ func TestDocsNamedRangesCreateIndexAndRejectDuplicate(t *testing.T) {
 		},
 	}
 	rec := &docsNamedRangeRecorder{}
-	setupDocsNamedRangeTestService(t, doc, rec)
+	svc := setupDocsNamedRangeTestService(t, doc, rec)
+	ctx, _ := newDocsNamedRangeTestContext(t, svc, false)
 
 	if err := runKong(t, &DocsNamedRangesCreateCmd{}, []string{
 		"doc1", "--name", "index-anchor", "--start", "2", "--end", "5",
-	}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("index create: %v", err)
 	}
 	got := rec.batches[0].Requests[0].CreateNamedRange.Range
@@ -187,7 +185,7 @@ func TestDocsNamedRangesCreateIndexAndRejectDuplicate(t *testing.T) {
 
 	err := runKong(t, &DocsNamedRangesCreateCmd{}, []string{
 		"doc1", "--name", "stable", "--start", "2", "--end", "5",
-	}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	}, ctx, &RootFlags{Account: "a@b.com"})
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("duplicate error = %v", err)
 	}
@@ -197,9 +195,6 @@ func TestDocsNamedRangesCreateIndexAndRejectDuplicate(t *testing.T) {
 }
 
 func TestDocsNamedRangesDeleteAndReplaceByExactID(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	doc := docsFindRangeDoc(docsFindRangeParagraph(1, "stable\n"))
 	doc.DocumentId = "doc1"
 	doc.RevisionId = "rev-mutate"
@@ -214,9 +209,10 @@ func TestDocsNamedRangesDeleteAndReplaceByExactID(t *testing.T) {
 		},
 	}
 	rec := &docsNamedRangeRecorder{}
-	setupDocsNamedRangeTestService(t, doc, rec)
+	svc := setupDocsNamedRangeTestService(t, doc, rec)
+	ctx, _ := newDocsNamedRangeTestContext(t, svc, false)
 
-	if err := runKong(t, &DocsNamedRangesDeleteCmd{}, []string{"doc1", "stable"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, &DocsNamedRangesDeleteCmd{}, []string{"doc1", "stable"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	deleteBatch := rec.batches[0]
@@ -227,13 +223,11 @@ func TestDocsNamedRangesDeleteAndReplaceByExactID(t *testing.T) {
 		t.Fatalf("delete request = %#v", got)
 	}
 
-	var replaceErr error
-	replaceOut := captureStdout(t, func() {
-		replaceErr = runKong(t, &DocsNamedRangesReplaceCmd{}, []string{"doc1", "nr-stable", "--text", "replacement"}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if replaceErr != nil {
-		t.Fatalf("replace: %v", replaceErr)
+	replaceCtx, replaceOutput := newDocsNamedRangeTestContext(t, svc, true)
+	if err := runKong(t, &DocsNamedRangesReplaceCmd{}, []string{"doc1", "nr-stable", "--text", "replacement"}, replaceCtx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("replace: %v", err)
 	}
+	replaceOut := replaceOutput.String()
 	replaceBatch := rec.batches[1]
 	if got := replaceBatch.Requests[0].ReplaceNamedRangeContent; got == nil || got.NamedRangeId != "nr-stable" {
 		t.Fatalf("replace request = %#v", got)
@@ -248,7 +242,7 @@ func TestDocsNamedRangesDeleteAndReplaceByExactID(t *testing.T) {
 		t.Fatalf("post-replace endIndex = %d, want 12", got)
 	}
 
-	if err := runKong(t, &DocsNamedRangesReplaceCmd{}, []string{"doc1", "nr-stable", "--text="}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, &DocsNamedRangesReplaceCmd{}, []string{"doc1", "nr-stable", "--text="}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("replace empty: %v", err)
 	}
 	if !bytes.Contains(rec.rawBatches[2], []byte(`"text":""`)) {
@@ -257,9 +251,6 @@ func TestDocsNamedRangesDeleteAndReplaceByExactID(t *testing.T) {
 }
 
 func TestDocsNamedRangesReplaceDefaultTabScopesMultiTabRequest(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
-
 	mainRange := &docs.NamedRange{
 		Name:         "stable",
 		NamedRangeId: "nr-stable",
@@ -287,15 +278,12 @@ func TestDocsNamedRangesReplaceDefaultTabScopesMultiTabRequest(t *testing.T) {
 		},
 	}
 	rec := &docsNamedRangeRecorder{}
-	setupDocsNamedRangeTestService(t, doc, rec)
+	svc := setupDocsNamedRangeTestService(t, doc, rec)
+	ctx, _ := newDocsNamedRangeTestContext(t, svc, true)
 
-	var err error
-	captureStdout(t, func() {
-		err = runKong(t, &DocsNamedRangesReplaceCmd{}, []string{
-			"doc1", "stable", "--text", "replacement",
-		}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if err != nil {
+	if err := runKong(t, &DocsNamedRangesReplaceCmd{}, []string{
+		"doc1", "stable", "--text", "replacement",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
 	got := rec.batches[0].Requests[0].ReplaceNamedRangeContent
@@ -303,12 +291,9 @@ func TestDocsNamedRangesReplaceDefaultTabScopesMultiTabRequest(t *testing.T) {
 		t.Fatalf("replace request tabs = %#v, want t.main", got)
 	}
 
-	captureStdout(t, func() {
-		err = runKong(t, &DocsNamedRangesDeleteCmd{}, []string{
-			"doc1", "stable",
-		}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if err != nil {
+	if err := runKong(t, &DocsNamedRangesDeleteCmd{}, []string{
+		"doc1", "stable",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	deleted := rec.batches[1].Requests[0].DeleteNamedRange

@@ -6,7 +6,7 @@ import (
 )
 
 func TestCalendarAppointmentsReportsUnsupportedAPI(t *testing.T) {
-	err := (&CalendarAppointmentsCmd{}).Run(newCalendarJSONContext(t), &RootFlags{Account: "a@example.com"})
+	err := (&CalendarAppointmentsCmd{}).Run(newCmdJSONContext(t), &RootFlags{Account: "a@example.com"})
 	if err == nil {
 		t.Fatal("expected unsupported API error")
 	}

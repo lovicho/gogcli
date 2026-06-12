@@ -8,25 +8,21 @@ import (
 
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/people/v1"
+
+	"github.com/steipete/gogcli/internal/app"
 )
 
 func TestCalendarMaxValidationFailsBeforeService(t *testing.T) {
-	origCal := newCalendarService
-	origPeople := newPeopleDirectoryService
-	t.Cleanup(func() {
-		newCalendarService = origCal
-		newPeopleDirectoryService = origPeople
+	ctx := withTestRuntime(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), func(runtime *app.Runtime) {
+		runtime.Services.Calendar = func(context.Context, string) (*calendar.Service, error) {
+			t.Fatalf("expected max validation to fail before creating calendar service")
+			return nil, context.Canceled
+		}
+		runtime.Services.PeopleDirectory = func(context.Context, string) (*people.Service, error) {
+			t.Fatalf("expected max validation to fail before creating people service")
+			return nil, context.Canceled
+		}
 	})
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) {
-		t.Fatalf("expected max validation to fail before creating calendar service")
-		return nil, context.Canceled
-	}
-	newPeopleDirectoryService = func(context.Context, string) (*people.Service, error) {
-		t.Fatalf("expected max validation to fail before creating people service")
-		return nil, context.Canceled
-	}
-
-	ctx := newCmdOutputContext(t, io.Discard, io.Discard)
 	flags := &RootFlags{Account: "a@example.com"}
 	cases := []struct {
 		name string

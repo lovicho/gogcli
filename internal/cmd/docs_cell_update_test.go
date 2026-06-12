@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
@@ -12,6 +13,8 @@ import (
 )
 
 func TestRewriteDocsCellUpdateContentArgs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args []string
@@ -45,6 +48,8 @@ func TestRewriteDocsCellUpdateContentArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := rewriteDocsCellUpdateContentArgs(tt.args); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("rewriteDocsCellUpdateContentArgs() = %#v, want %#v", got, tt.want)
 			}
@@ -53,25 +58,27 @@ func TestRewriteDocsCellUpdateContentArgs(t *testing.T) {
 }
 
 func TestExecuteDocsCellUpdateLeadingDashContentDryRun(t *testing.T) {
-	out := captureStdout(t, func() {
-		err := Execute([]string{
-			"--json", "--dry-run", "--no-input",
-			"docs", "cell-update", "doc1",
-			"--row", "1", "--col", "1",
-			"--content", "- one\n- two",
-		})
-		if err != nil && ExitCode(err) != 0 {
-			t.Fatalf("Execute: %v", err)
-		}
-	})
-	if !strings.Contains(out, `"op": "docs.cell-update"`) {
-		t.Fatalf("unexpected dry-run output: %s", out)
+	result := executeWithTestRuntime(t, []string{
+		"--json", "--dry-run", "--no-input",
+		"docs", "cell-update", "doc1",
+		"--row", "1", "--col", "1",
+		"--content", "- one\n- two",
+	}, nil)
+	if result.err != nil && ExitCode(result.err) != 0 {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	if !strings.Contains(result.stdout, `"op": "docs.cell-update"`) {
+		t.Fatalf("unexpected dry-run output: %s", result.stdout)
 	}
 }
 
+func newDocsCellUpdateTestContext(t *testing.T, svc *docs.Service) context.Context {
+	t.Helper()
+	return withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+}
+
 func TestDocsCellUpdate_ReplacesTargetCellOnly(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -89,10 +96,9 @@ func TestDocsCellUpdate_ReplacesTargetCellOnly(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "--table-index", "1", "--row", "1", "--col", "2", "--content", "New", "--format", "plain"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "--table-index", "1", "--row", "1", "--col", "2", "--content", "New", "--format", "plain"}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("docs cell-update: %v", err)
 	}
 	if got.WriteControl == nil || got.WriteControl.RequiredRevisionId != "rev1" {
@@ -112,8 +118,7 @@ func TestDocsCellUpdate_ReplacesTargetCellOnly(t *testing.T) {
 }
 
 func TestDocsCellUpdate_ReplacesWithNativeMarkdownList(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -131,10 +136,9 @@ func TestDocsCellUpdate_ReplacesWithNativeMarkdownList(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content=- Alpha\n- Beta"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content=- Alpha\n- Beta"}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("docs cell-update list: %v", err)
 	}
 	if len(got.Requests) != 3 {
@@ -151,8 +155,7 @@ func TestDocsCellUpdate_ReplacesWithNativeMarkdownList(t *testing.T) {
 }
 
 func TestDocsCellUpdate_ReplacesWithNestedNativeMarkdownList(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -170,11 +173,10 @@ func TestDocsCellUpdate_ReplacesWithNestedNativeMarkdownList(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
 	content := "- a\n  - a1\n  - a2\n- b"
-	if err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content=" + content}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content=" + content}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("docs cell-update nested list: %v", err)
 	}
 	if len(got.Requests) != 3 {
@@ -191,8 +193,7 @@ func TestDocsCellUpdate_ReplacesWithNestedNativeMarkdownList(t *testing.T) {
 }
 
 func TestDocsCellUpdate_ReplacesPlainCellWithInlineCodeStyle(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -210,10 +211,9 @@ func TestDocsCellUpdate_ReplacesPlainCellWithInlineCodeStyle(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content", "`doThing()`"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content", "`doThing()`"}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("docs cell-update inline code: %v", err)
 	}
 	if len(got.Requests) != 3 {
@@ -237,8 +237,7 @@ func TestDocsCellUpdate_ReplacesPlainCellWithInlineCodeStyle(t *testing.T) {
 }
 
 func TestDocsCellUpdate_AppendMarkdownWithTab(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var got docs.BatchUpdateDocumentRequest
 	var includeTabs bool
@@ -258,10 +257,9 @@ func TestDocsCellUpdate_AppendMarkdownWithTab(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "--tab", "Second", "--row", "1", "--col", "1", "--content", " **bold**", "--append"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "--tab", "Second", "--row", "1", "--col", "1", "--content", " **bold**", "--append"}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("docs cell-update append: %v", err)
 	}
 	if !includeTabs {
@@ -281,8 +279,7 @@ func TestDocsCellUpdate_AppendMarkdownWithTab(t *testing.T) {
 }
 
 func TestDocsCellUpdate_AppendBlockMarkdownStartsNewParagraph(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -300,10 +297,9 @@ func TestDocsCellUpdate_AppendBlockMarkdownStartsNewParagraph(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
-	if err := runKong(t, cmd, []string{"doc1", "--tab", "Second", "--row", "1", "--col", "1", "--content", "# Ready", "--append"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	if err := runKong(t, cmd, []string{"doc1", "--tab", "Second", "--row", "1", "--col", "1", "--content", "# Ready", "--append"}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("docs cell-update append heading: %v", err)
 	}
 	if len(got.Requests) < 2 || got.Requests[0].DeleteContentRange != nil {
@@ -320,8 +316,7 @@ func TestDocsCellUpdate_AppendBlockMarkdownStartsNewParagraph(t *testing.T) {
 }
 
 func TestDocsCellUpdate_RejectsMarkdownWithoutEditableText(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var posted bool
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -337,10 +332,9 @@ func TestDocsCellUpdate_RejectsMarkdownWithoutEditableText(t *testing.T) {
 		}
 	})
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
 	cmd := &DocsCellUpdateCmd{}
-	err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content", "```\n```"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	err := runKong(t, cmd, []string{"doc1", "--row", "1", "--col", "2", "--content", "```\n```"}, newDocsCellUpdateTestContext(t, docSvc), &RootFlags{Account: "a@b.com"})
 	if err == nil || !strings.Contains(err.Error(), "no editable cell text") {
 		t.Fatalf("expected no editable text error, got %v", err)
 	}
@@ -350,6 +344,8 @@ func TestDocsCellUpdate_RejectsMarkdownWithoutEditableText(t *testing.T) {
 }
 
 func TestBuildMarkdownCellContent_PreservesHorizontalRuleSemantics(t *testing.T) {
+	t.Parallel()
+
 	_, text, inserted, err := buildMarkdownCellContent("---", 1, "")
 	if err != nil {
 		t.Fatal(err)

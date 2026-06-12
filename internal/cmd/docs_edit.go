@@ -248,7 +248,7 @@ func (c *DocsWriteCmd) writePlainTextResult(ctx context.Context, resp *docs.Batc
 		if resp.WriteControl != nil {
 			payload["writeControl"] = resp.WriteControl
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("id\t%s", resp.DocumentId)
@@ -311,7 +311,7 @@ func (c *DocsWriteCmd) writeMarkdown(ctx context.Context, flags *RootFlags, docI
 
 	var docsSvc *docs.Service
 	if c.CheckOrphans {
-		docsSvc, err = newDocsService(ctx, account)
+		docsSvc, err = docsService(ctx, account)
 		if err != nil {
 			return err
 		}
@@ -337,7 +337,7 @@ func (c *DocsWriteCmd) writeMarkdown(ctx context.Context, flags *RootFlags, docI
 	needsDocsSvc := len(images) > 0 || c.Pageless || c.Layout.any() || markdownMayContainHeadingLinks(cleaned)
 	if needsDocsSvc && docsSvc == nil {
 		var svcErr error
-		docsSvc, svcErr = newDocsService(ctx, account)
+		docsSvc, svcErr = docsService(ctx, account)
 		if svcErr != nil {
 			return svcErr
 		}
@@ -375,7 +375,7 @@ func (c *DocsWriteCmd) writeMarkdown(ctx context.Context, flags *RootFlags, docI
 		if rewrittenHeadingLinks > 0 {
 			payload["headingLinks"] = rewrittenHeadingLinks
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("documentId\t%s", updated.Id)
@@ -468,7 +468,7 @@ func (c *DocsWriteCmd) appendMarkdown(ctx context.Context, flags *RootFlags, doc
 		for k, v := range c.Layout.dryRunPayload() {
 			payload[k] = v
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u := ui.FromContext(ctx)
@@ -519,7 +519,7 @@ func (c *DocsWriteCmd) replaceMarkdownInTab(ctx context.Context, flags *RootFlag
 		if driveErr != nil {
 			return driveErr
 		}
-		svc, err = newDocsService(ctx, account)
+		svc, err = docsService(ctx, account)
 		if err != nil {
 			return err
 		}
@@ -601,7 +601,7 @@ func (c *DocsWriteCmd) replaceMarkdownInTab(ctx context.Context, flags *RootFlag
 		for k, v := range c.Layout.dryRunPayload() {
 			payload[k] = v
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u := ui.FromContext(ctx)
@@ -828,7 +828,7 @@ func (c *DocsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 		if resp.WriteControl != nil {
 			payload["writeControl"] = resp.WriteControl
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("id\t%s", resp.DocumentId)
@@ -1071,7 +1071,7 @@ func (c *DocsInsertCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("documentId\t%s", result.DocumentId)
@@ -1204,7 +1204,7 @@ func (c *DocsDeleteCmd) Run(ctx context.Context, kctx *kong.Context, flags *Root
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("documentId\t%s", result.DocumentId)
@@ -1393,7 +1393,7 @@ func (c *DocsFindReplaceCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("documentId\t%s", docID)
@@ -1457,7 +1457,7 @@ func (c *DocsFindReplaceCmd) runReplaceAll(ctx context.Context, u *ui.UI, svc *d
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("documentId\t%s", documentID)
@@ -1490,7 +1490,7 @@ func (c *DocsFindReplaceCmd) printFirstResult(ctx context.Context, u *ui.UI, doc
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 
 	u.Out().Linef("documentId\t%s", docID)

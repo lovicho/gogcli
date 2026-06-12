@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"google.golang.org/api/classroom/v1"
@@ -102,7 +101,7 @@ func (c *ClassroomTopicsGetCmd) Run(ctx context.Context, flags *RootFlags) error
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"topic": topic})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"topic": topic})
 	}
 
 	u.Out().Linef("id\t%s", topic.TopicId)
@@ -148,7 +147,7 @@ func (c *ClassroomTopicsCreateCmd) Run(ctx context.Context, flags *RootFlags) er
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"topic": created})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"topic": created})
 	}
 	u.Out().Linef("id\t%s", created.TopicId)
 	u.Out().Linef("name\t%s", created.Name)
@@ -197,7 +196,7 @@ func (c *ClassroomTopicsUpdateCmd) Run(ctx context.Context, flags *RootFlags) er
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"topic": updated})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"topic": updated})
 	}
 	u.Out().Linef("id\t%s", updated.TopicId)
 	u.Out().Linef("name\t%s", updated.Name)

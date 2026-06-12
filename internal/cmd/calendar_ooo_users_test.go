@@ -17,9 +17,6 @@ import (
 )
 
 func TestCalendarOOOCmd_JSON(t *testing.T) {
-	origCal := newCalendarService
-	t.Cleanup(func() { newCalendarService = origCal })
-
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/events") {
 			var body map[string]any
@@ -46,15 +43,12 @@ func TestCalendarOOOCmd_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "calendar", "ooo", "--from", "2025-01-01T09:00:00Z", "--to", "2025-01-01T17:00:00Z"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithCalendarTestService(t, []string{"--json", "--account", "a@b.com", "calendar", "ooo", "--from", "2025-01-01T09:00:00Z", "--to", "2025-01-01T17:00:00Z"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 	if !strings.Contains(out, "event") {
 		t.Fatalf("unexpected output: %q", out)
 	}
@@ -77,9 +71,6 @@ func TestCalendarOOOCmdRejectsDateOnlyAndAllDay(t *testing.T) {
 }
 
 func TestCalendarUsersCmd_TextAndJSON(t *testing.T) {
-	origPeople := newPeopleDirectoryService
-	t.Cleanup(func() { newPeopleDirectoryService = origPeople })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "people:listDirectoryPeople") {
 			http.NotFound(w, r)
@@ -106,30 +97,23 @@ func TestCalendarUsersCmd_TextAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newPeopleDirectoryService = func(context.Context, string) (*people.Service, error) { return svc, nil }
 
-	textOut := captureStdout(t, func() {
-		errOut := captureStderr(t, func() {
-			if err := Execute([]string{"--account", "a@b.com", "calendar", "users", "--max", "1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-		if !strings.Contains(errOut, "Tip: Use any email") {
-			t.Fatalf("unexpected stderr: %q", errOut)
-		}
-	})
-	if !strings.Contains(textOut, "user@example.com") {
-		t.Fatalf("unexpected text output: %q", textOut)
+	textResult := executeWithPeopleDirectoryTestService(t, []string{"--account", "a@b.com", "calendar", "users", "--max", "1"}, svc)
+	if textResult.err != nil {
+		t.Fatalf("Execute: %v", textResult.err)
+	}
+	if !strings.Contains(textResult.stderr, "Tip: Use any email") {
+		t.Fatalf("unexpected stderr: %q", textResult.stderr)
+	}
+	if !strings.Contains(textResult.stdout, "user@example.com") {
+		t.Fatalf("unexpected text output: %q", textResult.stdout)
 	}
 
-	jsonOut := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "calendar", "users", "--max", "1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
-	if !strings.Contains(jsonOut, "users") {
-		t.Fatalf("unexpected json output: %q", jsonOut)
+	jsonResult := executeWithPeopleDirectoryTestService(t, []string{"--json", "--account", "a@b.com", "calendar", "users", "--max", "1"}, svc)
+	if jsonResult.err != nil {
+		t.Fatalf("Execute: %v", jsonResult.err)
+	}
+	if !strings.Contains(jsonResult.stdout, "users") {
+		t.Fatalf("unexpected json output: %q", jsonResult.stdout)
 	}
 }

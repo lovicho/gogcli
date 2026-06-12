@@ -52,7 +52,7 @@ func TestPhotosSearchBuildsReadOnlyRequest(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		cmd := &PhotosSearchCmd{MediaType: "PHOTO", Max: 10, From: "2026-01-01", To: "2026-01-02"}
-		if err := cmd.Run(newCalendarJSONContext(t), &RootFlags{Account: "a@example.com"}); err != nil {
+		if err := cmd.Run(newCmdJSONContext(t), &RootFlags{Account: "a@example.com"}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -8,8 +9,7 @@ import (
 
 	"google.golang.org/api/calendar/v3"
 
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
+	"github.com/steipete/gogcli/internal/app"
 )
 
 func newCalendarServiceForTest(t *testing.T, h http.Handler) (*calendar.Service, func()) {
@@ -23,27 +23,34 @@ func newTestCalendarService(t *testing.T, h http.Handler) (*calendar.Service, fu
 	return newCalendarServiceForTest(t, h)
 }
 
-func stubCalendarServiceForTest(t *testing.T, svc *calendar.Service) {
-	t.Helper()
-	stubGoogleTestService(t, &newCalendarService, svc)
+func withCalendarTestService(ctx context.Context, svc *calendar.Service) context.Context {
+	return withCalendarTestServiceFactory(ctx, func(context.Context, string) (*calendar.Service, error) {
+		return svc, nil
+	})
 }
 
-func newCalendarOutputContext(t *testing.T, stdout, stderr io.Writer) context.Context {
-	t.Helper()
-
-	u, err := ui.New(ui.Options{Stdout: stdout, Stderr: stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	return ui.WithUI(context.Background(), u)
+func withCalendarTestServiceFactory(ctx context.Context, factory app.CalendarServiceFactory) context.Context {
+	return withTestRuntime(ctx, func(runtime *app.Runtime) {
+		runtime.Services.Calendar = factory
+	})
 }
 
-func newCalendarJSONContext(t *testing.T) context.Context {
+func executeWithCalendarTestService(t *testing.T, args []string, svc *calendar.Service) executeTestResult {
 	t.Helper()
-	return newCalendarJSONOutputContext(t, io.Discard, io.Discard)
+	return executeWithCalendarTestServiceFactory(t, args, func(context.Context, string) (*calendar.Service, error) {
+		return svc, nil
+	})
 }
 
-func newCalendarJSONOutputContext(t *testing.T, stdout, stderr io.Writer) context.Context {
+func executeWithCalendarTestServiceFactory(t *testing.T, args []string, factory app.CalendarServiceFactory) executeTestResult {
 	t.Helper()
-	return outfmt.WithMode(newCalendarOutputContext(t, stdout, stderr), outfmt.Mode{JSON: true})
+	return executeWithTestRuntime(t, args, &app.Runtime{Services: app.Services{
+		Calendar: factory,
+	}})
+}
+
+func newCalendarTestJSONContext(t *testing.T, svc *calendar.Service) (context.Context, *bytes.Buffer) {
+	t.Helper()
+	var output bytes.Buffer
+	return withCalendarTestService(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), svc), &output
 }

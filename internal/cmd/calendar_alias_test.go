@@ -1,8 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
-	"os"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,21 +16,20 @@ func TestCalendarAliasSetListUnset_JSON(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	var output bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
 
 	// set
-	_ = captureStdout(t, func() {
-		if runErr := runKong(t, &CalendarAliasSetCmd{}, []string{"family", "3656f8abc123@group.calendar.google.com"}, ctx, &RootFlags{}); runErr != nil {
-			t.Fatalf("set: %v", runErr)
-		}
-	})
+	if runErr := runKong(t, &CalendarAliasSetCmd{}, []string{"family", "3656f8abc123@group.calendar.google.com"}, ctx, &RootFlags{}); runErr != nil {
+		t.Fatalf("set: %v", runErr)
+	}
 
 	// list
-	out := captureStdout(t, func() {
-		if runErr := runKong(t, &CalendarAliasListCmd{}, []string{}, ctx, &RootFlags{}); runErr != nil {
-			t.Fatalf("list: %v", runErr)
-		}
-	})
+	output.Reset()
+	if runErr := runKong(t, &CalendarAliasListCmd{}, []string{}, ctx, &RootFlags{}); runErr != nil {
+		t.Fatalf("list: %v", runErr)
+	}
+	out := output.String()
 	var listResp struct {
 		Aliases map[string]string `json:"aliases"`
 	}
@@ -41,11 +41,10 @@ func TestCalendarAliasSetListUnset_JSON(t *testing.T) {
 	}
 
 	// unset
-	_ = captureStdout(t, func() {
-		if runErr := runKong(t, &CalendarAliasUnsetCmd{}, []string{"family"}, ctx, &RootFlags{}); runErr != nil {
-			t.Fatalf("unset: %v", runErr)
-		}
-	})
+	output.Reset()
+	if runErr := runKong(t, &CalendarAliasUnsetCmd{}, []string{"family"}, ctx, &RootFlags{}); runErr != nil {
+		t.Fatalf("unset: %v", runErr)
+	}
 
 	// Verify the alias was deleted
 	_, ok, err := config.ResolveCalendarAlias("family")
@@ -62,13 +61,12 @@ func TestCalendarAliasSetCmd_JSON_UsesSnakeCaseCalendarID(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
-
-	out := captureStdout(t, func() {
-		if runErr := runKong(t, &CalendarAliasSetCmd{}, []string{"family", "family-cal@group.calendar.google.com"}, ctx, &RootFlags{}); runErr != nil {
-			t.Fatalf("set: %v", runErr)
-		}
-	})
+	var output bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
+	if runErr := runKong(t, &CalendarAliasSetCmd{}, []string{"family", "family-cal@group.calendar.google.com"}, ctx, &RootFlags{}); runErr != nil {
+		t.Fatalf("set: %v", runErr)
+	}
+	out := output.String()
 
 	var got map[string]any
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
@@ -87,7 +85,7 @@ func TestCalendarAliasSetCmd_Validation(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 
-	ctx := newCalendarOutputContext(t, os.Stdout, os.Stderr)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	tests := []struct {
 		name    string
@@ -115,7 +113,7 @@ func TestCalendarAliasUnsetCmd_NotFound(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 
-	ctx := newCalendarOutputContext(t, os.Stdout, os.Stderr)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	err := runKong(t, &CalendarAliasUnsetCmd{}, []string{"nonexistent"}, ctx, &RootFlags{})
 	if err == nil {

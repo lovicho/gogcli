@@ -13,7 +13,7 @@ import (
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 
-	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -33,6 +33,36 @@ func newDocsServiceForTest(t *testing.T, h http.HandlerFunc) (*docs.Service, fun
 	return docSvc, func() {} // retained for call-site compat; cleanup is via t.Cleanup
 }
 
+func withDocsTestService(ctx context.Context, svc *docs.Service) context.Context {
+	return withDocsTestServiceFactory(ctx, func(context.Context, string) (*docs.Service, error) {
+		return svc, nil
+	})
+}
+
+func withDocsTestServiceFactory(ctx context.Context, factory app.DocsServiceFactory) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runtime := &app.Runtime{}
+	if existing, ok := app.FromContext(ctx); ok {
+		*runtime = *existing
+	}
+	runtime.Services.Docs = factory
+	return app.WithRuntime(ctx, runtime)
+}
+
+func withDocsTestHTTPClientFactory(ctx context.Context, factory app.DocsHTTPClientFactory) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runtime := &app.Runtime{}
+	if existing, ok := app.FromContext(ctx); ok {
+		*runtime = *existing
+	}
+	runtime.Services.DocsHTTP = factory
+	return app.WithRuntime(ctx, runtime)
+}
+
 func newDocsCmdContext(t *testing.T) context.Context {
 	t.Helper()
 	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
@@ -50,11 +80,6 @@ func newDocsCmdOutputContext(t *testing.T) (context.Context, *bytes.Buffer) {
 		t.Fatalf("ui.New: %v", err)
 	}
 	return ui.WithUI(context.Background(), u), &out
-}
-
-func newDocsJSONContext(t *testing.T) context.Context {
-	t.Helper()
-	return outfmt.WithMode(newDocsCmdContext(t), outfmt.Mode{JSON: true})
 }
 
 func newDocsJSONContextWithDrive(t *testing.T, svc *drive.Service) context.Context {

@@ -1,26 +1,17 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
-
-	"google.golang.org/api/option"
-	"google.golang.org/api/tasks/v1"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestTasksAddCmd_RepeatCreatesMultiple(t *testing.T) {
-	origNew := newTasksService
-	t.Cleanup(func() { newTasksService = origNew })
-
 	var (
 		counter   int32
 		gotTitles []string
@@ -62,33 +53,20 @@ func TestTasksAddCmd_RepeatCreatesMultiple(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := tasks.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	var output bytes.Buffer
+	ctx := withTasksTestService(
+		newCmdRuntimeJSONOutputContext(t, &output, io.Discard),
+		newTasksServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if err := runKong(t, &TasksAddCmd{}, []string{
+		"l1",
+		"--title", "Task",
+		"--due", "2025-01-01",
+		"--repeat", "daily",
+		"--repeat-count", "3",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
 	}
-	newTasksService = func(context.Context, string) (*tasks.Service, error) { return svc, nil }
-
-	u, err := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	out := captureStdout(t, func() {
-		if err := runKong(t, &TasksAddCmd{}, []string{
-			"l1",
-			"--title", "Task",
-			"--due", "2025-01-01",
-			"--repeat", "daily",
-			"--repeat-count", "3",
-		}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
 
 	if len(gotTitles) != 3 || len(gotDue) != 3 {
 		t.Fatalf("expected 3 tasks, got titles=%d due=%d", len(gotTitles), len(gotDue))
@@ -106,7 +84,7 @@ func TestTasksAddCmd_RepeatCreatesMultiple(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"tasks"`
 	}
-	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+	if err := json.Unmarshal(output.Bytes(), &parsed); err != nil {
 		t.Fatalf("json parse: %v", err)
 	}
 	if parsed.Count != 3 || len(parsed.Tasks) != 3 {
@@ -115,9 +93,6 @@ func TestTasksAddCmd_RepeatCreatesMultiple(t *testing.T) {
 }
 
 func TestTasksAddCmd_RepeatUntilDateOnlyWithTimeDue(t *testing.T) {
-	origNew := newTasksService
-	t.Cleanup(func() { newTasksService = origNew })
-
 	var gotDue []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -150,33 +125,19 @@ func TestTasksAddCmd_RepeatUntilDateOnlyWithTimeDue(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := tasks.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	ctx := withTasksTestService(
+		newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard),
+		newTasksServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if err := runKong(t, &TasksAddCmd{}, []string{
+		"l1",
+		"--title", "Task",
+		"--due", "2025-01-01T10:00:00Z",
+		"--repeat", "daily",
+		"--repeat-until", "2025-01-03",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
 	}
-	newTasksService = func(context.Context, string) (*tasks.Service, error) { return svc, nil }
-
-	u, err := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &TasksAddCmd{}, []string{
-			"l1",
-			"--title", "Task",
-			"--due", "2025-01-01T10:00:00Z",
-			"--repeat", "daily",
-			"--repeat-until", "2025-01-03",
-		}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
 
 	if len(gotDue) != 3 {
 		t.Fatalf("expected 3 tasks, got due=%d", len(gotDue))
@@ -187,9 +148,6 @@ func TestTasksAddCmd_RepeatUntilDateOnlyWithTimeDue(t *testing.T) {
 }
 
 func TestTasksAddCmd_RecurAliasCreatesMultiple(t *testing.T) {
-	origNew := newTasksService
-	t.Cleanup(func() { newTasksService = origNew })
-
 	var gotDue []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -222,33 +180,19 @@ func TestTasksAddCmd_RecurAliasCreatesMultiple(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := tasks.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	ctx := withTasksTestService(
+		newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard),
+		newTasksServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if err := runKong(t, &TasksAddCmd{}, []string{
+		"l1",
+		"--title", "Task",
+		"--due", "2025-01-01",
+		"--recur", "weekly",
+		"--repeat-count", "3",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
 	}
-	newTasksService = func(context.Context, string) (*tasks.Service, error) { return svc, nil }
-
-	u, err := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &TasksAddCmd{}, []string{
-			"l1",
-			"--title", "Task",
-			"--due", "2025-01-01",
-			"--recur", "weekly",
-			"--repeat-count", "3",
-		}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
 
 	if len(gotDue) != 3 {
 		t.Fatalf("expected 3 tasks, got due=%d", len(gotDue))
@@ -259,9 +203,6 @@ func TestTasksAddCmd_RecurAliasCreatesMultiple(t *testing.T) {
 }
 
 func TestTasksAddCmd_RecurRRuleIntervalCreatesMultiple(t *testing.T) {
-	origNew := newTasksService
-	t.Cleanup(func() { newTasksService = origNew })
-
 	var gotDue []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,33 +235,19 @@ func TestTasksAddCmd_RecurRRuleIntervalCreatesMultiple(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc, err := tasks.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
+	ctx := withTasksTestService(
+		newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard),
+		newTasksServiceFromServer(t, srv),
 	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
+	if err := runKong(t, &TasksAddCmd{}, []string{
+		"l1",
+		"--title", "Task",
+		"--due", "2025-01-01",
+		"--recur-rrule", "FREQ=DAILY;INTERVAL=2",
+		"--repeat-count", "3",
+	}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
 	}
-	newTasksService = func(context.Context, string) (*tasks.Service, error) { return svc, nil }
-
-	u, err := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
-
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &TasksAddCmd{}, []string{
-			"l1",
-			"--title", "Task",
-			"--due", "2025-01-01",
-			"--recur-rrule", "FREQ=DAILY;INTERVAL=2",
-			"--repeat-count", "3",
-		}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
 
 	if len(gotDue) != 3 {
 		t.Fatalf("expected 3 tasks, got due=%d", len(gotDue))

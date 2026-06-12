@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 
 	"google.golang.org/api/calendar/v3"
 
@@ -101,7 +100,7 @@ func (m *calendarMutationContext) writeEvent(ctx context.Context, event *calenda
 	redactCalendarEventForOutput(ctx, event)
 	tz, loc, _ := getCalendarLocation(ctx, m.svc, m.calendarID)
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"event": wrapEventWithDaysWithTimezone(event, tz, loc)})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"event": wrapEventWithDaysWithTimezone(event, tz, loc)})
 	}
 	printCalendarEventWithTimezone(m.u, event, tz, loc)
 	return nil

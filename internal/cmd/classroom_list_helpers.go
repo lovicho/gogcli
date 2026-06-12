@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"io"
-	"os"
 
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
@@ -32,7 +31,7 @@ func writeClassroomPagedList[T any](
 ) error {
 	items = nonNilClassroomItems(items)
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			jsonKey:         items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {

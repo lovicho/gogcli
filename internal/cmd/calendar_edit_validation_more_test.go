@@ -12,7 +12,6 @@ import (
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 
-	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -50,9 +49,6 @@ func TestCalendarCreateCmd_ValidationErrors(t *testing.T) {
 }
 
 func TestCalendarCreateCmd_WithExtras(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
 		if r.Method == http.MethodPost && strings.HasSuffix(path, "/events") {
@@ -75,13 +71,8 @@ func TestCalendarCreateCmd_WithExtras(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) { return svc, nil }
 
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := outfmt.WithMode(ui.WithUI(context.Background(), u), outfmt.Mode{JSON: true})
+	ctx, output := newCalendarTestJSONContext(t, svc)
 	flags := &RootFlags{Account: "a@b.com"}
 
 	yes := true
@@ -111,13 +102,11 @@ func TestCalendarCreateCmd_WithExtras(t *testing.T) {
 		PrivateProps:          []string{"k=v"},
 		SharedProps:           []string{"s=v"},
 	}
-	out := captureStdout(t, func() {
-		if err := cmd.Run(ctx, flags, nil); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-	if !strings.Contains(out, "\"event\"") {
-		t.Fatalf("unexpected json output: %q", out)
+	if err := cmd.Run(ctx, flags, nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(output.String(), "\"event\"") {
+		t.Fatalf("unexpected json output: %q", output.String())
 	}
 }
 

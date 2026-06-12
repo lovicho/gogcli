@@ -1,19 +1,21 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/zoom"
 )
 
@@ -54,23 +56,25 @@ func (f *fakeZoomCalendarClient) DeleteMeeting(_ context.Context, id string) err
 	return f.err
 }
 
-func withFakeZoomClient(t *testing.T, client *fakeZoomCalendarClient) {
-	t.Helper()
-	orig := newZoomMeetingClient
-	newZoomMeetingClient = func(string) (zoomMeetingClient, error) {
-		if client.err != nil && errors.Is(client.err, zoom.ErrCredentialsNotFound) {
-			return nil, client.err
+func withFakeZoomClient(ctx context.Context, client *fakeZoomCalendarClient) context.Context {
+	return withTestRuntime(ctx, func(runtime *app.Runtime) {
+		runtime.Services.Zoom = func(string) (app.ZoomMeetingClient, error) {
+			if client.err != nil && errors.Is(client.err, zoom.ErrCredentialsNotFound) {
+				return nil, client.err
+			}
+			return client, nil
 		}
-		return client, nil
-	}
-	t.Cleanup(func() { newZoomMeetingClient = orig })
+	})
+}
+
+func newZoomCalendarTestJSONContext(t *testing.T, svc *calendar.Service, client *fakeZoomCalendarClient) context.Context {
+	t.Helper()
+	ctx, _ := newCalendarTestJSONContext(t, svc)
+	return withFakeZoomClient(ctx, client)
 }
 
 func TestCalendarCreateCmd_WithZoomAndAttachments(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 
 	var sawZoomDescription, sawNoConferenceData, sawAttachments bool
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,10 +95,8 @@ func TestCalendarCreateCmd_WithZoomAndAttachments(t *testing.T) {
 		http.NotFound(w, r)
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	cmd := &CalendarCreateCmd{}
 	if err := runKong(t, cmd, []string{
 		"cal@example.com", "--summary", "Zoom", "--from", "2025-01-02T10:00:00Z", "--to", "2025-01-02T11:00:00Z",
@@ -109,29 +111,25 @@ func TestCalendarCreateCmd_WithZoomAndAttachments(t *testing.T) {
 }
 
 func TestCalendarCreateCmd_DryRunWithZoomReportsZoomIntent(t *testing.T) {
-	origNewZoom := newZoomMeetingClient
-	newZoomMeetingClient = func(string) (zoomMeetingClient, error) {
-		t.Fatal("dry-run must not create Zoom client")
-		return nil, errors.New("unexpected Zoom client")
+	result := executeWithTestRuntime(t, []string{
+		"--json",
+		"--dry-run",
+		"--no-input",
+		"calendar", "create", "primary",
+		"--summary", "Zoom",
+		"--from", "2026-05-18T10:00:00Z",
+		"--to", "2026-05-18T10:30:00Z",
+		"--with-zoom",
+	}, &app.Runtime{Services: app.Services{
+		Zoom: func(string) (app.ZoomMeetingClient, error) {
+			t.Fatal("dry-run must not create Zoom client")
+			return nil, errors.New("unexpected Zoom client")
+		},
+	}})
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-	t.Cleanup(func() { newZoomMeetingClient = origNewZoom })
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--json",
-				"--dry-run",
-				"--no-input",
-				"calendar", "create", "primary",
-				"--summary", "Zoom",
-				"--from", "2026-05-18T10:00:00Z",
-				"--to", "2026-05-18T10:30:00Z",
-				"--with-zoom",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	var got struct {
 		DryRun  bool `json:"dry_run"`
@@ -148,34 +146,26 @@ func TestCalendarCreateCmd_DryRunWithZoomReportsZoomIntent(t *testing.T) {
 }
 
 func TestCalendarUpdateCmd_DryRunWithZoomReportsZoomIntent(t *testing.T) {
-	origNewZoom := newZoomMeetingClient
-	origNewCalendar := newCalendarService
-	newZoomMeetingClient = func(string) (zoomMeetingClient, error) {
-		t.Fatal("dry-run must not create Zoom client")
-		return nil, errors.New("unexpected Zoom client")
+	result := executeWithTestRuntime(t, []string{
+		"--json",
+		"--dry-run",
+		"--no-input",
+		"calendar", "update", "primary", "event-id",
+		"--regenerate-zoom",
+	}, &app.Runtime{Services: app.Services{
+		Calendar: func(context.Context, string) (*calendar.Service, error) {
+			t.Fatal("dry-run must not create Calendar service")
+			return nil, errors.New("unexpected Calendar service")
+		},
+		Zoom: func(string) (app.ZoomMeetingClient, error) {
+			t.Fatal("dry-run must not create Zoom client")
+			return nil, errors.New("unexpected Zoom client")
+		},
+	}})
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
 	}
-	newCalendarService = func(context.Context, string) (*calendar.Service, error) {
-		t.Fatal("dry-run must not create Calendar service")
-		return nil, errors.New("unexpected Calendar service")
-	}
-	t.Cleanup(func() {
-		newZoomMeetingClient = origNewZoom
-		newCalendarService = origNewCalendar
-	})
-
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{
-				"--json",
-				"--dry-run",
-				"--no-input",
-				"calendar", "update", "primary", "event-id",
-				"--regenerate-zoom",
-			}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	out := result.stdout
 
 	var got struct {
 		DryRun  bool `json:"dry_run"`
@@ -240,9 +230,6 @@ func TestRedactEventZoomURLsLeavesUnmanagedDescriptionText(t *testing.T) {
 }
 
 func TestCalendarEventCmd_RedactsZoomDescriptionInJSON(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-
 	desc := buildZoomDescriptionBlock(&zoom.Meeting{
 		ID:      1001,
 		JoinURL: "https://example.zoom.us/j/1001?pwd=secret",
@@ -265,16 +252,12 @@ func TestCalendarEventCmd_RedactsZoomDescriptionInJSON(t *testing.T) {
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx, output := newCalendarTestJSONContext(t, svc)
+	if err := runKong(t, &CalendarEventCmd{}, []string{"cal@example.com", "ev"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("runKong: %v", err)
 	}
-
-	out := captureStdout(t, func() {
-		ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
-		if err := runKong(t, &CalendarEventCmd{}, []string{"cal@example.com", "ev"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
-			t.Fatalf("runKong: %v", err)
-		}
-	})
+	out := output.String()
 
 	if strings.Contains(out, "secret") {
 		t.Fatalf("event output leaked zoom password: %s", out)
@@ -299,12 +282,12 @@ func TestListCalendarEventsJSONRedactsZoomDescription(t *testing.T) {
 	}))
 	defer closeServer()
 
-	out := captureStdout(t, func() {
-		ctx := newCalendarJSONContext(t)
-		if err := listCalendarEvents(ctx, svc, "cal1", "2026-05-18T00:00:00Z", "2026-05-19T00:00:00Z", 10, "", false, false, "", "", "", "", false, false, "", ""); err != nil {
-			t.Fatalf("listCalendarEvents: %v", err)
-		}
-	})
+	var output bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
+	if err := listCalendarEvents(ctx, svc, "cal1", "2026-05-18T00:00:00Z", "2026-05-19T00:00:00Z", 10, "", false, false, "", "", "", "", false, false, "", ""); err != nil {
+		t.Fatalf("listCalendarEvents: %v", err)
+	}
+	out := output.String()
 
 	if strings.Contains(out, "secret") {
 		t.Fatalf("events output leaked zoom password: %s", out)
@@ -315,10 +298,7 @@ func TestListCalendarEventsJSONRedactsZoomDescription(t *testing.T) {
 }
 
 func TestCalendarUpdateCmd_WithZoom(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 
 	var sawZoomPatch, sawNoConferenceData bool
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -340,10 +320,8 @@ func TestCalendarUpdateCmd_WithZoom(t *testing.T) {
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	if err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--with-zoom"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -363,10 +341,7 @@ func TestCalendarUpdateCmd_WithZoomScopeFutureExistingConferenceIsIdempotent(t *
 
 func testCalendarUpdateWithZoomExistingConferenceIsIdempotent(t *testing.T, scope string) {
 	t.Helper()
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 	var patchCalled bool
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -391,14 +366,12 @@ func testCalendarUpdateWithZoomExistingConferenceIsIdempotent(t *testing.T, scop
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
 	args := []string{"cal@example.com", "ev", "--with-zoom"}
 	if scope == "future" {
 		args = append(args, "--scope", "future", "--original-start", "2025-01-02T10:00:00Z")
 	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	if err := runKong(t, &CalendarUpdateCmd{}, args, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -408,10 +381,7 @@ func testCalendarUpdateWithZoomExistingConferenceIsIdempotent(t *testing.T, scop
 }
 
 func TestCalendarUpdateCmd_RegenerateZoomReplacesConference(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 	var sawPatch bool
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -426,10 +396,8 @@ func TestCalendarUpdateCmd_RegenerateZoomReplacesConference(t *testing.T) {
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	if err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--regenerate-zoom"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -439,10 +407,7 @@ func TestCalendarUpdateCmd_RegenerateZoomReplacesConference(t *testing.T) {
 }
 
 func TestCalendarUpdateCmd_RemoveZoom(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 	var cleared bool
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
@@ -459,10 +424,8 @@ func TestCalendarUpdateCmd_RemoveZoom(t *testing.T) {
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	if err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--remove-zoom"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -472,10 +435,7 @@ func TestCalendarUpdateCmd_RemoveZoom(t *testing.T) {
 }
 
 func TestCalendarUpdateCmd_RemoveZoomClearsDescriptionOnlyBlock(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 	var descriptionPresent bool
 	var description string
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -504,10 +464,8 @@ func TestCalendarUpdateCmd_RemoveZoomClearsDescriptionOnlyBlock(t *testing.T) {
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	if err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--remove-zoom"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
@@ -548,9 +506,7 @@ func TestMergeEventPatchHonorsExplicitEmptyDescription(t *testing.T) {
 }
 
 func TestCalendarUpdateCmd_WithZoomOnExistingMeetEventRejects(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-	withFakeZoomClient(t, &fakeZoomCalendarClient{})
+	zoomClient := &fakeZoomCalendarClient{}
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "ev", "hangoutLink": "https://meet.google.com/aaa-bbbb-ccc"})
@@ -559,19 +515,16 @@ func TestCalendarUpdateCmd_WithZoomOnExistingMeetEventRejects(t *testing.T) {
 		http.NotFound(w, r)
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--with-zoom"}, newCalendarJSONOutputContext(t, os.Stdout, os.Stderr), &RootFlags{Account: "a@b.com"})
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
+	err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--with-zoom"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err == nil || !strings.Contains(err.Error(), "event already has a Meet conference") {
 		t.Fatalf("error = %v, want existing Meet rejection", err)
 	}
 }
 
 func TestCalendarUpdateCmd_WithZoomNoCredentialsErrors(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
-	withFakeZoomClient(t, &fakeZoomCalendarClient{err: zoom.ErrCredentialsNotFound})
+	zoomClient := &fakeZoomCalendarClient{err: zoom.ErrCredentialsNotFound}
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "ev"})
@@ -580,20 +533,16 @@ func TestCalendarUpdateCmd_WithZoomNoCredentialsErrors(t *testing.T) {
 		http.NotFound(w, r)
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--with-zoom"}, newCalendarJSONOutputContext(t, os.Stdout, os.Stderr), &RootFlags{Account: "a@b.com"})
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
+	err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--with-zoom"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err == nil || !strings.Contains(err.Error(), "Zoom credentials not found") {
 		t.Fatalf("error = %v, want credentials message", err)
 	}
 }
 
 func TestCalendarUpdateCmd_RegenerateZoomWithUnparseablePriorMeetingWarns(t *testing.T) {
-	origNew := newCalendarService
-	t.Cleanup(func() { newCalendarService = origNew })
 	zoomClient := &fakeZoomCalendarClient{}
-	withFakeZoomClient(t, zoomClient)
 	srv := httptest.NewServer(withPrimaryCalendar(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
 		switch {
@@ -612,10 +561,8 @@ func TestCalendarUpdateCmd_RegenerateZoomWithUnparseablePriorMeetingWarns(t *tes
 		}
 	})))
 	defer srv.Close()
-	newCalendarService = func(ctx context.Context, _ string) (*calendar.Service, error) {
-		return newCalendarServiceFromZoomTestServer(t, ctx, srv), nil
-	}
-	ctx := newCalendarJSONOutputContext(t, os.Stdout, os.Stderr)
+	svc := newCalendarServiceFromZoomTestServer(t, context.Background(), srv)
+	ctx := newZoomCalendarTestJSONContext(t, svc, zoomClient)
 	err := runKong(t, &CalendarUpdateCmd{}, []string{"cal@example.com", "ev", "--regenerate-zoom"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err != nil {
 		t.Fatalf("runKong: %v", err)
@@ -656,7 +603,7 @@ func TestCalendarUpdateCmd_FlagMutex_RegenerateZoomRegenerateMeet(t *testing.T) 
 func assertCalendarUpdateZoomMutex(t *testing.T, flags ...string) {
 	t.Helper()
 	args := append([]string{"cal@example.com", "ev"}, flags...)
-	err := runKong(t, &CalendarUpdateCmd{}, args, newCalendarJSONOutputContext(t, os.Stdout, os.Stderr), &RootFlags{Account: "a@b.com"})
+	err := runKong(t, &CalendarUpdateCmd{}, args, newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), &RootFlags{Account: "a@b.com"})
 	if err == nil || !strings.Contains(err.Error(), "use only one of") {
 		t.Fatalf("error = %v, want mutex for %v", err, flags)
 	}

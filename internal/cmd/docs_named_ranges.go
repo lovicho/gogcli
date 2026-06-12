@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -56,7 +55,7 @@ func (c *DocsNamedRangesListCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"documentId":  docID,
 			"tabId":       loaded.tabID,
 			"namedRanges": items,
@@ -229,7 +228,7 @@ func (c *DocsNamedRangesCreateCmd) Run(ctx context.Context, kctx *kong.Context, 
 	}
 	created := docsNamedRangeItem{Name: name, NamedRangeID: createdID, Ranges: []docsNamedRangeSpan{span}}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"documentId": docID,
 			"namedRange": created,
 		})
@@ -286,7 +285,7 @@ func (c *DocsNamedRangesDeleteCmd) Run(ctx context.Context, flags *RootFlags) er
 		return fmt.Errorf("delete named range: %w", err)
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"documentId": docID,
 			"deleted":    map[string]any{"name": item.Name, "namedRangeId": item.NamedRangeID},
 		})
@@ -379,7 +378,7 @@ func (c *DocsNamedRangesReplaceCmd) Run(ctx context.Context, kctx *kong.Context,
 		return fmt.Errorf("replaced named range not found (id=%q)", item.NamedRangeID)
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"documentId": docID,
 			"namedRange": updatedItem,
 			"replaced":   true,

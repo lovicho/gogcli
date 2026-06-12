@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/api/people/v1"
+
 	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
@@ -49,6 +51,27 @@ func newCmdJSONOutputContext(t *testing.T, stdout, stderr io.Writer) context.Con
 func newCmdRuntimeJSONOutputContext(t *testing.T, stdout, stderr io.Writer) context.Context {
 	t.Helper()
 	return outfmt.WithMode(newCmdRuntimeOutputContext(t, stdout, stderr), outfmt.Mode{JSON: true})
+}
+
+func withTestRuntime(ctx context.Context, configure func(*app.Runtime)) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	runtime := &app.Runtime{}
+	if existing, ok := app.FromContext(ctx); ok {
+		*runtime = *existing
+	}
+	configure(runtime)
+	return app.WithRuntime(ctx, runtime)
+}
+
+func executeWithPeopleDirectoryTestService(t *testing.T, args []string, svc *people.Service) executeTestResult {
+	t.Helper()
+	return executeWithTestRuntime(t, args, &app.Runtime{Services: app.Services{
+		PeopleDirectory: func(context.Context, string) (*people.Service, error) {
+			return svc, nil
+		},
+	}})
 }
 
 type executeTestResult struct {

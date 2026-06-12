@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/classroom/v1"
@@ -45,7 +44,7 @@ func (c *ClassroomCoursesListCmd) Run(ctx context.Context, flags *RootFlags) err
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -82,7 +81,7 @@ func (c *ClassroomCoursesListCmd) Run(ctx context.Context, flags *RootFlags) err
 	courses = nonNilClassroomItems(courses)
 
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"courses":       courses,
 			"nextPageToken": nextPageToken,
 		}); err != nil {
@@ -133,7 +132,7 @@ func (c *ClassroomCoursesGetCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return usage("empty courseId")
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -144,7 +143,7 @@ func (c *ClassroomCoursesGetCmd) Run(ctx context.Context, flags *RootFlags) erro
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"course": course})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"course": course})
 	}
 
 	u.Out().Linef("id\t%s", course.Id)
@@ -186,39 +185,23 @@ type ClassroomCoursesCreateCmd struct {
 
 func (c *ClassroomCoursesCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	name := strings.TrimSpace(c.Name)
-	if name == "" {
-		return usage("empty name")
-	}
-	owner := strings.TrimSpace(c.OwnerID)
-	if owner == "" {
-		return usage("empty owner")
-	}
-
-	course := &classroom.Course{
-		Name:    name,
-		OwnerId: owner,
-	}
-	if v := strings.TrimSpace(c.Section); v != "" {
-		course.Section = v
-	}
-	if v := strings.TrimSpace(c.DescriptionHeading); v != "" {
-		course.DescriptionHeading = v
-	}
-	if v := strings.TrimSpace(c.Description); v != "" {
-		course.Description = v
-	}
-	if v := strings.TrimSpace(c.Room); v != "" {
-		course.Room = v
-	}
-	if v := strings.TrimSpace(c.State); v != "" {
-		course.CourseState = strings.ToUpper(v)
-	}
-
-	if err := dryRunExit(ctx, flags, "classroom.courses.create", map[string]any{
-		"course": course,
-	}); err != nil {
+	plan, err := buildClassroomCourseCreatePlan(classroomCourseInput{
+		Name:               c.Name,
+		OwnerID:            c.OwnerID,
+		Section:            c.Section,
+		DescriptionHeading: c.DescriptionHeading,
+		Description:        c.Description,
+		Room:               c.Room,
+		State:              c.State,
+	})
+	if err != nil {
 		return err
+	}
+
+	if dryRunErr := dryRunExit(ctx, flags, "classroom.courses.create", map[string]any{
+		"course": plan.Course,
+	}); dryRunErr != nil {
+		return dryRunErr
 	}
 
 	account, err := requireAccount(flags)
@@ -226,18 +209,18 @@ func (c *ClassroomCoursesCreateCmd) Run(ctx context.Context, flags *RootFlags) e
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
 
-	created, err := svc.Courses.Create(course).Context(ctx).Do()
+	created, err := svc.Courses.Create(plan.Course).Context(ctx).Do()
 	if err != nil {
 		return wrapClassroomError(err)
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"course": created})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"course": created})
 	}
 	u.Out().Linef("id\t%s", created.Id)
 	u.Out().Linef("name\t%s", created.Name)
@@ -258,54 +241,29 @@ type ClassroomCoursesUpdateCmd struct {
 }
 
 func (c *ClassroomCoursesUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
-	courseID := strings.TrimSpace(c.CourseID)
-	if courseID == "" {
-		return usage("empty courseId")
-	}
-
-	course := &classroom.Course{}
-	fields := make([]string, 0, 6)
-
-	if v := strings.TrimSpace(c.Name); v != "" {
-		course.Name = v
-		fields = append(fields, "name")
-	}
-	if v := strings.TrimSpace(c.OwnerID); v != "" {
-		course.OwnerId = v
-		fields = append(fields, "ownerId")
-	}
-	if v := strings.TrimSpace(c.Section); v != "" {
-		course.Section = v
-		fields = append(fields, "section")
-	}
-	if v := strings.TrimSpace(c.DescriptionHeading); v != "" {
-		course.DescriptionHeading = v
-		fields = append(fields, "descriptionHeading")
-	}
-	if v := strings.TrimSpace(c.Description); v != "" {
-		course.Description = v
-		fields = append(fields, "description")
-	}
-	if v := strings.TrimSpace(c.Room); v != "" {
-		course.Room = v
-		fields = append(fields, "room")
-	}
-	if v := strings.TrimSpace(c.State); v != "" {
-		course.CourseState = strings.ToUpper(v)
-		fields = append(fields, "courseState")
-	}
-
-	if len(fields) == 0 {
-		return usage("no updates specified")
-	}
-
-	if err := dryRunExit(ctx, flags, "classroom.courses.update", map[string]any{
-		"course_id":     courseID,
-		"update_mask":   updateMask(fields),
-		"update_fields": fields,
-		"course":        course,
-	}); err != nil {
+	plan, err := buildClassroomCourseUpdatePlan(classroomCourseUpdateInput{
+		CourseID: c.CourseID,
+		classroomCourseInput: classroomCourseInput{
+			Name:               c.Name,
+			OwnerID:            c.OwnerID,
+			Section:            c.Section,
+			DescriptionHeading: c.DescriptionHeading,
+			Description:        c.Description,
+			Room:               c.Room,
+			State:              c.State,
+		},
+	})
+	if err != nil {
 		return err
+	}
+
+	if dryRunErr := dryRunExit(ctx, flags, "classroom.courses.update", map[string]any{
+		"course_id":     plan.CourseID,
+		"update_mask":   plan.UpdateMask,
+		"update_fields": plan.UpdateFields,
+		"course":        plan.Course,
+	}); dryRunErr != nil {
+		return dryRunErr
 	}
 
 	account, err := requireAccount(flags)
@@ -313,18 +271,18 @@ func (c *ClassroomCoursesUpdateCmd) Run(ctx context.Context, flags *RootFlags) e
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
 
-	updated, err := svc.Courses.Patch(courseID, course).UpdateMask(updateMask(fields)).Context(ctx).Do()
+	updated, err := svc.Courses.Patch(plan.CourseID, plan.Course).UpdateMask(plan.UpdateMask).Context(ctx).Do()
 	if err != nil {
 		return wrapClassroomError(err)
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"course": updated})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"course": updated})
 	}
 	u := ui.FromContext(ctx)
 	u.Out().Linef("id\t%s", updated.Id)
@@ -355,7 +313,7 @@ func (c *ClassroomCoursesDeleteCmd) Run(ctx context.Context, flags *RootFlags) e
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -414,7 +372,7 @@ func updateCourseState(ctx context.Context, flags *RootFlags, courseID, state st
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -425,7 +383,7 @@ func updateCourseState(ctx context.Context, flags *RootFlags, courseID, state st
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"course": updated})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"course": updated})
 	}
 	u.Out().Linef("id\t%s", updated.Id)
 	u.Out().Linef("state\t%s", updated.CourseState)
@@ -465,7 +423,7 @@ func (c *ClassroomCoursesJoinCmd) Run(ctx context.Context, flags *RootFlags) err
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -482,7 +440,7 @@ func (c *ClassroomCoursesJoinCmd) Run(ctx context.Context, flags *RootFlags) err
 			return wrapClassroomError(err)
 		}
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"student": created})
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"student": created})
 		}
 		u.Out().Linef("user_id\t%s", created.UserId)
 		u.Out().Linef("email\t%s", profileEmail(created.Profile))
@@ -495,7 +453,7 @@ func (c *ClassroomCoursesJoinCmd) Run(ctx context.Context, flags *RootFlags) err
 			return wrapClassroomError(err)
 		}
 		if outfmt.IsJSON(ctx) {
-			return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"teacher": created})
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"teacher": created})
 		}
 		u.Out().Linef("user_id\t%s", created.UserId)
 		u.Out().Linef("email\t%s", profileEmail(created.Profile))
@@ -537,7 +495,7 @@ func (c *ClassroomCoursesLeaveCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -577,7 +535,7 @@ func (c *ClassroomCoursesURLCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return usage("missing courseId")
 	}
 
-	svc, err := newClassroomService(ctx, account)
+	svc, err := classroomService(ctx, account)
 	if err != nil {
 		return wrapClassroomError(err)
 	}
@@ -591,7 +549,7 @@ func (c *ClassroomCoursesURLCmd) Run(ctx context.Context, flags *RootFlags) erro
 			}
 			urls = append(urls, map[string]string{"id": id, "url": link})
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"urls": urls})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"urls": urls})
 	}
 
 	for _, id := range c.CourseIDs {

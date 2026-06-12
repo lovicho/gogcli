@@ -118,7 +118,7 @@ func (c *DocsCellUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if c.Tab != "" {
 			payload["tabId"] = c.Tab
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 	u.Out().Linef("documentId\t%s", docID)
 	u.Out().Linef("table_index\t%d", c.TableIndex)

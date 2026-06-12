@@ -6,14 +6,20 @@ import (
 	"net/http"
 	"os"
 
+	"google.golang.org/api/calendar/v3"
+	"google.golang.org/api/classroom/v1"
+	"google.golang.org/api/cloudidentity/v1"
+	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/sheets/v4"
 	"google.golang.org/api/slides/v1"
+	"google.golang.org/api/tasks/v1"
 
 	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/googleapi"
+	"github.com/steipete/gogcli/internal/googleauth"
 )
 
 func newDefaultRuntime() *app.Runtime {
@@ -24,13 +30,24 @@ func newDefaultRuntime() *app.Runtime {
 			Err: os.Stderr,
 		},
 		Services: app.Services{
-			Drive:          googleapi.NewDrive,
-			Gmail:          googleapi.NewGmail,
-			PeopleContacts: newPeopleContactsService,
-			Sheets:         newSheetsService,
-			Slides:         googleapi.NewSlides,
-			DriveDownload:  driveDownload,
-			DriveExport:    driveExportDownload,
+			Calendar:      googleapi.NewCalendar,
+			Classroom:     googleapi.NewClassroom,
+			CloudIdentity: newCloudIdentityService,
+			Docs:          googleapi.NewDocs,
+			DocsHTTP: func(ctx context.Context, account string) (*http.Client, error) {
+				return googleapi.NewHTTPClient(ctx, googleauth.ServiceDocs, account)
+			},
+			Drive:           googleapi.NewDrive,
+			Gmail:           googleapi.NewGmail,
+			PeopleContacts:  googleapi.NewPeopleContacts,
+			PeopleDirectory: googleapi.NewPeopleDirectory,
+			PeopleOther:     googleapi.NewPeopleOtherContacts,
+			Sheets:          googleapi.NewSheets,
+			Slides:          googleapi.NewSlides,
+			Tasks:           googleapi.NewTasks,
+			Zoom:            newZoomMeetingClient,
+			DriveDownload:   driveDownload,
+			DriveExport:     driveExportDownload,
 		},
 	}
 }
@@ -50,8 +67,23 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 	if normalized.IO.Err == nil {
 		normalized.IO.Err = defaults.IO.Err
 	}
+	if normalized.Services.Calendar == nil {
+		normalized.Services.Calendar = defaults.Services.Calendar
+	}
+	if normalized.Services.Classroom == nil {
+		normalized.Services.Classroom = defaults.Services.Classroom
+	}
+	if normalized.Services.CloudIdentity == nil {
+		normalized.Services.CloudIdentity = defaults.Services.CloudIdentity
+	}
 	if normalized.Services.Drive == nil {
 		normalized.Services.Drive = defaults.Services.Drive
+	}
+	if normalized.Services.Docs == nil {
+		normalized.Services.Docs = defaults.Services.Docs
+	}
+	if normalized.Services.DocsHTTP == nil {
+		normalized.Services.DocsHTTP = defaults.Services.DocsHTTP
 	}
 	if normalized.Services.Gmail == nil {
 		normalized.Services.Gmail = defaults.Services.Gmail
@@ -59,11 +91,23 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 	if normalized.Services.PeopleContacts == nil {
 		normalized.Services.PeopleContacts = defaults.Services.PeopleContacts
 	}
+	if normalized.Services.PeopleDirectory == nil {
+		normalized.Services.PeopleDirectory = defaults.Services.PeopleDirectory
+	}
+	if normalized.Services.PeopleOther == nil {
+		normalized.Services.PeopleOther = defaults.Services.PeopleOther
+	}
 	if normalized.Services.Sheets == nil {
 		normalized.Services.Sheets = defaults.Services.Sheets
 	}
 	if normalized.Services.Slides == nil {
 		normalized.Services.Slides = defaults.Services.Slides
+	}
+	if normalized.Services.Tasks == nil {
+		normalized.Services.Tasks = defaults.Services.Tasks
+	}
+	if normalized.Services.Zoom == nil {
+		normalized.Services.Zoom = defaults.Services.Zoom
 	}
 	if normalized.Services.DriveDownload == nil {
 		normalized.Services.DriveDownload = defaults.Services.DriveDownload
@@ -94,11 +138,50 @@ func stdoutWriter(ctx context.Context) io.Writer {
 	return commandIO(ctx).Out
 }
 
+func stderrWriter(ctx context.Context) io.Writer {
+	return commandIO(ctx).Err
+}
+
+func calendarService(ctx context.Context, account string) (*calendar.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Calendar != nil {
+		return runtime.Services.Calendar(ctx, account)
+	}
+	return googleapi.NewCalendar(ctx, account)
+}
+
+func classroomService(ctx context.Context, account string) (*classroom.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Classroom != nil {
+		return runtime.Services.Classroom(ctx, account)
+	}
+	return googleapi.NewClassroom(ctx, account)
+}
+
+func cloudIdentityService(ctx context.Context, account string) (*cloudidentity.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.CloudIdentity != nil {
+		return runtime.Services.CloudIdentity(ctx, account)
+	}
+	return newCloudIdentityService(ctx, account)
+}
+
 func driveService(ctx context.Context, account string) (*drive.Service, error) {
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Drive != nil {
 		return runtime.Services.Drive(ctx, account)
 	}
 	return googleapi.NewDrive(ctx, account)
+}
+
+func docsService(ctx context.Context, account string) (*docs.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Docs != nil {
+		return runtime.Services.Docs(ctx, account)
+	}
+	return googleapi.NewDocs(ctx, account)
+}
+
+func docsHTTPClient(ctx context.Context, account string) (*http.Client, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.DocsHTTP != nil {
+		return runtime.Services.DocsHTTP(ctx, account)
+	}
+	return googleapi.NewHTTPClient(ctx, googleauth.ServiceDocs, account)
 }
 
 func gmailService(ctx context.Context, account string) (*gmail.Service, error) {
@@ -116,14 +199,35 @@ func peopleContactsService(ctx context.Context, account string) (*people.Service
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.PeopleContacts != nil {
 		return runtime.Services.PeopleContacts(ctx, account)
 	}
-	return newPeopleContactsService(ctx, account)
+	return googleapi.NewPeopleContacts(ctx, account)
+}
+
+func peopleDirectoryService(ctx context.Context, account string) (*people.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.PeopleDirectory != nil {
+		return runtime.Services.PeopleDirectory(ctx, account)
+	}
+	return googleapi.NewPeopleDirectory(ctx, account)
+}
+
+func peopleOtherContactsService(ctx context.Context, account string) (*people.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.PeopleOther != nil {
+		return runtime.Services.PeopleOther(ctx, account)
+	}
+	return googleapi.NewPeopleOtherContacts(ctx, account)
 }
 
 func sheetsService(ctx context.Context, account string) (*sheets.Service, error) {
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Sheets != nil {
 		return runtime.Services.Sheets(ctx, account)
 	}
-	return newSheetsService(ctx, account)
+	return googleapi.NewSheets(ctx, account)
+}
+
+func tasksService(ctx context.Context, account string) (*tasks.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Tasks != nil {
+		return runtime.Services.Tasks(ctx, account)
+	}
+	return googleapi.NewTasks(ctx, account)
 }
 
 func slidesService(ctx context.Context, account string) (*slides.Service, error) {
@@ -131,6 +235,13 @@ func slidesService(ctx context.Context, account string) (*slides.Service, error)
 		return runtime.Services.Slides(ctx, account)
 	}
 	return googleapi.NewSlides(ctx, account)
+}
+
+func zoomMeetingClient(ctx context.Context, alias string) (app.ZoomMeetingClient, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Zoom != nil {
+		return runtime.Services.Zoom(alias)
+	}
+	return newZoomMeetingClient(alias)
 }
 
 func driveDownloadRequest(ctx context.Context, svc *drive.Service, fileID string) (*http.Response, error) {

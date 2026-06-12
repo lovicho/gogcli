@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/tasks/v1"
 )
 
 func newTasksRawTestServer(t *testing.T, status int, body map[string]any) *httptest.Server {
@@ -35,10 +36,11 @@ func newTasksRawTestServer(t *testing.T, status int, body map[string]any) *httpt
 	}))
 }
 
-func installMockTasksService(t *testing.T, srv *httptest.Server) {
+func tasksRawTestContext(t *testing.T, srv *httptest.Server) (context.Context, *bytes.Buffer) {
 	t.Helper()
-	svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", tasks.NewService)
-	stubGoogleTestService(t, &newTasksService, svc)
+	output := &bytes.Buffer{}
+	ctx := withTasksTestService(newCmdRuntimeOutputContext(t, output, io.Discard), newTasksServiceFromServer(t, srv))
+	return ctx, output
 }
 
 func fullTaskResponse(id string) map[string]any {
@@ -53,19 +55,16 @@ func fullTaskResponse(id string) map[string]any {
 func TestTasksRaw_HappyPath(t *testing.T) {
 	srv := newTasksRawTestServer(t, 0, fullTaskResponse("t1"))
 	defer srv.Close()
-	installMockTasksService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx, output := tasksRawTestContext(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &TasksRawCmd{}, []string{"list1", "t1"}, ctx, flags); err != nil {
-			t.Fatalf("run: %v", err)
-		}
-	})
+	if err := runKong(t, &TasksRawCmd{}, []string{"list1", "t1"}, ctx, flags); err != nil {
+		t.Fatalf("run: %v", err)
+	}
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out)
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\nraw: %s", err, output.String())
 	}
 	if got["id"] != "t1" {
 		t.Fatalf("expected id=t1, got: %v", got["id"])
@@ -78,29 +77,23 @@ func TestTasksRaw_HappyPath(t *testing.T) {
 func TestTasksRaw_APIError(t *testing.T) {
 	srv := newTasksRawTestServer(t, http.StatusInternalServerError, nil)
 	defer srv.Close()
-	installMockTasksService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx, _ := tasksRawTestContext(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &TasksRawCmd{}, []string{"list1", "t1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 500")
-		}
-	})
+	if err := runKong(t, &TasksRawCmd{}, []string{"list1", "t1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 500")
+	}
 }
 
 func TestTasksRaw_NotFound(t *testing.T) {
 	srv := newTasksRawTestServer(t, http.StatusNotFound, nil)
 	defer srv.Close()
-	installMockTasksService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx, _ := tasksRawTestContext(t, srv)
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &TasksRawCmd{}, []string{"list1", "t1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 404")
-		}
-	})
+	if err := runKong(t, &TasksRawCmd{}, []string{"list1", "t1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 404")
+	}
 }
 
 func TestTasksRaw_EmptyIDs(t *testing.T) {

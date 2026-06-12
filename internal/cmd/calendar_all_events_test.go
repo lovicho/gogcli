@@ -59,7 +59,7 @@ func TestListAllCalendarsEvents_JSON(t *testing.T) {
 	})))
 	defer closeSvc()
 
-	ctx := newCalendarJSONContext(t)
+	ctx := newCmdJSONContext(t)
 
 	jsonOut := captureStdout(t, func() {
 		if runErr := listAllCalendarsEvents(ctx, svc, "2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z", 10, "", false, false, "", "", "", "", false, false, "", ""); runErr != nil {
@@ -119,7 +119,7 @@ func TestListAllCalendarsEvents_SortByStart(t *testing.T) {
 	})))
 	defer closeSvc()
 
-	ctx := newCalendarJSONContext(t)
+	ctx := newCmdJSONContext(t)
 	jsonOut := captureStdout(t, func() {
 		if err := listAllCalendarsEvents(ctx, svc, "2025-01-01T00:00:00Z", "2025-01-02T00:00:00Z", 10, "", false, false, "", "", "", "", false, false, "start", "asc"); err != nil {
 			t.Fatalf("listAllCalendarsEvents: %v", err)

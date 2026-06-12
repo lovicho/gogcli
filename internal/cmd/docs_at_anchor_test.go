@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ type docsAtAnchorRecorder struct {
 	getCalls      int
 }
 
-func setupDocsAtAnchorTestService(t *testing.T, doc *docs.Document, rec *docsAtAnchorRecorder) {
+func setupDocsAtAnchorTestService(t *testing.T, doc *docs.Document, rec *docsAtAnchorRecorder) *docs.Service {
 	t.Helper()
 
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,22 +40,21 @@ func setupDocsAtAnchorTestService(t *testing.T, doc *docs.Document, rec *docsAtA
 		}
 	}))
 	t.Cleanup(cleanup)
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
+	return docSvc
 }
 
 func TestDocsMutatorsAtAnchorResolveRange(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
 	doc := docsFindRangeDoc(
 		docsFindRangeParagraph(1, "Alpha target beta target\n"),
 	)
 	doc.RevisionId = "rev-anchor"
-	setupDocsAtAnchorTestService(t, doc, rec)
+	svc := setupDocsAtAnchorTestService(t, doc, rec)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	ctx := newDocsCmdContext(t)
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
 	if err := runKong(t, &DocsInsertCmd{}, []string{"doc1", "X", "--at", "target", "--occurrence", "2"}, ctx, flags); err != nil {
 		t.Fatalf("insert --at: %v", err)
@@ -97,17 +97,17 @@ func TestDocsMutatorsAtAnchorResolveRange(t *testing.T) {
 }
 
 func TestDocsInsertPersonAtAnchorIsAtomic(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
 	doc := docsFindRangeDoc(
 		docsFindRangeParagraph(1, "Replace target now\n"),
 	)
 	doc.RevisionId = "rev-person"
-	setupDocsAtAnchorTestService(t, doc, rec)
+	svc := setupDocsAtAnchorTestService(t, doc, rec)
 
-	if err := runKong(t, &DocsInsertPersonCmd{}, []string{"doc1", "--email", "bot@example.com", "--at", "target"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &DocsInsertPersonCmd{}, []string{"doc1", "--email", "bot@example.com", "--at", "target"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("insert-person --at: %v", err)
 	}
 
@@ -129,15 +129,14 @@ func TestDocsInsertPersonAtAnchorIsAtomic(t *testing.T) {
 }
 
 func TestDocsAtAnchorLiteralWhitespace(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
-	setupDocsAtAnchorTestService(t, docsFindRangeDoc(
+	svc := setupDocsAtAnchorTestService(t, docsFindRangeDoc(
 		docsFindRangeParagraph(1, "foo  bar\n"),
 	), rec)
 
-	ctx := newDocsCmdContext(t)
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 	flags := &RootFlags{Account: "a@b.com"}
 
 	err := runKong(t, &DocsInsertCmd{}, []string{"doc1", "X", "--at", "foo bar"}, ctx, flags)
@@ -157,15 +156,15 @@ func TestDocsAtAnchorLiteralWhitespace(t *testing.T) {
 }
 
 func TestDocsAtAnchorPreservesHTMLEntities(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
-	setupDocsAtAnchorTestService(t, docsFindRangeDoc(
+	svc := setupDocsAtAnchorTestService(t, docsFindRangeDoc(
 		docsFindRangeParagraph(1, "literal &amp;\n"),
 	), rec)
 
-	if err := runKong(t, &DocsDeleteCmd{}, []string{"doc1", "--at", "&amp;"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"}); err != nil {
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+	if err := runKong(t, &DocsDeleteCmd{}, []string{"doc1", "--at", "&amp;"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("entity literal anchor: %v", err)
 	}
 	if got := rec.batchRequests[0][0].DeleteContentRange.Range; got.StartIndex != 9 || got.EndIndex != 14 {
@@ -174,11 +173,10 @@ func TestDocsAtAnchorPreservesHTMLEntities(t *testing.T) {
 }
 
 func TestDocsAtAnchorRejectsSkippedInlineObjectSpan(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
-	setupDocsAtAnchorTestService(t, &docs.Document{
+	svc := setupDocsAtAnchorTestService(t, &docs.Document{
 		DocumentId: "doc1",
 		Body: &docs.Body{
 			Content: []*docs.StructuralElement{{
@@ -193,7 +191,8 @@ func TestDocsAtAnchorRejectsSkippedInlineObjectSpan(t *testing.T) {
 		},
 	}, rec)
 
-	err := runKong(t, &DocsDeleteCmd{}, []string{"doc1", "--at", "ab"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+	err := runKong(t, &DocsDeleteCmd{}, []string{"doc1", "--at", "ab"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err == nil || ExitCode(err) != emptyResultsExitCode {
 		t.Fatalf("skipped object span error = %v, exit=%d, want empty results", err, ExitCode(err))
 	}
@@ -203,11 +202,10 @@ func TestDocsAtAnchorRejectsSkippedInlineObjectSpan(t *testing.T) {
 }
 
 func TestDocsAtAnchorRejectsPageBreakInTable(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
-	setupDocsAtAnchorTestService(t, &docs.Document{
+	svc := setupDocsAtAnchorTestService(t, &docs.Document{
 		DocumentId: "doc1",
 		Body: &docs.Body{Content: []*docs.StructuralElement{{
 			StartIndex: 1,
@@ -222,7 +220,8 @@ func TestDocsAtAnchorRejectsPageBreakInTable(t *testing.T) {
 		}}},
 	}, rec)
 
-	err := runKong(t, &DocsInsertPageBreakCmd{}, []string{"doc1", "--at", "table anchor"}, newDocsCmdContext(t), &RootFlags{Account: "a@b.com"})
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
+	err := runKong(t, &DocsInsertPageBreakCmd{}, []string{"doc1", "--at", "table anchor"}, ctx, &RootFlags{Account: "a@b.com"})
 	if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "inside a table") {
 		t.Fatalf("table page-break error = %v, exit=%d", err, ExitCode(err))
 	}
@@ -232,18 +231,20 @@ func TestDocsAtAnchorRejectsPageBreakInTable(t *testing.T) {
 }
 
 func TestDocsDeleteAtAnchorDryRunIncludesSelectors(t *testing.T) {
-	out := captureStdout(t, func() {
-		err := runKong(t, &DocsDeleteCmd{}, []string{"doc1", "--at", "target", "--occurrence", "2", "--match-case"}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com", DryRun: true})
-		if err == nil || ExitCode(err) != 0 {
-			t.Fatalf("dry-run error = %v, exit=%d, want exit 0", err, ExitCode(err))
-		}
-	})
+	t.Parallel()
+
+	var output bytes.Buffer
+	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
+	err := runKong(t, &DocsDeleteCmd{}, []string{"doc1", "--at", "target", "--occurrence", "2", "--match-case"}, ctx, &RootFlags{Account: "a@b.com", DryRun: true})
+	if err == nil || ExitCode(err) != 0 {
+		t.Fatalf("dry-run error = %v, exit=%d, want exit 0", err, ExitCode(err))
+	}
 
 	var got struct {
 		Request map[string]any `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("dry-run json: %v\nout=%q", err, out)
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("dry-run json: %v\nout=%q", err, output.String())
 	}
 	if got.Request["at"] != "target" {
 		t.Fatalf("dry-run at = %v, want target", got.Request["at"])
@@ -257,16 +258,15 @@ func TestDocsDeleteAtAnchorDryRunIncludesSelectors(t *testing.T) {
 }
 
 func TestDocsAtAnchorAmbiguousAndNoMatchDoNotMutate(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	rec := &docsAtAnchorRecorder{}
-	setupDocsAtAnchorTestService(t, docsFindRangeDoc(
+	svc := setupDocsAtAnchorTestService(t, docsFindRangeDoc(
 		docsFindRangeParagraph(1, "target and target\n"),
 	), rec)
 
 	flags := &RootFlags{Account: "a@b.com"}
-	ctx := newDocsCmdContext(t)
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
 	err := runKong(t, &DocsInsertCmd{}, []string{"doc1", "X", "--at", "target"}, ctx, flags)
 	if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "ambiguous --at") || !strings.Contains(err.Error(), "1..2") {
@@ -297,8 +297,10 @@ func assertDocsAtAnchorWriteControl(t *testing.T, rec *docsAtAnchorRecorder, bat
 }
 
 func TestDocsAtAnchorValidation(t *testing.T) {
+	t.Parallel()
+
 	flags := &RootFlags{Account: "a@b.com", DryRun: true}
-	ctx := newDocsCmdContext(t)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 	cases := []struct {
 		name string
 		cmd  any
@@ -381,6 +383,8 @@ func TestDocsAtAnchorValidation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			err := runKong(t, tc.cmd, tc.args, ctx, flags)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("error = %v, want %q", err, tc.want)

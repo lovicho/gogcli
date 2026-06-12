@@ -90,7 +90,7 @@ func buildCalendarBackupSnapshot(ctx context.Context, flags *RootFlags, shardMax
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	svc, err := newCalendarService(ctx, account)
+	svc, err := calendarService(ctx, account)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
@@ -168,7 +168,7 @@ func buildContactsBackupSnapshot(ctx context.Context, flags *RootFlags, shardMax
 		return backup.Snapshot{}, err
 	}
 	peopleRows = append(peopleRows, connections...)
-	otherSvc, err := newPeopleOtherContactsService(ctx, account)
+	otherSvc, err := peopleOtherContactsService(ctx, account)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
@@ -276,7 +276,7 @@ func buildTasksBackupSnapshot(ctx context.Context, flags *RootFlags, shardMaxRow
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	svc, err := newTasksService(ctx, account)
+	svc, err := tasksService(ctx, account)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}

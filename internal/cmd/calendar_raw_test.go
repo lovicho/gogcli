@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,10 +40,9 @@ func newCalendarRawTestServer(t *testing.T, status int, body map[string]any) *ht
 	}))
 }
 
-func installMockCalendarService(t *testing.T, srv *httptest.Server) {
+func newMockCalendarService(t *testing.T, srv *httptest.Server) *calendar.Service {
 	t.Helper()
-	svc := newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", calendar.NewService)
-	stubGoogleTestService(t, &newCalendarService, svc)
+	return newGoogleTestServiceWithEndpoint(t, srv.Client(), srv.URL+"/", calendar.NewService)
 }
 
 func fullCalendarEventResponse(id string) map[string]any {
@@ -59,19 +60,18 @@ func fullCalendarEventResponse(id string) map[string]any {
 func TestCalendarRaw_HappyPath(t *testing.T) {
 	srv := newCalendarRawTestServer(t, 0, fullCalendarEventResponse("ev1"))
 	defer srv.Close()
-	installMockCalendarService(t, srv)
+	svc := newMockCalendarService(t, srv)
 
-	ctx := rawTestContext(t)
+	var output bytes.Buffer
+	ctx := withCalendarTestService(newCmdRuntimeOutputContext(t, &output, io.Discard), svc)
 	flags := &RootFlags{Account: "a@b.com"}
-	out := captureStdout(t, func() {
-		if err := runKong(t, &CalendarRawCmd{}, []string{"primary", "ev1"}, ctx, flags); err != nil {
-			t.Fatalf("run: %v", err)
-		}
-	})
+	if err := runKong(t, &CalendarRawCmd{}, []string{"primary", "ev1"}, ctx, flags); err != nil {
+		t.Fatalf("run: %v", err)
+	}
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("invalid JSON: %v\nraw: %s", err, out)
+	if err := json.Unmarshal(output.Bytes(), &got); err != nil {
+		t.Fatalf("invalid JSON: %v\nraw: %s", err, output.String())
 	}
 	if got["id"] != "ev1" {
 		t.Fatalf("expected id=ev1, got: %v", got["id"])
@@ -84,29 +84,25 @@ func TestCalendarRaw_HappyPath(t *testing.T) {
 func TestCalendarRaw_APIError(t *testing.T) {
 	srv := newCalendarRawTestServer(t, http.StatusInternalServerError, nil)
 	defer srv.Close()
-	installMockCalendarService(t, srv)
+	svc := newMockCalendarService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx := withCalendarTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &CalendarRawCmd{}, []string{"primary", "ev1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 500")
-		}
-	})
+	if err := runKong(t, &CalendarRawCmd{}, []string{"primary", "ev1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 500")
+	}
 }
 
 func TestCalendarRaw_NotFound(t *testing.T) {
 	srv := newCalendarRawTestServer(t, http.StatusNotFound, nil)
 	defer srv.Close()
-	installMockCalendarService(t, srv)
+	svc := newMockCalendarService(t, srv)
 
-	ctx := rawTestContext(t)
+	ctx := withCalendarTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 	flags := &RootFlags{Account: "a@b.com"}
-	_ = captureStdout(t, func() {
-		if err := runKong(t, &CalendarRawCmd{}, []string{"primary", "ev1"}, ctx, flags); err == nil {
-			t.Fatalf("expected error on 404")
-		}
-	})
+	if err := runKong(t, &CalendarRawCmd{}, []string{"primary", "ev1"}, ctx, flags); err == nil {
+		t.Fatalf("expected error on 404")
+	}
 }
 
 func TestCalendarRaw_EmptyEventID(t *testing.T) {

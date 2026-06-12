@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"google.golang.org/api/calendar/v3"
@@ -29,7 +28,7 @@ func (c *CalendarCalendarsCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	svc, err := newCalendarService(ctx, account)
+	svc, err := calendarService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -51,7 +50,7 @@ func (c *CalendarCalendarsCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"calendars":     items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {
@@ -116,7 +115,7 @@ func (c *CalendarSubscribeCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	svc, err := newCalendarService(ctx, account)
+	svc, err := calendarService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -126,7 +125,7 @@ func (c *CalendarSubscribeCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{"calendar": added})
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"calendar": added})
 	}
 	u.Out().Linef("subscribed\t%s", added.Id)
 	u.Out().Linef("name\t%s", added.Summary)
@@ -156,7 +155,7 @@ func (c *CalendarAclCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("calendarId required")
 	}
 
-	svc, err := newCalendarService(ctx, account)
+	svc, err := calendarService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -182,7 +181,7 @@ func (c *CalendarAclCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"rules":         items,
 			"nextPageToken": nextPageToken,
 		}); err != nil {

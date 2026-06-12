@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"html"
-	"os"
 	"strings"
 	"unicode"
 
@@ -150,7 +149,7 @@ func (c *DocsFindRangeCmd) writeResult(ctx context.Context, matches []docsTextRa
 		matches = []docsTextRangeMatch{}
 	}
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, docsFindRangeResult{Matches: matches}); err != nil {
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), docsFindRangeResult{Matches: matches}); err != nil {
 			return err
 		}
 		return failEmptyIfNoDocsRange(c.FailEmpty, matches)

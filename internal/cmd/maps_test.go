@@ -32,7 +32,7 @@ func TestMapsPlacesSearch(t *testing.T) {
 	t.Setenv("GOG_PLACES_BASE_URL", srv.URL)
 
 	out := captureStdout(t, func() {
-		if err := (&MapsPlacesSearchCmd{Query: []string{"cafe"}}).Run(newCalendarJSONContext(t), &RootFlags{}); err != nil {
+		if err := (&MapsPlacesSearchCmd{Query: []string{"cafe"}}).Run(newCmdJSONContext(t), &RootFlags{}); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
 	})
@@ -69,7 +69,7 @@ func TestMapsDirections(t *testing.T) {
 	t.Setenv("GOG_MAPS_BASE_URL", srv.URL)
 
 	out := captureStdout(t, func() {
-		err := (&MapsDirectionsCmd{Origin: "Barcelona", Destination: "Blanes"}).Run(newCalendarJSONContext(t), &RootFlags{})
+		err := (&MapsDirectionsCmd{Origin: "Barcelona", Destination: "Blanes"}).Run(newCmdJSONContext(t), &RootFlags{})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -85,7 +85,7 @@ func TestMapsDirectionsRejectsInvalidModeBeforeAPIKey(t *testing.T) {
 		Origin:      "Barcelona",
 		Destination: "Blanes",
 		Mode:        "hoverboard",
-	}).Run(newCalendarJSONContext(t), &RootFlags{})
+	}).Run(newCmdJSONContext(t), &RootFlags{})
 	if err == nil || !strings.Contains(err.Error(), "invalid --mode") {
 		t.Fatalf("expected invalid mode error, got %v", err)
 	}
@@ -97,7 +97,7 @@ func TestMapsDistanceRejectsInvalidUnitsBeforeAPIKey(t *testing.T) {
 		Origins:      "Barcelona",
 		Destinations: "Blanes",
 		Units:        "parsecs",
-	}).Run(newCalendarJSONContext(t), &RootFlags{})
+	}).Run(newCmdJSONContext(t), &RootFlags{})
 	if err == nil || !strings.Contains(err.Error(), "invalid --units") {
 		t.Fatalf("expected invalid units error, got %v", err)
 	}
@@ -119,7 +119,7 @@ func TestMapsReverseGeocodeRejectsInvalidLatLngBeforeAPIKey(t *testing.T) {
 		{name: "lng range", lat: "41.0", lng: "181", want: "invalid --lng"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := (&MapsReverseGeocodeCmd{Lat: tc.lat, Lng: tc.lng}).Run(newCalendarJSONContext(t), &RootFlags{})
+			err := (&MapsReverseGeocodeCmd{Lat: tc.lat, Lng: tc.lng}).Run(newCmdJSONContext(t), &RootFlags{})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("expected %q error, got %v", tc.want, err)
 			}
@@ -152,7 +152,7 @@ func TestMapsGeocode(t *testing.T) {
 	t.Setenv("GOG_MAPS_BASE_URL", srv.URL)
 
 	out := captureStdout(t, func() {
-		err := (&MapsGeocodeCmd{Address: []string{"Carrer", "Major,", "Blanes"}}).Run(newCalendarJSONContext(t), &RootFlags{})
+		err := (&MapsGeocodeCmd{Address: []string{"Carrer", "Major,", "Blanes"}}).Run(newCmdJSONContext(t), &RootFlags{})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
