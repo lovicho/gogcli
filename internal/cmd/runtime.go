@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/slides/v1"
 
 	"github.com/steipete/gogcli/internal/app"
@@ -22,6 +23,7 @@ func newDefaultRuntime() *app.Runtime {
 		},
 		Services: app.Services{
 			Drive:         googleapi.NewDrive,
+			Gmail:         newGmailService,
 			Slides:        googleapi.NewSlides,
 			DriveDownload: driveDownload,
 			DriveExport:   driveExportDownload,
@@ -46,6 +48,9 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 	}
 	if normalized.Services.Drive == nil {
 		normalized.Services.Drive = defaults.Services.Drive
+	}
+	if normalized.Services.Gmail == nil {
+		normalized.Services.Gmail = defaults.Services.Gmail
 	}
 	if normalized.Services.Slides == nil {
 		normalized.Services.Slides = defaults.Services.Slides
@@ -84,6 +89,13 @@ func driveService(ctx context.Context, account string) (*drive.Service, error) {
 		return runtime.Services.Drive(ctx, account)
 	}
 	return googleapi.NewDrive(ctx, account)
+}
+
+func gmailService(ctx context.Context, account string) (*gmail.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.Gmail != nil {
+		return runtime.Services.Gmail(ctx, account)
+	}
+	return newGmailService(ctx, account)
 }
 
 func slidesService(ctx context.Context, account string) (*slides.Service, error) {

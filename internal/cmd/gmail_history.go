@@ -34,7 +34,7 @@ func (c *GmailHistoryCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage(err.Error())
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}

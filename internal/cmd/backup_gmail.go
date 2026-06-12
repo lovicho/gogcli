@@ -85,7 +85,7 @@ func buildGmailBackupSnapshot(ctx context.Context, flags *RootFlags, opts gmailB
 	if err != nil {
 		return backup.Snapshot{}, err
 	}
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return backup.Snapshot{}, err
 	}

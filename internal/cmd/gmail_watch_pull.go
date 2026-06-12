@@ -126,7 +126,7 @@ func (c *GmailWatchPullCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 		if selectedClient != "" {
 			ctx = authclient.WithClient(ctx, selectedClient)
 		}
-		return newGmailService(ctx, account)
+		return gmailService(ctx, account)
 	}
 
 	receiver, err := newGmailPubSubReceiver(ctx, subscription, gmailPubSubReceiveSettings{

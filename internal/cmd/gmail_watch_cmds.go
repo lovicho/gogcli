@@ -77,7 +77,7 @@ func (c *GmailWatchStartCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		return err
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func (c *GmailWatchRenewCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return errors.New("stored watch state missing topic")
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -197,7 +197,7 @@ func (c *GmailWatchStopCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -347,7 +347,7 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		if selectedClient != "" {
 			ctx = authclient.WithClient(ctx, selectedClient)
 		}
-		return newGmailService(ctx, account)
+		return gmailService(ctx, account)
 	}
 
 	hookClient := &http.Client{Timeout: cfg.HookTimeout}

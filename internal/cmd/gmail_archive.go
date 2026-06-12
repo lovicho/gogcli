@@ -56,7 +56,7 @@ func gmailArchiveThreads(ctx context.Context, flags *RootFlags, rawIDs []string,
 	if err != nil {
 		return err
 	}
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func gmailBulkLabelOp(ctx context.Context, flags *RootFlags, messageIDs []string
 		return err
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}

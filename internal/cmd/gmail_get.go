@@ -49,7 +49,7 @@ func (c *GmailGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("--sanitize-content cannot be used with --format raw")
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}

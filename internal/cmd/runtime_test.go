@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/slides/v1"
 
 	"github.com/steipete/gogcli/internal/app"
@@ -108,6 +109,34 @@ func TestSlidesServiceUsesRuntimeFactory(t *testing.T) {
 	}
 	if gotAccount != "test@example.com" {
 		t.Fatalf("factory account = %q, want test@example.com", gotAccount)
+	}
+}
+
+func TestRequireGmailServiceUsesRuntimeFactory(t *testing.T) {
+	t.Parallel()
+
+	want := &gmail.Service{}
+	var factoryAccount string
+	runtime := &app.Runtime{Services: app.Services{
+		Gmail: func(_ context.Context, account string) (*gmail.Service, error) {
+			factoryAccount = account
+			return want, nil
+		},
+	}}
+	ctx := app.WithRuntime(context.Background(), runtime)
+
+	gotAccount, got, err := requireGmailService(ctx, &RootFlags{Account: "test@example.com"})
+	if err != nil {
+		t.Fatalf("requireGmailService() error = %v", err)
+	}
+	if got != want {
+		t.Fatalf("requireGmailService() = %p, want %p", got, want)
+	}
+	if gotAccount != "test@example.com" {
+		t.Fatalf("required account = %q, want test@example.com", gotAccount)
+	}
+	if factoryAccount != "test@example.com" {
+		t.Fatalf("factory account = %q, want test@example.com", factoryAccount)
 	}
 }
 

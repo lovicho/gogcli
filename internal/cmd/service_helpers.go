@@ -34,7 +34,7 @@ func requireCalendarService(ctx context.Context, flags *RootFlags) (string, *cal
 }
 
 func requireGmailService(ctx context.Context, flags *RootFlags) (string, *gmail.Service, error) {
-	return requireGoogleService(ctx, flags, newGmailService)
+	return requireGoogleService(ctx, flags, gmailService)
 }
 
 func requireClassroomService(ctx context.Context, flags *RootFlags) (string, *classroom.Service, error) {

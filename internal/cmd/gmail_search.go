@@ -45,7 +45,7 @@ func (c *GmailSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("missing query")
 	}
 
-	svc, err := newGmailService(ctx, account)
+	svc, err := gmailService(ctx, account)
 	if err != nil {
 		return err
 	}
