@@ -2,12 +2,11 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 632.
+Generated pages: 633.
 
 ## Top-level Commands
 
 - [gog admin](gog-admin.md) - Google Workspace Admin (Directory API) - requires domain-wide delegation
-- [gog agent](gog-agent.md) - Agent-friendly helpers
 - [gog analytics](gog-analytics.md) - Google Analytics
 - [gog appscript](gog-appscript.md) - Google Apps Script
 - [gog auth](gog-auth.md) - Auth and credentials
@@ -22,7 +21,6 @@ Generated pages: 632.
 - [gog docs](gog-docs.md) - Google Docs (export via Drive)
 - [gog download](gog-download.md) - Download a Drive file (alias for 'drive download')
 - [gog drive](gog-drive.md) - Google Drive
-- [gog exit-codes](gog-exit-codes.md) - Print stable exit codes (alias for 'agent exit-codes')
 - [gog forms](gog-forms.md) - Google Forms
 - [gog gmail](gog-gmail.md) - Gmail
 - [gog groups](gog-groups.md) - Google Groups
@@ -75,8 +73,6 @@ Generated pages: 632.
       - [gog admin users get](gog-admin-users-get.md) - Get user details
       - [gog admin users list](gog-admin-users-list.md) - List users in a domain
       - [gog admin users suspend](gog-admin-users-suspend.md) - Suspend a user account
-  - [gog agent](gog-agent.md) - Agent-friendly helpers
-    - [gog agent exit-codes](gog-agent-exit-codes.md) - Print stable exit codes for automation
   - [gog analytics](gog-analytics.md) - Google Analytics
     - [gog analytics accounts](gog-analytics-accounts.md) - List GA4 account summaries
     - [gog analytics report](gog-analytics-report.md) - Run a GA4 report (Analytics Data API)
@@ -289,6 +285,7 @@ Generated pages: 632.
       - [gog docs comments get](gog-docs-comments-get.md) - Get a comment by ID
       - [gog docs comments list](gog-docs-comments-list.md) - List comments on a Google Doc
       - [gog docs comments locate](gog-docs-comments-locate.md) - Resolve a comment quote to Docs API index ranges
+      - [gog docs comments poll](gog-docs-comments-poll.md) - Poll new and modified comments with persisted state
       - [gog docs comments reopen](gog-docs-comments-reopen.md) - Reopen a previously resolved comment
       - [gog docs comments reply](gog-docs-comments-reply.md) - Reply to a comment
       - [gog docs comments resolve](gog-docs-comments-resolve.md) - Resolve a comment (mark as done)
@@ -356,6 +353,7 @@ Generated pages: 632.
       - [gog drive bulk update-role](gog-drive-bulk-update-role.md) - Change matching Drive permission roles across files
     - [gog drive changes](gog-drive-changes.md) - Track Drive changes for sync and automation
       - [gog drive changes list](gog-drive-changes-list.md) - List Drive changes since a page token
+      - [gog drive changes poll](gog-drive-changes-poll.md) - Poll Drive changes with a persisted page token
       - [gog drive changes start-token](gog-drive-changes-start-token.md) - Get a Drive changes start page token
       - [gog drive changes stop](gog-drive-changes-stop.md) - Stop a Drive changes webhook channel
       - [gog drive changes watch](gog-drive-changes-watch.md) - Watch Drive changes with a webhook channel
@@ -393,11 +391,12 @@ Generated pages: 632.
       - [gog drive revisions list](gog-drive-revisions-list.md) - List revisions for a file
     - [gog drive search](gog-drive-search.md) - Full-text search across Drive
     - [gog drive share](gog-drive-share.md) - Share a file or folder
+    - [gog drive shortcut](gog-drive-shortcut.md) - Manage shortcuts to Drive files and folders
+      - [gog drive shortcut create](gog-drive-shortcut-create.md) - Create a shortcut to a Drive file or folder
     - [gog drive tree](gog-drive-tree.md) - Print a read-only folder tree
     - [gog drive unshare](gog-drive-unshare.md) - Remove a permission from a file
     - [gog drive upload](gog-drive-upload.md) - Upload a file
     - [gog drive url](gog-drive-url.md) - Print web URLs for files
-  - [gog exit-codes](gog-exit-codes.md) - Print stable exit codes (alias for 'agent exit-codes')
   - [gog forms](gog-forms.md) - Google Forms
     - [gog forms add-question](gog-forms-add-question.md) - Add a question to a form
     - [gog forms create](gog-forms-create.md) - Create a form
@@ -420,7 +419,7 @@ Generated pages: 632.
       - [gog forms watch list](gog-forms-watch-list.md) - List active watches
       - [gog forms watch renew](gog-forms-watch-renew.md) - Renew a watch (extends 7 days)
   - [gog gmail](gog-gmail.md) - Gmail
-    - [gog gmail archive](gog-gmail-archive.md) - Archive messages (remove from inbox)
+    - [gog gmail archive](gog-gmail-archive.md) - Archive messages or explicit threads (remove from inbox)
     - [gog gmail attachment](gog-gmail-attachment.md) - Download a single attachment
     - [gog gmail autoreply](gog-gmail-autoreply.md) - Reply once to matching messages
     - [gog gmail batch](gog-gmail-batch.md) - Batch operations (permanent delete requires broader Gmail scope; use gmail trash for normal trashing)

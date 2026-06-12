@@ -6,6 +6,13 @@
 
 - Photos: add an explicit-opt-in Google Photos Picker workflow for creating selection sessions, waiting for completion, listing chosen media, and downloading selected files. (#754)
 - Docs: add persisted, revision-locked request batches for composing supported mutations locally and submitting them atomically, with explicit split and partial-recovery modes. (#755)
+- CLI: remove the separate `gog agent` and `exit-codes` helpers; expose stable exit codes and effective automation safety state through `gog schema --json`, and summarize the contract in root help. (#677)
+- CLI: add Git-style `gog help <command>`, make explicit output flags override environment defaults, validate color and JSON-only transforms before command execution, report early usage errors on stderr, and reject contradictory schema plain output.
+- Docs: prevent multi-paragraph Markdown range replacements from inheriting the matched paragraph's heading or list style. (#756) — thanks @sebsnyk.
+- Docs: preserve nested Markdown list levels as native bullets inside imported and updated table cells. (#749) — thanks @sebsnyk.
+- Gmail: add explicit `gmail archive --thread` semantics so IDs from thread search can archive every message in each thread. (#752) — thanks @sebsnyk.
+- Drive/Docs: add persisted polling for Drive changes and Docs comments, with bounded runs, filters, retry-safe cursors, and sequential JSON hooks. (#690, #751)
+- Drive: expose shortcut targets in JSON and human-readable folder reports without changing stable `--plain` columns, classify shortcuts distinctly, keep tree scans from following folder targets, and add `drive shortcut create`. (#763)
 
 ## 0.24.0 - 2026-06-11
 

@@ -85,3 +85,17 @@ func TestHelpSnapshot_Admin(t *testing.T) {
 		"\n  groups",
 	)
 }
+
+func TestHelpSnapshot_RootAutomationContract(t *testing.T) {
+	out := captureHelpOutput(t, "--help")
+	requireHelpContains(t, out,
+		"\nAutomation:\n",
+		"Use --json or --plain for stable output",
+		`Use "gog help <command>"`,
+		"Exit codes: 0 success",
+		`Run "gog schema --json"`,
+	)
+	if strings.Contains(out, "\n  capabilities") || strings.Contains(out, "\n  exit-codes") {
+		t.Fatalf("removed discovery commands leaked into help: %q", out)
+	}
+}

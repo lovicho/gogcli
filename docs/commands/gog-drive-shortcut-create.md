@@ -1,18 +1,18 @@
-# `gog exit-codes`
+# `gog drive shortcut create`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Print stable exit codes (alias for 'agent exit-codes')
+Create a shortcut to a Drive file or folder
 
 ## Usage
 
 ```bash
-gog exit-codes (exitcodes) [flags]
+gog drive (drv) shortcut (shortcuts) create (add,new) <targetId> [flags]
 ```
 
 ## Parent
 
-- [gog](gog.md)
+- [gog drive shortcut](gog-drive-shortcut.md)
 
 ## Flags
 
@@ -31,7 +31,9 @@ gog exit-codes (exitcodes) [flags]
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
+| `--name` | `string` |  | Shortcut name (default: target name) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
+| `--parent` | `string` |  | Destination folder ID (required) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
@@ -41,5 +43,5 @@ gog exit-codes (exitcodes) [flags]
 
 ## See Also
 
-- [gog](gog.md)
+- [gog drive shortcut](gog-drive-shortcut.md)
 - [Command index](README.md)

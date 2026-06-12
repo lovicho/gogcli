@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRootDesirePaths_HelpParses(t *testing.T) {
+func TestRootDesirePathsHelpParses(t *testing.T) {
 	tests := [][]string{
 		{"send", "--help"},
 		{"ls", "--help"},
@@ -19,8 +19,6 @@ func TestRootDesirePaths_HelpParses(t *testing.T) {
 		{"status", "--help"},
 		{"me", "--help"},
 		{"whoami", "--help"},
-		{"exit-codes", "--help"},
-		{"agent", "--help"},
 	}
 
 	for _, args := range tests {
@@ -58,6 +56,28 @@ func TestDesirePaths_GlobalFlagAliases(t *testing.T) {
 	})
 	if strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Fatalf("expected text output with --tsv, got: %q", out)
+	}
+}
+
+func TestDesirePaths_RewriteHelp(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{name: "root", in: []string{"help"}, want: []string{"--help"}},
+		{name: "command", in: []string{"help", "drive", "ls"}, want: []string{"drive", "ls", "--help"}},
+		{name: "global flag", in: []string{"--color", "never", "help", "gmail"}, want: []string{"--color", "never", "gmail", "--help"}},
+		{name: "help ignores trailing args", in: []string{"drive", "--help", "nonsense"}, want: []string{"drive", "--help"}},
+		{name: "help after delimiter is data", in: []string{"open", "--", "--help"}, want: []string{"open", "--", "--help"}},
+		{name: "global value named help", in: []string{"--account", "help", "version"}, want: []string{"--account", "help", "version"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rewriteHelpArgs(tt.in); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("rewriteHelpArgs(%v) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

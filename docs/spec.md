@@ -223,6 +223,7 @@ Flag aliases:
 - `gog drive delete <fileId> [--permanent]`
 - `gog drive move <fileId> --parent ID`
 - `gog drive rename <fileId> <newName>`
+- `gog drive shortcut create <targetId> --parent ID [--name N]`
 - `gog drive share <fileId> --to anyone|user|domain [--email addr] [--domain example.com] [--role reader|writer|commenter] [--discoverable]`
 - `gog drive permissions <fileId> [--max N] [--page TOKEN]`
 - `gog drive unshare <fileId> <permissionId>`
@@ -230,6 +231,7 @@ Flag aliases:
 - `gog drive drives [--max N] [--page TOKEN] [--query Q]`
 - `gog drive changes start-token [--drive DRIVE_ID]`
 - `gog drive changes list --token TOKEN [--max N] [--all] [--drive DRIVE_ID]`
+- `gog drive changes poll --state-file PATH [--interval DURATION] [--on-change COMMAND] [--filter-file FILE_ID] [--drive DRIVE_ID]`
 - `gog drive changes watch --token TOKEN --webhook-url URL [--channel-id ID] [--channel-token TOKEN]`
 - `gog drive changes stop <channelId> <resourceId>`
 - `gog drive activity query [--file FILE_ID|--folder FOLDER_ID] [--actions edit,share] [--from RFC3339] [--to RFC3339] [--filter FILTER]`
@@ -242,6 +244,21 @@ Flag aliases:
 - `gog drive labels file list <fileId> [--max N] [--page TOKEN]`
 - `gog drive labels file apply <fileId> <labelId> [--text FIELD=VALUE] [--selection FIELD=CHOICE[,CHOICE]] [--integer FIELD=N] [--date FIELD=YYYY-MM-DD] [--user FIELD=email] [--unset FIELD] [--fields-json JSON]`
 - `gog drive labels file remove <fileId> <labelId>`
+
+Drive hierarchy semantics:
+
+- Files and folders are identified by stable opaque IDs, not paths.
+- New files have one parent folder. The API still returns `parents` as an array
+  so legacy My Drive records with multiple parents can be read; `drive move`
+  removes every old parent and installs exactly the requested parent.
+- An item visible from another folder is represented by a separate shortcut
+  file with its own ID, name, parent, and permissions. Shortcut metadata exposes
+  `shortcutDetails.targetId`, `targetMimeType`, and `targetResourceKey`.
+- Mutations apply to the exact ID passed. Commands do not silently dereference
+  shortcut IDs to their targets.
+- `drive tree`, `drive inventory`, and `drive du` treat shortcuts as leaves,
+  including shortcuts whose targets are folders.
+
 - `gog slides thumbnail <presentationId> <slideId> [--size small|medium|large] [--format png|jpeg] [--out PATH]`
 - `gog calendar calendars`
 - `gog calendar create-calendar <summary> [--description D] [--timezone TZ] [--location L]`

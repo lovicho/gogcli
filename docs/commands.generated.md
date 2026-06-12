@@ -22,8 +22,6 @@ Generated from `gog schema --json`.
       - [`gog admin users get (info,show) <userEmail>`](commands/gog-admin-users-get.md) - Get user details
       - [`gog admin users list (ls) [flags]`](commands/gog-admin-users-list.md) - List users in a domain
       - [`gog admin users suspend <userEmail>`](commands/gog-admin-users-suspend.md) - Suspend a user account
-  - [`gog agent <command> [flags]`](commands/gog-agent.md) - Agent-friendly helpers
-    - [`gog agent exit-codes (exitcodes,exit-code)`](commands/gog-agent-exit-codes.md) - Print stable exit codes for automation
   - [`gog analytics (ga) <command> [flags]`](commands/gog-analytics.md) - Google Analytics
     - [`gog analytics (ga) accounts (list,ls) [flags]`](commands/gog-analytics-accounts.md) - List GA4 account summaries
     - [`gog analytics (ga) report <property> [flags]`](commands/gog-analytics-report.md) - Run a GA4 report (Analytics Data API)
@@ -176,7 +174,7 @@ Generated from `gog schema --json`.
       - [`gog classroom (class) students (student) add (create,new) <courseId> <userId> [flags]`](commands/gog-classroom-students-add.md) - Add a student
       - [`gog classroom (class) students (student) get (info,show) <courseId> <userId>`](commands/gog-classroom-students-get.md) - Get a student
       - [`gog classroom (class) students (student) list (ls) <courseId> [flags]`](commands/gog-classroom-students-list.md) - List students
-      - [`gog classroom (class) students (student) remove (delete,rm,del,remove) <courseId> <userId>`](commands/gog-classroom-students-remove.md) - Remove a student
+      - [`gog classroom (class) students (student) remove (delete,rm,del) <courseId> <userId>`](commands/gog-classroom-students-remove.md) - Remove a student
     - [`gog classroom (class) submissions (submission) <command>`](commands/gog-classroom-submissions.md) - Student submissions
       - [`gog classroom (class) submissions (submission) get (info,show) <courseId> <courseworkId> <submissionId>`](commands/gog-classroom-submissions-get.md) - Get a student submission
       - [`gog classroom (class) submissions (submission) grade (set,edit) <courseId> <courseworkId> <submissionId> [flags]`](commands/gog-classroom-submissions-grade.md) - Set draft/assigned grades
@@ -188,7 +186,7 @@ Generated from `gog schema --json`.
       - [`gog classroom (class) teachers (teacher) add (create,new) <courseId> <userId>`](commands/gog-classroom-teachers-add.md) - Add a teacher
       - [`gog classroom (class) teachers (teacher) get (info,show) <courseId> <userId>`](commands/gog-classroom-teachers-get.md) - Get a teacher
       - [`gog classroom (class) teachers (teacher) list (ls) <courseId> [flags]`](commands/gog-classroom-teachers-list.md) - List teachers
-      - [`gog classroom (class) teachers (teacher) remove (delete,rm,del,remove) <courseId> <userId>`](commands/gog-classroom-teachers-remove.md) - Remove a teacher
+      - [`gog classroom (class) teachers (teacher) remove (delete,rm,del) <courseId> <userId>`](commands/gog-classroom-teachers-remove.md) - Remove a teacher
     - [`gog classroom (class) topics (topic) <command>`](commands/gog-classroom-topics.md) - Topics
       - [`gog classroom (class) topics (topic) create (add,new) --name=STRING <courseId>`](commands/gog-classroom-topics-create.md) - Create a topic
       - [`gog classroom (class) topics (topic) delete (rm,del,remove) <courseId> <topicId>`](commands/gog-classroom-topics-delete.md) - Delete a topic
@@ -236,6 +234,7 @@ Generated from `gog schema --json`.
       - [`gog docs (doc) comments get (info,show) <docId> <commentId>`](commands/gog-docs-comments-get.md) - Get a comment by ID
       - [`gog docs (doc) comments list (ls) <docId> [flags]`](commands/gog-docs-comments-list.md) - List comments on a Google Doc
       - [`gog docs (doc) comments locate <docId> <commentId> [flags]`](commands/gog-docs-comments-locate.md) - Resolve a comment quote to Docs API index ranges
+      - [`gog docs (doc) comments poll --state-file=STRING <docId> [flags]`](commands/gog-docs-comments-poll.md) - Poll new and modified comments with persisted state
       - [`gog docs (doc) comments reopen <docId> <commentId> [flags]`](commands/gog-docs-comments-reopen.md) - Reopen a previously resolved comment
       - [`gog docs (doc) comments reply (respond) <docId> <commentId> <content> [flags]`](commands/gog-docs-comments-reply.md) - Reply to a comment
       - [`gog docs (doc) comments resolve <docId> <commentId> [flags]`](commands/gog-docs-comments-resolve.md) - Resolve a comment (mark as done)
@@ -303,6 +302,7 @@ Generated from `gog schema --json`.
       - [`gog drive (drv) bulk update-role [flags]`](commands/gog-drive-bulk-update-role.md) - Change matching Drive permission roles across files
     - [`gog drive (drv) changes <command>`](commands/gog-drive-changes.md) - Track Drive changes for sync and automation
       - [`gog drive (drv) changes list (ls) --token=STRING [flags]`](commands/gog-drive-changes-list.md) - List Drive changes since a page token
+      - [`gog drive (drv) changes poll --state-file=STRING [flags]`](commands/gog-drive-changes-poll.md) - Poll Drive changes with a persisted page token
       - [`gog drive (drv) changes start-token (token) [flags]`](commands/gog-drive-changes-start-token.md) - Get a Drive changes start page token
       - [`gog drive (drv) changes stop <channelId> <resourceId>`](commands/gog-drive-changes-stop.md) - Stop a Drive changes webhook channel
       - [`gog drive (drv) changes watch --token=STRING --webhook-url=STRING [flags]`](commands/gog-drive-changes-watch.md) - Watch Drive changes with a webhook channel
@@ -340,11 +340,12 @@ Generated from `gog schema --json`.
       - [`gog drive (drv) revisions (revision) list (ls) <fileId> [flags]`](commands/gog-drive-revisions-list.md) - List revisions for a file
     - [`gog drive (drv) search <query> ... [flags]`](commands/gog-drive-search.md) - Full-text search across Drive
     - [`gog drive (drv) share <fileId> [flags]`](commands/gog-drive-share.md) - Share a file or folder
+    - [`gog drive (drv) shortcut (shortcuts) <command>`](commands/gog-drive-shortcut.md) - Manage shortcuts to Drive files and folders
+      - [`gog drive (drv) shortcut (shortcuts) create (add,new) <targetId> [flags]`](commands/gog-drive-shortcut-create.md) - Create a shortcut to a Drive file or folder
     - [`gog drive (drv) tree [flags]`](commands/gog-drive-tree.md) - Print a read-only folder tree
     - [`gog drive (drv) unshare <fileId> <permissionId>`](commands/gog-drive-unshare.md) - Remove a permission from a file
     - [`gog drive (drv) upload <localPath> [flags]`](commands/gog-drive-upload.md) - Upload a file
     - [`gog drive (drv) url <fileId> ...`](commands/gog-drive-url.md) - Print web URLs for files
-  - [`gog exit-codes (exitcodes) [flags]`](commands/gog-exit-codes.md) - Print stable exit codes (alias for 'agent exit-codes')
   - [`gog forms (form) <command> [flags]`](commands/gog-forms.md) - Google Forms
     - [`gog forms (form) add-question (add-q,aq) --title=STRING <formId> [flags]`](commands/gog-forms-add-question.md) - Add a question to a form
     - [`gog forms (form) create (new) --title=STRING [flags]`](commands/gog-forms-create.md) - Create a form
@@ -367,7 +368,7 @@ Generated from `gog schema --json`.
       - [`gog forms (form) watch (watches) list (ls) <formId>`](commands/gog-forms-watch-list.md) - List active watches
       - [`gog forms (form) watch (watches) renew (refresh) <formId> <watchId>`](commands/gog-forms-watch-renew.md) - Renew a watch (extends 7 days)
   - [`gog gmail (mail,email) <command> [flags]`](commands/gog-gmail.md) - Gmail
-    - [`gog gmail (mail,email) archive [<messageId> ...] [flags]`](commands/gog-gmail-archive.md) - Archive messages (remove from inbox)
+    - [`gog gmail (mail,email) archive [<messageId> ...] [flags]`](commands/gog-gmail-archive.md) - Archive messages or explicit threads (remove from inbox)
     - [`gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]`](commands/gog-gmail-attachment.md) - Download a single attachment
     - [`gog gmail (mail,email) autoreply <query> ... [flags]`](commands/gog-gmail-autoreply.md) - Reply once to matching messages
     - [`gog gmail (mail,email) batch <command>`](commands/gog-gmail-batch.md) - Batch operations (permanent delete requires broader Gmail scope; use gmail trash for normal trashing)

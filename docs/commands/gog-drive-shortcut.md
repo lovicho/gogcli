@@ -1,22 +1,22 @@
-# `gog agent`
+# `gog drive shortcut`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Agent-friendly helpers
+Manage shortcuts to Drive files and folders
 
 ## Usage
 
 ```bash
-gog agent <command> [flags]
+gog drive (drv) shortcut (shortcuts) <command>
 ```
 
 ## Parent
 
-- [gog](gog.md)
+- [gog drive](gog-drive.md)
 
 ## Subcommands
 
-- [gog agent exit-codes](gog-agent-exit-codes.md) - Print stable exit codes for automation
+- [gog drive shortcut create](gog-drive-shortcut-create.md) - Create a shortcut to a Drive file or folder
 
 ## Flags
 
@@ -45,5 +45,5 @@ gog agent <command> [flags]
 
 ## See Also
 
-- [gog](gog.md)
+- [gog drive](gog-drive.md)
 - [Command index](README.md)

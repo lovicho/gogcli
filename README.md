@@ -183,7 +183,8 @@ gog calendar appointments
 
 ### Drive
 
-Docs: [Drive audits](docs/drive-audits.md), [raw API dumps](docs/raw-api.md),
+Docs: [Drive audits](docs/drive-audits.md), [polling](docs/polling.md),
+[raw API dumps](docs/raw-api.md),
 [`gog drive`](docs/commands/gog-drive.md),
 [`drive changes`](docs/commands/gog-drive-changes.md),
 [`drive revisions`](docs/commands/gog-drive-revisions.md),
@@ -209,6 +210,7 @@ gog drive get <fileId> --fields 'id,name,mimeType,size,owners,emailAddress' --js
 # Track changes and audit activity.
 gog drive changes start-token
 gog drive changes list --token <token> --json
+gog drive changes poll --state-file ~/.local/state/gog/drive-changes.json --json
 gog drive revisions list <fileId> --all --json
 gog drive revisions get <fileId> <revisionId> --json
 gog drive activity query --file <fileId> --actions edit,share --from 2026-01-01T00:00:00Z --json
@@ -285,6 +287,7 @@ gog contacts dedupe --match email,phone,name --dry-run
 
 Docs: [Google Docs editing](docs/docs-editing.md),
 [atomic Docs request batches](docs/docs-batch.md),
+[polling](docs/polling.md),
 [sed-style document edits](docs/sedmat.md),
 [`gog docs`](docs/commands/gog-docs.md).
 
@@ -297,6 +300,7 @@ gog docs named-range create <docId> --name Status --at "Ready"
 gog docs insert-image <docId> --url https://example.com/chart.png --at end
 gog docs add-tab <docId> --title "Notes"
 gog docs tabs add <docId> --title "Notes"
+gog docs comments poll <docId> --state-file ~/.local/state/gog/doc-comments.json --json
 gog docs find-replace <docId> old new --tab "Notes" --dry-run
 gog docs raw <docId> --pretty
 ```
@@ -390,7 +394,8 @@ jobs.
 
 ## Output and Automation
 
-Docs: [Safety Profiles](docs/safety-profiles.md),
+Docs: [Automation](docs/automation.md),
+[Safety Profiles](docs/safety-profiles.md),
 [`gog schema`](docs/commands/gog-schema.md),
 [`gog config no-send`](docs/commands/gog-config-no-send.md).
 
@@ -402,7 +407,17 @@ gog --json gmail search 'has:attachment newer_than:90d' --max 50 |
   jq -r '.threads[].id'
 
 gog --plain calendar events --today
+gog schema --json
+gog schema --json | jq '.automation'
 ```
+
+There is no separate agent mode. The same CLI is designed for interactive use,
+scripts, CI, and agents: `--json`/`--plain` keep stdout parseable, `--no-input`
+prevents prompts, stable exit codes classify failures, `--wrap-untrusted`
+marks fetched free text, and runtime or baked command policies constrain
+available operations. Root `--help` summarizes that contract; `gog schema
+--json` exposes the complete command schema, exit-code map, and effective
+safety state. See [Automation](docs/automation.md).
 
 Useful global flags:
 
@@ -638,6 +653,7 @@ go run scripts/gen-auth-services-md.go
 - [Docs editing](docs/docs-editing.md) — <https://gogcli.sh/docs-editing.html>
 - [Sheets tables](docs/sheets-tables.md) and [Sheets formatting](docs/sheets-formatting.md)
 - [Safety profiles](docs/safety-profiles.md) — command guards and baked safe binaries
+- [Automation](docs/automation.md) — machine output, safety state, schema, and stable exit codes
 - [Auth clients](docs/auth-clients.md) — OAuth clients, account mapping, and service accounts
 - [Workspace Admin](docs/workspace-admin.md) — Workspace user, org unit, and group administration
 - [Backup](docs/backup.md) — encrypted Google account backups
