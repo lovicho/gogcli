@@ -16,9 +16,6 @@ import (
 var errUnexpectedContactsServiceCall = errors.New("unexpected contacts service call")
 
 func TestExecute_ContactsList_JSON(t *testing.T) {
-	origNew := newPeopleContactsService
-	t.Cleanup(func() { newPeopleContactsService = origNew })
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "/people/me/connections") {
 			http.NotFound(w, r)
@@ -51,15 +48,12 @@ func TestExecute_ContactsList_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newPeopleContactsService = func(context.Context, string) (*people.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "list", "--max", "1"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithPeopleContactsTestService(t, []string{"--json", "--account", "a@b.com", "contacts", "list", "--max", "1"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		Contacts []struct {
@@ -85,9 +79,7 @@ func TestExecute_ContactsList_JSON(t *testing.T) {
 }
 
 func TestExecute_ContactsInvalidMaxFailsBeforeService(t *testing.T) {
-	origNew := newPeopleContactsService
-	t.Cleanup(func() { newPeopleContactsService = origNew })
-	newPeopleContactsService = func(context.Context, string) (*people.Service, error) {
+	factory := func(context.Context, string) (*people.Service, error) {
 		t.Fatalf("expected max validation to fail before creating contacts service")
 		return nil, errUnexpectedContactsServiceCall
 	}
@@ -100,21 +92,16 @@ func TestExecute_ContactsInvalidMaxFailsBeforeService(t *testing.T) {
 	}
 	for _, args := range testCases {
 		t.Run(strings.Join(args[2:], "_"), func(t *testing.T) {
-			_ = captureStderr(t, func() {
-				err := Execute(args)
-				var exitErr *ExitError
-				if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "max must be > 0") {
-					t.Fatalf("unexpected err: %v", err)
-				}
-			})
+			err := executeWithPeopleTestServices(t, args, peopleTestServices{Contacts: factory}).err
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
 		})
 	}
 }
 
 func TestExecute_ContactsGet_ByEmail_JSON(t *testing.T) {
-	origNew := newPeopleContactsService
-	t.Cleanup(func() { newPeopleContactsService = origNew })
-
 	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "people:searchContacts") {
@@ -151,15 +138,12 @@ func TestExecute_ContactsGet_ByEmail_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newPeopleContactsService = func(context.Context, string) (*people.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "get", "ada@example.com"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithPeopleContactsTestService(t, []string{"--json", "--account", "a@b.com", "contacts", "get", "ada@example.com"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		Contact struct {
@@ -178,9 +162,6 @@ func TestExecute_ContactsGet_ByEmail_JSON(t *testing.T) {
 }
 
 func TestExecute_ContactsSearch_WarmsCache(t *testing.T) {
-	origNew := newPeopleContactsService
-	t.Cleanup(func() { newPeopleContactsService = origNew })
-
 	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "people:searchContacts") {
@@ -218,15 +199,12 @@ func TestExecute_ContactsSearch_WarmsCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newPeopleContactsService = func(context.Context, string) (*people.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "search", "Ada"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithPeopleContactsTestService(t, []string{"--json", "--account", "a@b.com", "contacts", "search", "Ada"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		Contacts []struct {
@@ -245,9 +223,6 @@ func TestExecute_ContactsSearch_WarmsCache(t *testing.T) {
 }
 
 func TestExecute_ContactsOtherSearch_WarmsCache(t *testing.T) {
-	origNew := newPeopleOtherContactsService
-	t.Cleanup(func() { newPeopleOtherContactsService = origNew })
-
 	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "otherContacts:search") {
@@ -285,15 +260,12 @@ func TestExecute_ContactsOtherSearch_WarmsCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newPeopleOtherContactsService = func(context.Context, string) (*people.Service, error) { return svc, nil }
 
-	out := captureStdout(t, func() {
-		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "other", "search", "Other"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-		})
-	})
+	result := executeWithPeopleOtherTestService(t, []string{"--json", "--account", "a@b.com", "contacts", "other", "search", "Other"}, svc)
+	if result.err != nil {
+		t.Fatalf("Execute: %v", result.err)
+	}
+	out := result.stdout
 
 	var parsed struct {
 		Contacts []struct {

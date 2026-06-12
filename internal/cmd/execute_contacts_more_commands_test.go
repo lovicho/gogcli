@@ -13,15 +13,6 @@ import (
 )
 
 func TestExecute_ContactsMoreCommands_JSON(t *testing.T) {
-	origContacts := newPeopleContactsService
-	origOther := newPeopleOtherContactsService
-	origDir := newPeopleDirectoryService
-	t.Cleanup(func() {
-		newPeopleContactsService = origContacts
-		newPeopleOtherContactsService = origOther
-		newPeopleDirectoryService = origDir
-	})
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		switch {
@@ -124,66 +115,30 @@ func TestExecute_ContactsMoreCommands_JSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	newPeopleContactsService = func(context.Context, string) (*people.Service, error) { return svc, nil }
-	newPeopleOtherContactsService = func(context.Context, string) (*people.Service, error) { return svc, nil }
-	newPeopleDirectoryService = func(context.Context, string) (*people.Service, error) { return svc, nil }
 
-	_ = captureStderr(t, func() {
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "search", "Ada"}); err != nil {
-				t.Fatalf("search: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "create", "--given", "Ada", "--email", "ada@example.com", "--phone", "+1"}); err != nil {
-				t.Fatalf("create: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "update", "people/c1", "--given", "Ada", "--family", "Updated"}); err != nil {
-				t.Fatalf("update: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--force", "--account", "a@b.com", "contacts", "delete", "people/c1"}); err != nil {
-				t.Fatalf("delete: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "directory", "list", "--max", "1"}); err != nil {
-				t.Fatalf("dir list: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "directory", "search", "Dir", "--max", "1"}); err != nil {
-				t.Fatalf("dir search: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "other", "list", "--max", "1"}); err != nil {
-				t.Fatalf("other list: %v", err)
-			}
-		})
-		_ = captureStdout(t, func() {
-			if err := Execute([]string{"--json", "--account", "a@b.com", "contacts", "other", "search", "Other"}); err != nil {
-				t.Fatalf("other search: %v", err)
-			}
-		})
-	})
+	run := func(name string, args ...string) {
+		t.Helper()
+		result := executeWithAllPeopleTestServices(t, args, svc)
+		if result.err != nil {
+			t.Fatalf("%s: %v", name, result.err)
+		}
+	}
+	run("search", "--json", "--account", "a@b.com", "contacts", "search", "Ada")
+	run("create", "--json", "--account", "a@b.com", "contacts", "create", "--given", "Ada", "--email", "ada@example.com", "--phone", "+1")
+	run("update", "--json", "--account", "a@b.com", "contacts", "update", "people/c1", "--given", "Ada", "--family", "Updated")
+	run("delete", "--json", "--force", "--account", "a@b.com", "contacts", "delete", "people/c1")
+	run("dir list", "--json", "--account", "a@b.com", "contacts", "directory", "list", "--max", "1")
+	run("dir search", "--json", "--account", "a@b.com", "contacts", "directory", "search", "Dir", "--max", "1")
+	run("other list", "--json", "--account", "a@b.com", "contacts", "other", "list", "--max", "1")
+	run("other search", "--json", "--account", "a@b.com", "contacts", "other", "search", "Other")
 }
 
 func TestExecute_ContactsDirectoryOtherInvalidMaxFailsBeforeService(t *testing.T) {
-	origOther := newPeopleOtherContactsService
-	origDir := newPeopleDirectoryService
-	t.Cleanup(func() {
-		newPeopleOtherContactsService = origOther
-		newPeopleDirectoryService = origDir
-	})
-	newPeopleOtherContactsService = func(context.Context, string) (*people.Service, error) {
+	otherFactory := func(context.Context, string) (*people.Service, error) {
 		t.Fatalf("expected max validation to fail before creating other contacts service")
 		return nil, context.Canceled
 	}
-	newPeopleDirectoryService = func(context.Context, string) (*people.Service, error) {
+	directoryFactory := func(context.Context, string) (*people.Service, error) {
 		t.Fatalf("expected max validation to fail before creating directory service")
 		return nil, context.Canceled
 	}
@@ -200,12 +155,13 @@ func TestExecute_ContactsDirectoryOtherInvalidMaxFailsBeforeService(t *testing.T
 	}
 	for _, args := range testCases {
 		t.Run(strings.Join(args[2:], "_"), func(t *testing.T) {
-			_ = captureStderr(t, func() {
-				err := Execute(args)
-				if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "max must be > 0") {
-					t.Fatalf("unexpected err: %v", err)
-				}
-			})
+			err := executeWithPeopleTestServices(t, args, peopleTestServices{
+				Directory: directoryFactory,
+				Other:     otherFactory,
+			}).err
+			if err == nil || ExitCode(err) != 2 || !strings.Contains(err.Error(), "max must be > 0") {
+				t.Fatalf("unexpected err: %v", err)
+			}
 		})
 	}
 }

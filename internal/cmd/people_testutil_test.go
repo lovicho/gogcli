@@ -61,3 +61,27 @@ func executeWithPeopleTestServices(t *testing.T, args []string, services peopleT
 		PeopleOther:     services.Other,
 	}})
 }
+
+func executeWithPeopleContactsTestService(t *testing.T, args []string, svc *people.Service) executeTestResult {
+	t.Helper()
+	return executeWithPeopleTestServices(t, args, peopleTestServices{
+		Contacts: fixedPeopleTestService(svc),
+	})
+}
+
+func executeWithPeopleOtherTestService(t *testing.T, args []string, svc *people.Service) executeTestResult {
+	t.Helper()
+	return executeWithPeopleTestServices(t, args, peopleTestServices{
+		Other: fixedPeopleTestService(svc),
+	})
+}
+
+func executeWithAllPeopleTestServices(t *testing.T, args []string, svc *people.Service) executeTestResult {
+	t.Helper()
+	factory := fixedPeopleTestService(svc)
+	return executeWithPeopleTestServices(t, args, peopleTestServices{
+		Contacts:  factory,
+		Directory: factory,
+		Other:     factory,
+	})
+}
