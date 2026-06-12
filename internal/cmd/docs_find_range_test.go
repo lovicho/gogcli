@@ -1,9 +1,10 @@
 package cmd
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 )
 
 func TestFindDocsTextRangesAllOccurrenceCaseAndUTF16(t *testing.T) {
+	t.Parallel()
+
 	doc := docsFindRangeDoc(
 		docsFindRangeParagraph(1,
 			"Hi ",
@@ -39,6 +42,8 @@ func TestFindDocsTextRangesAllOccurrenceCaseAndUTF16(t *testing.T) {
 }
 
 func TestFindDocsTextRangesNormalizesWhitespaceAndEntities(t *testing.T) {
+	t.Parallel()
+
 	doc := docsFindRangeDoc(
 		docsFindRangeParagraph(1,
 			"Tom",
@@ -64,6 +69,8 @@ func TestFindDocsTextRangesNormalizesWhitespaceAndEntities(t *testing.T) {
 }
 
 func TestFindDocsTextRangesTablesAndParagraphIndex(t *testing.T) {
+	t.Parallel()
+
 	doc := &docs.Document{Body: &docs.Body{Content: []*docs.StructuralElement{
 		docsFindRangeParagraph(1, "before\n"),
 		{
@@ -93,6 +100,8 @@ func TestFindDocsTextRangesTablesAndParagraphIndex(t *testing.T) {
 }
 
 func TestFindDocsTextRangesAcrossParagraphs(t *testing.T) {
+	t.Parallel()
+
 	doc := docsFindRangeDoc(
 		docsFindRangeParagraph(1, "First paragraph\n"),
 		docsFindRangeParagraph(17, "Second paragraph\n"),
@@ -108,8 +117,7 @@ func TestFindDocsTextRangesAcrossParagraphs(t *testing.T) {
 }
 
 func TestDocsFindRangeCmdJSONAllAndTab(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	var includeTabs string
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -136,15 +144,13 @@ func TestDocsFindRangeCmdJSONAllAndTab(t *testing.T) {
 		})
 	}))
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	var runErr error
-	out := captureStdout(t, func() {
-		runErr = runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "Alpha", "--all", "--tab", "Second"}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if runErr != nil {
-		t.Fatalf("find-range: %v", runErr)
+	var output bytes.Buffer
+	ctx := withDocsTestService(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), docSvc)
+	if err := runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "Alpha", "--all", "--tab", "Second"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("find-range: %v", err)
 	}
+	out := output.String()
 	if includeTabs != "true" {
 		t.Fatalf("includeTabsContent = %q, want true", includeTabs)
 	}
@@ -165,8 +171,7 @@ func TestDocsFindRangeCmdJSONAllAndTab(t *testing.T) {
 }
 
 func TestDocsFindRangeCmdPlainOccurrence(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/v1/documents/") {
@@ -177,9 +182,9 @@ func TestDocsFindRangeCmdPlainOccurrence(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(docsFindRangeDoc(docsFindRangeParagraph(1, "Alpha Beta Alpha\n")))
 	}))
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	ctx, out := newDocsCmdOutputContext(t)
+	var out bytes.Buffer
+	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), docSvc)
 	if err := runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "Alpha", "--occurrence", "2"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("find-range: %v", err)
 	}
@@ -189,8 +194,7 @@ func TestDocsFindRangeCmdPlainOccurrence(t *testing.T) {
 }
 
 func TestDocsFindRangeCmdEmptyAndFailEmpty(t *testing.T) {
-	origDocs := newDocsService
-	t.Cleanup(func() { newDocsService = origDocs })
+	t.Parallel()
 
 	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/v1/documents/") {
@@ -201,25 +205,21 @@ func TestDocsFindRangeCmdEmptyAndFailEmpty(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(docsFindRangeDoc(docsFindRangeParagraph(1, "Alpha\n")))
 	}))
 	defer cleanup()
-	newDocsService = func(context.Context, string) (*docs.Service, error) { return docSvc, nil }
 
-	var runErr error
-	out := captureStdout(t, func() {
-		runErr = runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "missing"}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
-	if runErr != nil {
-		t.Fatalf("find-range empty: %v", runErr)
+	var output bytes.Buffer
+	ctx := withDocsTestService(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), docSvc)
+	if err := runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "missing"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
+		t.Fatalf("find-range empty: %v", err)
 	}
-	assertEmptyFindRangeJSON(t, out)
+	assertEmptyFindRangeJSON(t, output.String())
 
-	out = captureStdout(t, func() {
-		runErr = runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "missing", "--fail-empty"}, newDocsJSONContext(t), &RootFlags{Account: "a@b.com"})
-	})
+	output.Reset()
+	runErr := runKong(t, &DocsFindRangeCmd{}, []string{"doc1", "missing", "--fail-empty"}, ctx, &RootFlags{Account: "a@b.com"})
 	var exitErr *ExitError
 	if !errors.As(runErr, &exitErr) || exitErr.Code != emptyResultsExitCode {
 		t.Fatalf("fail-empty err = %#v, want exit 3", runErr)
 	}
-	assertEmptyFindRangeJSON(t, out)
+	assertEmptyFindRangeJSON(t, output.String())
 }
 
 func assertEmptyFindRangeJSON(t *testing.T, raw string) {
