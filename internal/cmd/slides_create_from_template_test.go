@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,8 +14,6 @@ import (
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 	"google.golang.org/api/slides/v1"
-
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestSlidesCreateFromTemplate_Basic(t *testing.T) {
@@ -90,27 +89,13 @@ func TestSlidesCreateFromTemplate_Basic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldNewDrive := newDriveService
-	oldNewSlides := newSlidesService
-	defer func() {
-		newDriveService = oldNewDrive
-		newSlidesService = oldNewSlides
-	}()
-
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return driveSvc, nil }
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return slidesSvc, nil }
-
 	cmd := &SlidesCreateFromTemplateCmd{
 		TemplateID: "template123",
 		Title:      "New Presentation",
 		Replace:    []string{"name=John Doe", "company=ACME Corp"},
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesAndDriveTestServices(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), slidesSvc, driveSvc)
 
 	err = cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err != nil {
@@ -225,27 +210,13 @@ func TestSlidesCreateFromTemplate_JSONFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldNewDrive := newDriveService
-	oldNewSlides := newSlidesService
-	defer func() {
-		newDriveService = oldNewDrive
-		newSlidesService = oldNewSlides
-	}()
-
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return driveSvc, nil }
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return slidesSvc, nil }
-
 	cmd := &SlidesCreateFromTemplateCmd{
 		TemplateID:   "template456",
 		Title:        "Test Presentation",
 		Replacements: jsonFile,
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesAndDriveTestServices(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), slidesSvc, driveSvc)
 
 	err = cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err != nil {
@@ -350,16 +321,6 @@ func TestSlidesCreateFromTemplate_ExactMode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldNewDrive := newDriveService
-	oldNewSlides := newSlidesService
-	defer func() {
-		newDriveService = oldNewDrive
-		newSlidesService = oldNewSlides
-	}()
-
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return driveSvc, nil }
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return slidesSvc, nil }
-
 	cmd := &SlidesCreateFromTemplateCmd{
 		TemplateID: "template789",
 		Title:      "Exact Mode Test",
@@ -367,11 +328,7 @@ func TestSlidesCreateFromTemplate_ExactMode(t *testing.T) {
 		Exact:      true,
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesAndDriveTestServices(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), slidesSvc, driveSvc)
 
 	err = cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err != nil {
@@ -394,11 +351,7 @@ func TestSlidesCreateFromTemplate_EmptyReplacements(t *testing.T) {
 		Title:      "Test",
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	err := cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err == nil {
@@ -416,11 +369,7 @@ func TestSlidesCreateFromTemplate_InvalidReplaceFormat(t *testing.T) {
 		Replace:    []string{"invalid_no_equals_sign"},
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	err := cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err == nil {
@@ -445,11 +394,7 @@ func TestSlidesCreateFromTemplate_InvalidJSON(t *testing.T) {
 		Replacements: jsonFile,
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	err := cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err == nil {
@@ -541,16 +486,6 @@ func TestSlidesCreateFromTemplate_CombineFileAndFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	oldNewDrive := newDriveService
-	oldNewSlides := newSlidesService
-	defer func() {
-		newDriveService = oldNewDrive
-		newSlidesService = oldNewSlides
-	}()
-
-	newDriveService = func(context.Context, string) (*drive.Service, error) { return driveSvc, nil }
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return slidesSvc, nil }
-
 	// Flag overrides file
 	cmd := &SlidesCreateFromTemplateCmd{
 		TemplateID:   "template999",
@@ -559,11 +494,7 @@ func TestSlidesCreateFromTemplate_CombineFileAndFlags(t *testing.T) {
 		Replace:      []string{"name=From Flag"},
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesAndDriveTestServices(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), slidesSvc, driveSvc)
 
 	err = cmd.Run(ctx, &RootFlags{Account: "test@example.com"})
 	if err != nil {
@@ -592,21 +523,14 @@ func TestSlidesCreateFromTemplate_CombineFileAndFlags(t *testing.T) {
 }
 
 func TestSlidesCreateFromTemplate_DryRunSkipsAPICalls(t *testing.T) {
-	origNewDrive := newDriveService
-	origNewSlides := newSlidesService
-	t.Cleanup(func() {
-		newDriveService = origNewDrive
-		newSlidesService = origNewSlides
-	})
-
 	driveCalls := 0
 	slidesCalls := 0
-	newDriveService = func(context.Context, string) (*drive.Service, error) {
+	driveFactory := func(context.Context, string) (*drive.Service, error) {
 		driveCalls++
 		t.Fatal("drive service should not be created during dry-run")
 		return &drive.Service{}, nil
 	}
-	newSlidesService = func(context.Context, string) (*slides.Service, error) {
+	slidesFactory := func(context.Context, string) (*slides.Service, error) {
 		slidesCalls++
 		t.Fatal("slides service should not be created during dry-run")
 		return &slides.Service{}, nil
@@ -619,11 +543,10 @@ func TestSlidesCreateFromTemplate_DryRunSkipsAPICalls(t *testing.T) {
 		Parent:     "https://drive.google.com/drive/folders/parent123",
 	}
 
-	u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: os.Stderr, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestServiceFactory(
+		withDriveTestServiceFactory(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), driveFactory),
+		slidesFactory,
+	)
 
 	err := cmd.Run(ctx, &RootFlags{Account: "test@example.com", DryRun: true, NoInput: true})
 	if ExitCode(err) != 0 {

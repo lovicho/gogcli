@@ -120,7 +120,7 @@ func (c *SlidesCreateFromTemplateCmd) Run(ctx context.Context, flags *RootFlags)
 
 	// Output results
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, map[string]any{
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"presentationId": presentationID,
 			"name":           created.Name,
 			"link":           created.WebViewLink,
