@@ -123,7 +123,7 @@ func gmailFromContactQuery(ctx context.Context, account, selector string) (strin
 	if selector == "" {
 		return "", usage("empty --from-contact")
 	}
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return "", err
 	}

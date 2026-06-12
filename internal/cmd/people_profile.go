@@ -250,7 +250,7 @@ func (c *PeopleRelationsCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 func peopleServiceForResource(ctx context.Context, account string, resource string) (*people.Service, error) {
 	if resource == peopleMeResource {
-		return newPeopleContactsService(ctx, account)
+		return peopleContactsService(ctx, account)
 	}
 	return newPeopleDirectoryService(ctx, account)
 }

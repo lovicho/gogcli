@@ -36,7 +36,7 @@ func (c *PeopleMeCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}

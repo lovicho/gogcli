@@ -56,7 +56,7 @@ func runPeopleRaw(ctx context.Context, flags *RootFlags, id, fields string, pret
 	if err != nil {
 		return err
 	}
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return wrapPeopleAPIError(err)
 	}

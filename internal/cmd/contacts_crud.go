@@ -36,7 +36,7 @@ func (c *ContactsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func (c *ContactsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("empty identifier")
 	}
 
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -459,7 +459,7 @@ func (c *ContactsCreateCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -573,7 +573,7 @@ func (c *ContactsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 		if err != nil {
 			return err
 		}
-		svc, err := newPeopleContactsService(ctx, account)
+		svc, err := peopleContactsService(ctx, account)
 		if err != nil {
 			return err
 		}
@@ -614,7 +614,7 @@ func (c *ContactsUpdateCmd) Run(ctx context.Context, kctx *kong.Context, flags *
 	if err != nil {
 		return err
 	}
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -790,7 +790,7 @@ func (c *ContactsDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}

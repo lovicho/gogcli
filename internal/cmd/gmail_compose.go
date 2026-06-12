@@ -132,7 +132,7 @@ func resolveComposeFrom(ctx context.Context, svc *gmail.Service, account, from s
 }
 
 func primaryDisplayNameFromPeople(ctx context.Context, account string) string {
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return ""
 	}

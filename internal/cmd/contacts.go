@@ -42,7 +42,7 @@ func (c *ContactsSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	query := strings.Join(c.Query, " ")
 
-	svc, err := newPeopleContactsService(ctx, account)
+	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
