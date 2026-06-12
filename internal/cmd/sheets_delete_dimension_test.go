@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"google.golang.org/api/sheets/v4"
+
+	"github.com/steipete/gogcli/internal/sheetsdimension"
 )
 
 func TestSheetsDeleteDimensionCmdTableAwareRows(t *testing.T) {
@@ -117,7 +119,7 @@ func TestSheetsDeleteDimensionPlanning(t *testing.T) {
 		},
 	}
 
-	updates, err := planSheetsDeleteDimensionTables([]*sheets.Table{table}, 7, "Data", sheetsDeleteDimensionSpec{
+	updates, err := sheetsdimension.PlanTableUpdates([]*sheets.Table{table}, 7, sheetsDeleteDimensionSpec{
 		Dimension:  "COLUMNS",
 		Label:      "columns",
 		StartIndex: 2,
@@ -126,11 +128,13 @@ func TestSheetsDeleteDimensionPlanning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plan columns: %v", err)
 	}
-	if len(updates) != 1 || updates[0].AfterA1 != "Data!B3:C8" {
+	if len(updates) != 1 ||
+		updates[0].After.StartColumnIndex != 1 ||
+		updates[0].After.EndColumnIndex != 3 {
 		t.Fatalf("updates = %#v", updates)
 	}
 
-	_, err = planSheetsDeleteDimensionTables([]*sheets.Table{table}, 7, "Data", sheetsDeleteDimensionSpec{
+	_, err = sheetsdimension.PlanTableUpdates([]*sheets.Table{table}, 7, sheetsDeleteDimensionSpec{
 		Dimension:  "COLUMNS",
 		Label:      "columns",
 		StartIndex: 0,
@@ -173,7 +177,7 @@ func TestSheetsDeleteDimensionValidation(t *testing.T) {
 		})
 	}
 
-	err = validateSheetsDeleteDimensionBounds(spec, &sheets.SheetProperties{
+	err = sheetsdimension.ValidateBounds(spec, &sheets.SheetProperties{
 		GridProperties: &sheets.GridProperties{RowCount: 3, ColumnCount: 10},
 	})
 	if err == nil || !strings.Contains(err.Error(), "exceeds sheet size") {
