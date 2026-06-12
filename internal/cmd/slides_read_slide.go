@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -118,7 +117,7 @@ func (c *SlidesReadSlideCmd) Run(ctx context.Context, flags *RootFlags) error {
 			"textElements":   textElements,
 			"images":         images,
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, result)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), result)
 	}
 
 	u.Out().Linef("Slide %d  (%s)", slideIndex+1, slideID)
@@ -135,7 +134,7 @@ func (c *SlidesReadSlideCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	if len(textElements) > 0 {
 		u.Out().Println("Text Elements:")
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		tw := tabwriter.NewWriter(stdoutWriter(ctx), 0, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "OBJECT ID\tTEXT")
 		for _, te := range textElements {
 			fmt.Fprintf(tw, "%s\t%s\n", te["objectId"], te["text"])
@@ -146,7 +145,7 @@ func (c *SlidesReadSlideCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	if len(images) > 0 {
 		u.Out().Println("Images:")
-		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+		tw := tabwriter.NewWriter(stdoutWriter(ctx), 0, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "OBJECT ID\tURL")
 		for _, img := range images {
 			url := "(none)"

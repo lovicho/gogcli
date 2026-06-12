@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -13,9 +14,6 @@ import (
 
 	"google.golang.org/api/option"
 	"google.golang.org/api/slides/v1"
-
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func newSlidesThumbnailTestService(t *testing.T, handler http.Handler) *slides.Service {
@@ -36,9 +34,6 @@ func newSlidesThumbnailTestService(t *testing.T, handler http.Handler) *slides.S
 }
 
 func TestSlidesThumbnail(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	svc := newSlidesThumbnailTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(r.URL.Path, "/presentations/pres1/pages/slide_1/thumbnail") && r.Method == http.MethodGet {
@@ -57,53 +52,42 @@ func TestSlidesThumbnail(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
+	var out bytes.Buffer
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
+	cmd := &SlidesThumbnailCmd{
+		PresentationID: "pres1",
+		SlideID:        "slide_1",
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		cmd := &SlidesThumbnailCmd{
-			PresentationID: "pres1",
-			SlideID:        "slide_1",
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
-
-	if !strings.Contains(out, "presentationId\tpres1") {
-		t.Errorf("expected presentationId in output, got: %q", out)
+	if !strings.Contains(out.String(), "presentationId\tpres1") {
+		t.Errorf("expected presentationId in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "slideId\tslide_1") {
-		t.Errorf("expected slideId in output, got: %q", out)
+	if !strings.Contains(out.String(), "slideId\tslide_1") {
+		t.Errorf("expected slideId in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "url\thttps://example.com/thumb.png") {
-		t.Errorf("expected thumbnail URL in output, got: %q", out)
+	if !strings.Contains(out.String(), "url\thttps://example.com/thumb.png") {
+		t.Errorf("expected thumbnail URL in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "width\t1600") {
-		t.Errorf("expected width in output, got: %q", out)
+	if !strings.Contains(out.String(), "width\t1600") {
+		t.Errorf("expected width in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "height\t900") {
-		t.Errorf("expected height in output, got: %q", out)
+	if !strings.Contains(out.String(), "height\t900") {
+		t.Errorf("expected height in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "size\tlarge") {
-		t.Errorf("expected size in output, got: %q", out)
+	if !strings.Contains(out.String(), "size\tlarge") {
+		t.Errorf("expected size in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "format\tpng") {
-		t.Errorf("expected format in output, got: %q", out)
+	if !strings.Contains(out.String(), "format\tpng") {
+		t.Errorf("expected format in output, got: %q", out.String())
 	}
 }
 
 func TestSlidesThumbnail_JSON(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	svc := newSlidesThumbnailTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(r.URL.Path, "/presentations/pres1/pages/slide_1/thumbnail") && r.Method == http.MethodGet {
@@ -122,32 +106,23 @@ func TestSlidesThumbnail_JSON(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
-
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-		ctx = outfmt.WithMode(ctx, outfmt.Mode{JSON: true})
-
-		cmd := &SlidesThumbnailCmd{
-			PresentationID: "pres1",
-			SlideID:        "slide_1",
-			Size:           "medium",
-			Format:         "jpeg",
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	var out bytes.Buffer
+	ctx := withSlidesTestService(newCmdRuntimeJSONOutputContext(t, &out, io.Discard), svc)
+	cmd := &SlidesThumbnailCmd{
+		PresentationID: "pres1",
+		SlideID:        "slide_1",
+		Size:           "medium",
+		Format:         "jpeg",
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	var result map[string]any
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("JSON parse: %v\noutput: %q", err, out)
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("JSON parse: %v\noutput: %q", err, out.String())
 	}
 
 	if got := result["presentationId"]; got != "pres1" {
@@ -174,13 +149,6 @@ func TestSlidesThumbnail_JSON(t *testing.T) {
 }
 
 func TestSlidesThumbnail_Download(t *testing.T) {
-	origSlides := newSlidesService
-	origHTTPClient := slidesThumbnailHTTPClient
-	t.Cleanup(func() {
-		newSlidesService = origSlides
-		slidesThumbnailHTTPClient = origHTTPClient
-	})
-
 	imageBytes := []byte("fake-image-bytes")
 
 	downloadSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -201,28 +169,19 @@ func TestSlidesThumbnail_Download(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
-	slidesThumbnailHTTPClient = downloadSrv.Client()
 
 	flags := &RootFlags{Account: "a@b.com"}
 	outputPath := filepath.Join(t.TempDir(), "slide.png")
-
-	out := captureStdout(t, func() {
-		u, uiErr := ui.New(ui.Options{Stdout: os.Stdout, Stderr: io.Discard, Color: "never"})
-		if uiErr != nil {
-			t.Fatalf("ui.New: %v", uiErr)
-		}
-		ctx := ui.WithUI(context.Background(), u)
-
-		cmd := &SlidesThumbnailCmd{
-			PresentationID: "pres1",
-			SlideID:        "slide_1",
-			Output:         outputPath,
-		}
-		if err := cmd.Run(ctx, flags); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	})
+	var out bytes.Buffer
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, &out, io.Discard), svc)
+	cmd := &SlidesThumbnailCmd{
+		PresentationID: "pres1",
+		SlideID:        "slide_1",
+		Output:         outputPath,
+	}
+	if err := cmd.Run(ctx, flags); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
 
 	gotBytes, err := os.ReadFile(outputPath)
 	if err != nil {
@@ -232,21 +191,17 @@ func TestSlidesThumbnail_Download(t *testing.T) {
 		t.Fatalf("expected downloaded bytes %q, got %q", string(imageBytes), string(gotBytes))
 	}
 
-	if !strings.Contains(out, "output\t"+outputPath) {
-		t.Errorf("expected output path in output, got: %q", out)
+	if !strings.Contains(out.String(), "output\t"+outputPath) {
+		t.Errorf("expected output path in output, got: %q", out.String())
 	}
-	if !strings.Contains(out, "bytes\t16") {
-		t.Errorf("expected byte count in output, got: %q", out)
+	if !strings.Contains(out.String(), "bytes\t16") {
+		t.Errorf("expected byte count in output, got: %q", out.String())
 	}
 }
 
 func TestSlidesThumbnail_InvalidSize(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	cmd := &SlidesThumbnailCmd{
 		PresentationID: "pres1",
@@ -264,11 +219,7 @@ func TestSlidesThumbnail_InvalidSize(t *testing.T) {
 
 func TestSlidesThumbnail_InvalidFormat(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	cmd := &SlidesThumbnailCmd{
 		PresentationID: "pres1",
@@ -286,11 +237,7 @@ func TestSlidesThumbnail_InvalidFormat(t *testing.T) {
 
 func TestSlidesThumbnail_MissingSlideID(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	cmd := &SlidesThumbnailCmd{
 		PresentationID: "pres1",
@@ -303,11 +250,7 @@ func TestSlidesThumbnail_MissingSlideID(t *testing.T) {
 
 func TestSlidesThumbnail_MissingPresentationID(t *testing.T) {
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := newCmdRuntimeOutputContext(t, io.Discard, io.Discard)
 
 	cmd := &SlidesThumbnailCmd{
 		SlideID: "slide_1",
@@ -319,20 +262,12 @@ func TestSlidesThumbnail_MissingPresentationID(t *testing.T) {
 }
 
 func TestSlidesThumbnail_APIFailure(t *testing.T) {
-	origSlides := newSlidesService
-	t.Cleanup(func() { newSlidesService = origSlides })
-
 	svc := newSlidesThumbnailTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"message":"boom"}}`, http.StatusInternalServerError)
 	}))
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
 
 	flags := &RootFlags{Account: "a@b.com"}
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
 	cmd := &SlidesThumbnailCmd{
 		PresentationID: "pres1",
@@ -345,13 +280,6 @@ func TestSlidesThumbnail_APIFailure(t *testing.T) {
 }
 
 func TestSlidesThumbnail_DownloadFailure(t *testing.T) {
-	origSlides := newSlidesService
-	origHTTPClient := slidesThumbnailHTTPClient
-	t.Cleanup(func() {
-		newSlidesService = origSlides
-		slidesThumbnailHTTPClient = origHTTPClient
-	})
-
 	downloadSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing", http.StatusNotFound)
 	}))
@@ -369,17 +297,10 @@ func TestSlidesThumbnail_DownloadFailure(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	}))
-	newSlidesService = func(context.Context, string) (*slides.Service, error) { return svc, nil }
-	slidesThumbnailHTTPClient = downloadSrv.Client()
 
 	flags := &RootFlags{Account: "a@b.com"}
 	outputPath := filepath.Join(t.TempDir(), "slide.png")
-
-	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if uiErr != nil {
-		t.Fatalf("ui.New: %v", uiErr)
-	}
-	ctx := ui.WithUI(context.Background(), u)
+	ctx := withSlidesTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), svc)
 
 	cmd := &SlidesThumbnailCmd{
 		PresentationID: "pres1",
