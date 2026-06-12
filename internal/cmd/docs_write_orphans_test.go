@@ -33,13 +33,9 @@ func TestDocsWriteCheckOrphansValidation(t *testing.T) {
 }
 
 func TestDocsWriteCheckOrphansDryRunSkipsServices(t *testing.T) {
-	origDrive := newDriveService
 	origDocs := newDocsService
-	t.Cleanup(func() {
-		newDriveService = origDrive
-		newDocsService = origDocs
-	})
-	newDriveService = func(context.Context, string) (*drive.Service, error) {
+	t.Cleanup(func() { newDocsService = origDocs })
+	driveFactory := func(context.Context, string) (*drive.Service, error) {
 		t.Fatal("dry-run must not create Drive service")
 		return nil, errors.New("unexpected Drive service creation")
 	}
@@ -48,14 +44,13 @@ func TestDocsWriteCheckOrphansDryRunSkipsServices(t *testing.T) {
 		return nil, errors.New("unexpected Docs service creation")
 	}
 
-	var runErr error
-	out := captureStdout(t, func() {
-		runErr = runKong(t, &DocsWriteCmd{},
-			[]string{"doc1", "--text", "replacement", "--markdown", "--replace", "--check-orphans"},
-			newDocsJSONContext(t),
-			&RootFlags{Account: "a@b.com", DryRun: true},
-		)
-	})
+	var stdout, stderr bytes.Buffer
+	ctx := withDriveTestServiceFactory(newCmdRuntimeJSONOutputContext(t, &stdout, &stderr), driveFactory)
+	runErr := runKong(t, &DocsWriteCmd{},
+		[]string{"doc1", "--text", "replacement", "--markdown", "--replace", "--check-orphans"},
+		ctx,
+		&RootFlags{Account: "a@b.com", DryRun: true},
+	)
 	var exitErr *ExitError
 	if !errors.As(runErr, &exitErr) || exitErr.Code != 0 {
 		t.Fatalf("err = %#v, want dry-run exit 0", runErr)
@@ -65,8 +60,8 @@ func TestDocsWriteCheckOrphansDryRunSkipsServices(t *testing.T) {
 			CheckOrphans bool `json:"check_orphans"`
 		} `json:"request"`
 	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatalf("json: %v\n%s", err, out)
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("json: %v\n%s", err, stdout.String())
 	}
 	if !got.Request.CheckOrphans {
 		t.Fatalf("dry-run request = %#v, want check_orphans", got.Request)
@@ -200,17 +195,15 @@ func TestWriteDocsWriteOrphanResultJSONAndPlain(t *testing.T) {
 		},
 	}
 
-	var jsonErr error
-	jsonOut := captureStdout(t, func() {
-		jsonErr = writeDocsWriteOrphanResult(newDocsJSONContext(t), "doc1", "t.second", orphans)
-	})
+	var jsonOut, jsonStderr bytes.Buffer
+	jsonErr := writeDocsWriteOrphanResult(newCmdRuntimeJSONOutputContext(t, &jsonOut, &jsonStderr), "doc1", "t.second", orphans)
 	var exitErr *ExitError
 	if !errors.As(jsonErr, &exitErr) || exitErr.Code != exitCodeOrphaned {
 		t.Fatalf("json err = %#v, want exit %d", jsonErr, exitCodeOrphaned)
 	}
 	var result docsWriteOrphanResult
-	if err := json.Unmarshal([]byte(jsonOut), &result); err != nil {
-		t.Fatalf("json: %v\n%s", err, jsonOut)
+	if err := json.Unmarshal(jsonOut.Bytes(), &result); err != nil {
+		t.Fatalf("json: %v\n%s", err, jsonOut.String())
 	}
 	if result.DocumentID != "doc1" || result.TabID != "t.second" || len(result.WouldOrphan) != 1 {
 		t.Fatalf("result = %#v", result)
@@ -233,7 +226,7 @@ func TestWriteDocsWriteOrphanResultJSONAndPlain(t *testing.T) {
 
 func newDocsWriteOrphanServices(t *testing.T, doc *docs.Document, comments []*drive.Comment) (*drive.Service, *docs.Service) {
 	t.Helper()
-	driveSvc, _ := newDriveServiceForCommentsLocateTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	driveSvc, _ := newDriveCommentsTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || strings.TrimPrefix(r.URL.Path, "/drive/v3") != "/files/doc1/comments" {
 			http.NotFound(w, r)
 			return

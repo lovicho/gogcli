@@ -177,7 +177,7 @@ func writeDocsInsertImageResult(ctx context.Context, result docsInsertImageResul
 		if result.tabID != "" {
 			payload["tabId"] = result.tabID
 		}
-		return outfmt.WriteJSON(ctx, os.Stdout, payload)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), payload)
 	}
 	u.Out().Linef("documentId\t%s", result.documentID)
 	if result.sourceURL != "" {

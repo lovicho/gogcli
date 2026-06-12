@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -218,7 +217,7 @@ func writeDocsWriteOrphanResult(ctx context.Context, docID, tabID string, orphan
 		WouldOrphan: orphans,
 	}
 	if outfmt.IsJSON(ctx) {
-		if err := outfmt.WriteJSON(ctx, os.Stdout, result); err != nil {
+		if err := outfmt.WriteJSON(ctx, stdoutWriter(ctx), result); err != nil {
 			return err
 		}
 		return &ExitError{Code: exitCodeOrphaned, Err: nil}

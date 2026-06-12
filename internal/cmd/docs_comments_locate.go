@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"html"
-	"os"
 	"strings"
 
 	"google.golang.org/api/docs/v1"
@@ -155,7 +154,7 @@ func writeDocsCommentLocateResult(ctx context.Context, commentID, quote string, 
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, os.Stdout, result)
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), result)
 	}
 
 	u := ui.FromContext(ctx)
