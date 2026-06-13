@@ -102,6 +102,11 @@ func withAuthStore(ctx context.Context, store secrets.Store) context.Context {
 		runtime.Auth.OpenSecretsStore = func() (secrets.Store, error) {
 			return store, nil
 		}
+		if secretStore, ok := store.(secrets.SecretStore); ok {
+			runtime.Auth.OpenSecretStore = func() (secrets.SecretStore, error) {
+				return secretStore, nil
+			}
+		}
 	})
 }
 
@@ -112,11 +117,17 @@ func withAuthOperations(ctx context.Context, operations app.AuthOperations) cont
 }
 
 func runtimeWithAuthStore(store secrets.Store) *app.Runtime {
-	return &app.Runtime{Auth: app.AuthOperations{
+	operations := app.AuthOperations{
 		OpenSecretsStore: func() (secrets.Store, error) {
 			return store, nil
 		},
-	}}
+	}
+	if secretStore, ok := store.(secrets.SecretStore); ok {
+		operations.OpenSecretStore = func() (secrets.SecretStore, error) {
+			return secretStore, nil
+		}
+	}
+	return &app.Runtime{Auth: operations}
 }
 
 func rootFlagsWithAuthStore(flags *RootFlags, store secrets.Store) *RootFlags {
