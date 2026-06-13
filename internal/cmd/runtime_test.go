@@ -172,7 +172,7 @@ func TestConfigureRuntimeConfigUsesInjectedLayout(t *testing.T) {
 
 	layout := config.Layout{ConfigDir: t.TempDir()}
 	runtime := &app.Runtime{Layout: layout}
-	if err := configureRuntimeConfig(runtime, ""); err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		t.Fatalf("configureRuntimeConfig: %v", err)
 	}
 	if runtime.Config == nil {
@@ -188,7 +188,7 @@ func TestConfigureRuntimeConfigPreservesInjectedStore(t *testing.T) {
 
 	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
 	runtime := &app.Runtime{Config: store}
-	if err := configureRuntimeConfig(runtime, ""); err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		t.Fatalf("configureRuntimeConfig: %v", err)
 	}
 	if runtime.Config != store {
@@ -208,8 +208,9 @@ func TestConfigureRuntimeLayoutPreservesInjectedExplicitKinds(t *testing.T) {
 		DataDir:      dataDir,
 		ExplicitData: true,
 	}}
+	runtime.LayoutResolver = config.NewSystemResolver(filepath.Join(root, "home"))
 
-	if err := configureRuntimeLayout(runtime, filepath.Join(root, "home"), config.PathKindConfig); err != nil {
+	if err := configureRuntimeLayout(runtime, config.PathKindConfig); err != nil {
 		t.Fatalf("configureRuntimeLayout: %v", err)
 	}
 	if runtime.Layout.DataDir != dataDir {
@@ -226,7 +227,7 @@ func TestConfigureRuntimeLayoutRejectsAmbientFallbackForInjectedConfig(t *testin
 	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
 	runtime := &app.Runtime{Config: store}
 
-	err := configureRuntimeLayout(runtime, "", config.PathKindConfig, config.PathKindData)
+	err := configureRuntimeLayout(runtime, config.PathKindConfig, config.PathKindData)
 	if !errors.Is(err, errIncompleteRuntimeLayout) {
 		t.Fatalf("configureRuntimeLayout() error = %v, want incomplete runtime layout", err)
 	}
@@ -236,15 +237,15 @@ func TestManagedRuntimeConfigCanResolveAdditionalKinds(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	runtime := &app.Runtime{}
-	if err := configureRuntimeConfig(runtime, root); err != nil {
+	runtime := &app.Runtime{LayoutResolver: config.NewSystemResolver(root)}
+	if err := configureRuntimeConfig(runtime); err != nil {
 		t.Fatalf("configureRuntimeConfig: %v", err)
 	}
 	if !runtime.ConfigManaged {
 		t.Fatal("runtime-created config store was not marked managed")
 	}
 
-	if err := configureRuntimeLayout(runtime, root, config.PathKindData); err != nil {
+	if err := configureRuntimeLayout(runtime, config.PathKindData); err != nil {
 		t.Fatalf("configureRuntimeLayout: %v", err)
 	}
 	if runtime.Layout.DataDir != filepath.Join(root, "data") {
@@ -268,7 +269,7 @@ func TestResolveRuntimeClientUsesInjectedCredentialStore(t *testing.T) {
 	}
 
 	runtime := &app.Runtime{Config: config.NewConfigStore(layout)}
-	client, err := resolveRuntimeClient(runtime, "", "user@example.com", "")
+	client, err := resolveRuntimeClient(runtime, "user@example.com", "")
 	if err != nil {
 		t.Fatalf("resolveRuntimeClient: %v", err)
 	}

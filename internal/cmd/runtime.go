@@ -150,7 +150,7 @@ func runtimeKeyringOpenOptions(runtime *app.Runtime) (secrets.OpenOptions, error
 	if runtime == nil || runtime.KeyringOptions == nil {
 		return secrets.OpenOptions{}, errRuntimeKeyringRequired
 	}
-	if err := configureRuntimeSecrets(runtime, ""); err != nil {
+	if err := configureRuntimeSecrets(runtime); err != nil {
 		return secrets.OpenOptions{}, err
 	}
 
@@ -161,12 +161,27 @@ func runtimeKeyringOpenOptions(runtime *app.Runtime) (secrets.OpenOptions, error
 	return options, nil
 }
 
-func configureRuntimeConfig(runtime *app.Runtime, homeOverride string) error {
+func bindRuntimeLayoutResolver(runtime *app.Runtime, homeOverride string) error {
+	if runtime == nil {
+		return errors.New("runtime is nil")
+	}
+	if runtime.LayoutResolver != nil {
+		if homeOverride != "" {
+			return errors.New("--home cannot override an injected layout resolver")
+		}
+		return nil
+	}
+
+	runtime.LayoutResolver = config.NewSystemResolver(homeOverride)
+	return nil
+}
+
+func configureRuntimeConfig(runtime *app.Runtime) error {
 	if runtime.Config != nil {
 		return hydrateRuntimeLayoutFromConfig(runtime)
 	}
 
-	if err := configureRuntimeLayout(runtime, homeOverride, config.PathKindConfig); err != nil {
+	if err := configureRuntimeLayout(runtime, config.PathKindConfig); err != nil {
 		return err
 	}
 
@@ -175,8 +190,8 @@ func configureRuntimeConfig(runtime *app.Runtime, homeOverride string) error {
 	return nil
 }
 
-func configureRuntimeSecrets(runtime *app.Runtime, homeOverride string) error {
-	if err := configureRuntimeLayout(runtime, homeOverride, config.PathKindConfig, config.PathKindData); err != nil {
+func configureRuntimeSecrets(runtime *app.Runtime) error {
+	if err := configureRuntimeLayout(runtime, config.PathKindConfig, config.PathKindData); err != nil {
 		return err
 	}
 	if runtime.Config == nil {
@@ -186,7 +201,7 @@ func configureRuntimeSecrets(runtime *app.Runtime, homeOverride string) error {
 	return nil
 }
 
-func configureRuntimeLayout(runtime *app.Runtime, homeOverride string, kinds ...config.PathKind) error {
+func configureRuntimeLayout(runtime *app.Runtime, kinds ...config.PathKind) error {
 	if err := hydrateRuntimeLayoutFromConfig(runtime); err != nil {
 		return err
 	}
@@ -208,7 +223,10 @@ func configureRuntimeLayout(runtime *app.Runtime, homeOverride string, kinds ...
 		return fmt.Errorf("%w: missing %v", errIncompleteRuntimeLayout, missing)
 	}
 
-	layout, err := config.ResolveSystemLayoutFor(homeOverride, missing...)
+	if runtime.LayoutResolver == nil {
+		runtime.LayoutResolver = config.NewSystemResolver("")
+	}
+	layout, err := runtime.LayoutResolver.Resolve(missing...)
 	if err != nil {
 		return err
 	}
@@ -235,6 +253,20 @@ func configureRuntimeLayout(runtime *app.Runtime, homeOverride string, kinds ...
 	runtime.Layout.UsesXDG = runtime.Layout.UsesXDG || layout.UsesXDG
 	runtime.Layout.UsesXDGState = runtime.Layout.UsesXDGState || layout.UsesXDGState
 	return nil
+}
+
+func runtimeKeyringBackendInfo(runtime *app.Runtime) (secrets.KeyringBackendInfo, error) {
+	if runtime == nil || runtime.KeyringOptions == nil {
+		return secrets.KeyringBackendInfo{}, errRuntimeKeyringRequired
+	}
+	if err := configureRuntimeConfig(runtime); err != nil {
+		return secrets.KeyringBackendInfo{}, err
+	}
+
+	options := *runtime.KeyringOptions
+	options.Layout = runtime.Layout
+	options.Config = runtime.Config
+	return secrets.ResolveKeyringBackendInfoWithOptions(options)
 }
 
 func hydrateRuntimeLayoutFromConfig(runtime *app.Runtime) error {
@@ -287,7 +319,7 @@ func mergeLayoutKind(target *config.Layout, source config.Layout, kind config.Pa
 
 func commandLayout(ctx context.Context, kinds ...config.PathKind) (config.Layout, error) {
 	if runtime, ok := app.FromContext(ctx); ok {
-		if err := configureRuntimeLayout(runtime, "", kinds...); err != nil {
+		if err := configureRuntimeLayout(runtime, kinds...); err != nil {
 			return config.Layout{}, err
 		}
 		return runtime.Layout, nil
@@ -300,7 +332,7 @@ func commandServiceAccountStore(ctx context.Context) (*config.ServiceAccountStor
 		if runtime.ServiceAccounts != nil {
 			return runtime.ServiceAccounts, nil
 		}
-		if err := configureRuntimeLayout(runtime, "", config.PathKindConfig, config.PathKindData); err != nil {
+		if err := configureRuntimeLayout(runtime, config.PathKindConfig, config.PathKindData); err != nil {
 			return nil, err
 		}
 		runtime.ServiceAccounts = config.NewServiceAccountStore(runtime.Layout)
@@ -315,8 +347,8 @@ func commandServiceAccountStore(ctx context.Context) (*config.ServiceAccountStor
 	return config.NewServiceAccountStore(layout), nil
 }
 
-func resolveRuntimeClient(runtime *app.Runtime, homeOverride string, email string, override string) (string, error) {
-	if err := configureRuntimeConfig(runtime, homeOverride); err != nil {
+func resolveRuntimeClient(runtime *app.Runtime, email string, override string) (string, error) {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		return "", err
 	}
 	cfg, err := runtime.Config.Read()
@@ -325,7 +357,7 @@ func resolveRuntimeClient(runtime *app.Runtime, homeOverride string, email strin
 	}
 
 	return config.ResolveClientForAccountWithCredentials(cfg, email, override, func(client string) (bool, error) {
-		if err := configureRuntimeLayout(runtime, homeOverride, config.PathKindConfig, config.PathKindData); err != nil {
+		if err := configureRuntimeLayout(runtime, config.PathKindConfig, config.PathKindData); err != nil {
 			return false, err
 		}
 		files := config.NewClientCredentialsStore(runtime.Layout)

@@ -126,17 +126,17 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	args = rewriteDesirePathArgs(args)
 	args = rewriteDocsCellUpdateContentArgs(args)
 
-	preHomeApplied := false
-	if home, ok := preScanHomeArg(args); ok {
-		restoreHome, homeErr := config.SetHomeOverride(home)
-		if homeErr != nil {
-			return reportEarlyError(runtimeIO.Err, newUsageError(homeErr))
+	home, homeProvided := preScanHomeArg(args)
+	if err := bindRuntimeLayoutResolver(runtime, home); err != nil {
+		return reportEarlyError(runtimeIO.Err, newUsageError(err))
+	}
+	if homeProvided {
+		if err := runtime.LayoutResolver.ValidateHomeOverride(); err != nil {
+			return reportEarlyError(runtimeIO.Err, newUsageError(err))
 		}
-		preHomeApplied = true
-		defer restoreHome()
 	}
 
-	parser, cli, err := newParserWithWriters(helpDescription(), runtimeIO.Out, runtimeIO.Err)
+	parser, cli, err := newParserWithWriters(helpDescription(runtime), runtimeIO.Out, runtimeIO.Err)
 	if err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
 	}
@@ -163,13 +163,6 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	cli.authOperations = runtime.Auth
 	cli.authMode = googleapi.ParseAuthMode(os.Getenv("GOG_AUTH_MODE"))
 	applyExplicitOutputModePrecedence(kctx, &cli.RootFlags)
-	if !preHomeApplied && strings.TrimSpace(cli.Home) != "" {
-		restoreHome, homeErr := config.SetHomeOverride(cli.Home)
-		if homeErr != nil {
-			return reportEarlyError(runtimeIO.Err, newUsageError(homeErr))
-		}
-		defer restoreHome()
-	}
 
 	if err = enforceBakedSafetyProfile(kctx); err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
@@ -236,7 +229,7 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 		return store.MigrateAccountEmailReferences(oldEmail, newEmail)
 	}
 	resolveClient := func(email string, override string) (string, error) {
-		return resolveRuntimeClient(runtime, cli.Home, email, override)
+		return resolveRuntimeClient(runtime, email, override)
 	}
 	authDependencies := googleapi.AuthDependencies{
 		ResolveClient:             resolveClient,
@@ -616,18 +609,17 @@ func baseDescription() string {
 	return "Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Groups/Admin/Keep/YouTube/Maps/Photos"
 }
 
-func helpDescription() string {
+func helpDescription(runtime *app.Runtime) string {
 	desc := baseDescription()
 
-	configPath, err := config.ConfigPath()
 	configLine := "unknown"
-	if err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		configLine = fmt.Sprintf("error: %v", err)
-	} else if configPath != "" {
-		configLine = configPath
+	} else if runtime.Config.Path() != "" {
+		configLine = runtime.Config.Path()
 	}
 
-	backendInfo, err := secrets.ResolveKeyringBackendInfo()
+	backendInfo, err := runtimeKeyringBackendInfo(runtime)
 	var backendLine string
 	if err != nil {
 		backendLine = fmt.Sprintf("error: %v", err)

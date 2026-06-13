@@ -94,6 +94,18 @@ func (r *Resolver) Resolve(kinds ...PathKind) (Layout, error) {
 	return r.resolver.resolveLayoutFor(kinds...)
 }
 
+func (r *Resolver) ValidateHomeOverride() error {
+	if r == nil || r.resolver == nil {
+		return errNilLayoutResolver
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	_, _, err := r.resolver.homeOverride()
+	return err
+}
+
 func ResolveLayout(env Env, dirs UserDirs) (Layout, error) {
 	resolver := NewResolver(env, dirs)
 	layout, err := resolver.Resolve(PathKindConfig, PathKindData, PathKindState, PathKindCache)
@@ -198,8 +210,10 @@ func (r *layoutResolver) kindOverride(kind PathKind) (string, bool, error) {
 
 func (r *layoutResolver) homeOverride() (string, bool, error) {
 	raw := strings.TrimSpace(r.env.HomeOverride)
+	source := "GOG_HOME/--home"
 	if raw == "" {
 		raw = strings.TrimSpace(r.env.GOGHome)
+		source = "GOG_HOME"
 	}
 	if raw == "" {
 		return "", false, nil
@@ -211,7 +225,7 @@ func (r *layoutResolver) homeOverride() (string, bool, error) {
 	}
 
 	if !filepath.IsAbs(expanded) {
-		return "", true, fmt.Errorf("%w: GOG_HOME=%s", errPathMustBeAbsolute, raw)
+		return "", true, fmt.Errorf("%w: %s=%s", errPathMustBeAbsolute, source, raw)
 	}
 
 	return expanded, true, nil

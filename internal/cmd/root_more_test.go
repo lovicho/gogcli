@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/alecthomas/kong"
@@ -70,7 +72,11 @@ func TestHelpDescription(t *testing.T) {
 	setTestConfigHome(t)
 	t.Setenv("GOG_KEYRING_BACKEND", "auto")
 
-	out := helpDescription()
+	runtime := normalizedRuntime(newDefaultRuntime())
+	if err := bindRuntimeLayoutResolver(runtime, ""); err != nil {
+		t.Fatalf("bindRuntimeLayoutResolver: %v", err)
+	}
+	out := helpDescription(runtime)
 	if !strings.Contains(out, "Config:") {
 		t.Fatalf("expected config block, got: %q", out)
 	}
@@ -85,6 +91,24 @@ func TestRootHomeFlagOverridesPathRoot(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		if err := Execute([]string{"--json", "--home", home, "config", "path"}); err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+	})
+	var payload struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal config path: %v\n%s", err, out)
+	}
+	assertPathUnderRoot(t, payload.Path, home, "config", "config.json")
+}
+
+func TestRootHomeEqualsFlagOverridesPathRoot(t *testing.T) {
+	setTestConfigHome(t)
+	home := t.TempDir()
+
+	out := captureStdout(t, func() {
+		if err := Execute([]string{"--json", "--home=" + home, "config", "path"}); err != nil {
 			t.Fatalf("Execute: %v", err)
 		}
 	})
@@ -183,6 +207,100 @@ func TestRootHomeFlagRejectsRelativePath(t *testing.T) {
 	err := Execute([]string{"--home", "relative", "config", "path"})
 	if err == nil || !strings.Contains(err.Error(), "--home") {
 		t.Fatalf("expected --home error, got %v", err)
+	}
+}
+
+func TestRootHomeFlagRejectsRelativePathWithConfigOverride(t *testing.T) {
+	setTestConfigHome(t)
+	t.Setenv("GOG_CONFIG_DIR", t.TempDir())
+
+	err := Execute([]string{"--home", "relative", "config", "path"})
+	if err == nil || !strings.Contains(err.Error(), "--home") {
+		t.Fatalf("expected --home error, got %v", err)
+	}
+}
+
+func TestExecuteHomeResolversAreIndependent(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	homes := []string{filepath.Join(root, "a"), filepath.Join(root, "b")}
+	type result struct {
+		path string
+		err  error
+	}
+	results := make([]result, len(homes))
+
+	var wg sync.WaitGroup
+	for i, home := range homes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			runtime := &app.Runtime{
+				IO: app.IO{
+					In:  strings.NewReader(""),
+					Out: &stdout,
+					Err: &stderr,
+				},
+				KeyringOptions: testKeyringOptions(),
+			}
+			runErr := executeWithRuntime(
+				[]string{"--json", "--home", home, "config", "path"},
+				runtime,
+			)
+			if runErr != nil {
+				results[i].err = errors.New(stderr.String() + ": " + runErr.Error())
+				return
+			}
+
+			var payload struct {
+				Path string `json:"path"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+				results[i].err = err
+				return
+			}
+			results[i].path = payload.Path
+		}()
+	}
+	wg.Wait()
+
+	for i, result := range results {
+		if result.err != nil {
+			t.Fatalf("execute %d: %v", i, result.err)
+		}
+		assertPathUnderRoot(t, result.path, homes[i], "config", "config.json")
+	}
+}
+
+func TestVersionDoesNotRequireLayoutResolution(t *testing.T) {
+	t.Parallel()
+
+	unavailable := func() (string, error) {
+		return "", errors.New("directory unavailable")
+	}
+	runtime := &app.Runtime{
+		LayoutResolver: config.NewResolver(config.Env{}, config.UserDirs{
+			GOOS:      "linux",
+			HomeDir:   unavailable,
+			ConfigDir: unavailable,
+			CacheDir:  unavailable,
+		}),
+		KeyringOptions: testKeyringOptions(),
+	}
+	result := executeWithTestRuntime(t, []string{"--json", "version"}, runtime)
+	if result.err != nil {
+		t.Fatalf("version: %v\nstderr=%q", result.err, result.stderr)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.stdout), &payload); err != nil {
+		t.Fatalf("version JSON: %v\nstdout=%q", err, result.stdout)
+	}
+	if payload["version"] == "" {
+		t.Fatalf("version payload = %#v", payload)
 	}
 }
 

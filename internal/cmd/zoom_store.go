@@ -12,7 +12,7 @@ import (
 
 func commandZoomStore(ctx context.Context) (*zoom.Store, error) {
 	if runtime, ok := app.FromContext(ctx); ok {
-		if err := configureRuntimeLayout(runtime, "", config.PathKindConfig); err != nil {
+		if err := configureRuntimeLayout(runtime, config.PathKindConfig); err != nil {
 			return nil, err
 		}
 		store, err := zoom.NewStore(runtime.Layout, func() (secrets.SecretStore, error) {

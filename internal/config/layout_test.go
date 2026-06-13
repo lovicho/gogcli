@@ -279,6 +279,23 @@ func TestNilResolverFailsClearly(t *testing.T) {
 	}
 }
 
+func TestResolverValidatesHomeOverrideBeforeKindOverrides(t *testing.T) {
+	t.Parallel()
+
+	resolver := NewResolver(Env{
+		HomeOverride: "relative-home",
+		GOGConfigDir: t.TempDir(),
+	}, UserDirs{GOOS: "linux"})
+
+	if _, err := resolver.Resolve(PathKindConfig); err != nil {
+		t.Fatalf("config override should resolve independently: %v", err)
+	}
+	err := resolver.ValidateHomeOverride()
+	if err == nil || !strings.Contains(err.Error(), "GOG_HOME/--home") {
+		t.Fatalf("ValidateHomeOverride() error = %v", err)
+	}
+}
+
 func TestResolveUserConfigBase(t *testing.T) {
 	t.Parallel()
 

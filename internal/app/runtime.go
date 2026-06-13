@@ -142,6 +142,7 @@ type Runtime struct {
 	IO              IO
 	Services        Services
 	Auth            AuthOperations
+	LayoutResolver  *config.Resolver
 	Layout          config.Layout
 	Config          *config.ConfigStore
 	ServiceAccounts *config.ServiceAccountStore

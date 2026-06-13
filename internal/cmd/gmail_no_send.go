@@ -22,14 +22,12 @@ func enforceGmailNoSend(kctx *kong.Context, flags *RootFlags, runtime *app.Runti
 	if !isGmailSendPath(commandPath(kctx.Command())) {
 		return nil
 	}
-	homeOverride := ""
 	if flags != nil {
 		if flags.GmailNoSend {
 			return usage("Gmail sending is blocked by --gmail-no-send")
 		}
-		homeOverride = flags.Home
 	}
-	if err := configureRuntimeConfig(runtime, homeOverride); err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		return err
 	}
 	cfg, err := runtime.Config.Read()
