@@ -18,6 +18,7 @@ import (
 var (
 	errTestDuplicateKeychain = errors.New("failed to update item in keychain: the specified item already exists in the keychain. (-25299)")
 	errTestKeychain          = errors.New("test -25308 error")
+	errTestLegacyRead        = errors.New("legacy keychain denied access")
 	errTestReadBack          = errors.New("test read-back failure")
 )
 
@@ -211,27 +212,32 @@ func TestKeyringStoreSetTokenErrors(t *testing.T) {
 }
 
 func TestSetSecretMissingKey(t *testing.T) {
-	if err := SetSecret(" ", []byte("data")); !errors.Is(err, errMissingSecretKey) {
+	store := &KeyringStore{ring: keyring.NewArrayKeyring(nil)}
+	if err := store.SetSecret(" ", []byte("data")); !errors.Is(err, errMissingSecretKey) {
 		t.Fatalf("expected missing key, got %v", err)
 	}
 }
 
 func TestDeleteSecretMissingKey(t *testing.T) {
-	if err := DeleteSecret(" "); !errors.Is(err, errMissingSecretKey) {
+	store := &KeyringStore{ring: keyring.NewArrayKeyring(nil)}
+	if err := store.DeleteSecret(" "); !errors.Is(err, errMissingSecretKey) {
 		t.Fatalf("expected missing key, got %v", err)
 	}
 }
 
-func TestOpenDefaultError(t *testing.T) {
-	origOpen := openKeyringFunc
-
-	t.Cleanup(func() { openKeyringFunc = origOpen })
-
-	openKeyringFunc = func() (keyring.Keyring, error) {
-		return nil, errTestKeychain
+func TestOpenError(t *testing.T) {
+	layout := config.Layout{ConfigDir: t.TempDir(), DataDir: t.TempDir()}
+	options := OpenOptions{
+		Layout:  layout,
+		Config:  config.NewConfigStore(layout),
+		Backend: "file",
+		GOOS:    runtime.GOOS,
+		openKeyringFn: func(keyring.Config) (keyring.Keyring, error) {
+			return nil, errTestKeychain
+		},
 	}
 
-	if _, err := OpenDefault(); err == nil {
+	if _, err := Open(options); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -560,6 +566,81 @@ func TestGetTokenMigrationSetsLabel(t *testing.T) {
 	}
 }
 
+func TestGetTokenNoMigrateReadsLegacyWithoutWritingPrimary(t *testing.T) {
+	ring := keyring.NewArrayKeyring(nil)
+	store := &KeyringStore{ring: ring}
+	email := "a@b.com"
+	client := config.DefaultClientName
+
+	payload, err := json.Marshal(storedToken{
+		Email:        email,
+		RefreshToken: "rt",
+		CreatedAt:    time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	if setErr := ring.Set(keyring.Item{Key: legacyTokenKey(email), Data: payload}); setErr != nil {
+		t.Fatalf("Set legacy token: %v", setErr)
+	}
+
+	got, err := store.GetTokenNoMigrate(client, email)
+	if err != nil {
+		t.Fatalf("GetTokenNoMigrate: %v", err)
+	}
+
+	if got.Email != email || got.RefreshToken != "rt" {
+		t.Fatalf("unexpected token: %#v", got)
+	}
+
+	if _, err := ring.Get(tokenKey(client, email)); !errors.Is(err, keyring.ErrKeyNotFound) {
+		t.Fatalf("expected primary token to remain missing, got %v", err)
+	}
+
+	if _, err := ring.Get(legacyTokenKey(email)); err != nil {
+		t.Fatalf("expected legacy token to remain readable, got %v", err)
+	}
+}
+
+type legacyTokenReadErrorKeyring struct {
+	*keyring.ArrayKeyring
+	legacyKey string
+	err       error
+}
+
+func (l *legacyTokenReadErrorKeyring) Get(key string) (keyring.Item, error) {
+	if key == l.legacyKey {
+		return keyring.Item{}, l.err
+	}
+
+	item, err := l.ArrayKeyring.Get(key)
+	if err != nil {
+		return keyring.Item{}, fmt.Errorf("array get: %w", err)
+	}
+
+	return item, nil
+}
+
+func TestGetTokenReportsLegacyReadError(t *testing.T) {
+	email := "a@b.com"
+	ring := &legacyTokenReadErrorKeyring{
+		ArrayKeyring: keyring.NewArrayKeyring(nil),
+		legacyKey:    legacyTokenKey(email),
+		err:          errTestLegacyRead,
+	}
+	store := &KeyringStore{ring: ring}
+
+	_, err := store.GetToken(config.DefaultClientName, email)
+	if !errors.Is(err, errTestLegacyRead) {
+		t.Fatalf("expected legacy read error, got %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "read legacy token") {
+		t.Fatalf("expected legacy read context, got %v", err)
+	}
+}
+
 // silentDropKeyring simulates a macOS Keychain that silently writes 0 bytes.
 // Set returns nil (success), but Get returns an item with empty Data.
 type silentDropKeyring struct {
@@ -716,14 +797,10 @@ func TestGetTokenLegacyMigrationVerifiesWrite(t *testing.T) {
 
 func TestSetSecretSetsLabel(t *testing.T) {
 	ring := keyring.NewArrayKeyring(nil)
-	origOpen := openKeyringFunc
-
-	t.Cleanup(func() { openKeyringFunc = origOpen })
-
-	openKeyringFunc = func() (keyring.Keyring, error) { return ring, nil }
+	store := &KeyringStore{ring: ring}
 
 	key := "test/secret"
-	if err := SetSecret(key, []byte("value")); err != nil {
+	if err := store.SetSecret(key, []byte("value")); err != nil {
 		t.Fatalf("SetSecret: %v", err)
 	}
 
@@ -739,18 +816,14 @@ func TestSetSecretSetsLabel(t *testing.T) {
 
 func TestDeleteSecretDeletesKey(t *testing.T) {
 	ring := keyring.NewArrayKeyring(nil)
-	origOpen := openKeyringFunc
-
-	t.Cleanup(func() { openKeyringFunc = origOpen })
-
-	openKeyringFunc = func() (keyring.Keyring, error) { return ring, nil }
+	store := &KeyringStore{ring: ring}
 
 	key := "test/secret"
-	if err := SetSecret(key, []byte("value")); err != nil {
+	if err := store.SetSecret(key, []byte("value")); err != nil {
 		t.Fatalf("SetSecret: %v", err)
 	}
 
-	if err := DeleteSecret(key); err != nil {
+	if err := store.DeleteSecret(key); err != nil {
 		t.Fatalf("DeleteSecret: %v", err)
 	}
 
@@ -760,13 +833,9 @@ func TestDeleteSecretDeletesKey(t *testing.T) {
 }
 
 func TestSetSecretVerifyCatchesEmptyWrite(t *testing.T) {
-	origOpen := openKeyringFunc
+	store := &KeyringStore{ring: &silentDropKeyring{}}
 
-	t.Cleanup(func() { openKeyringFunc = origOpen })
-
-	openKeyringFunc = func() (keyring.Keyring, error) { return &silentDropKeyring{}, nil }
-
-	err := SetSecret("test/secret", []byte("value"))
+	err := store.SetSecret("test/secret", []byte("value"))
 	if err == nil {
 		t.Fatal("expected error when keyring silently drops data")
 	}

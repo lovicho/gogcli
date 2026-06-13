@@ -2,19 +2,22 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/authclient"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/oauthclient"
 	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/secrets"
 	"github.com/steipete/gogcli/internal/ui"
 )
+
+var errOAuthCredentialSecretStoreRequired = errors.New("OAuth credential secret store is required")
 
 type AuthCredentialsCmd struct {
 	Set    AuthCredentialsSetCmd    `cmd:"" default:"withargs" help:"Store OAuth client credentials"`
@@ -29,7 +32,7 @@ type AuthCredentialsSetCmd struct {
 	Insecure  bool   `name:"insecure" help:"Store OAuth client_secret in credentials.json instead of the keyring"`
 }
 
-func (c *AuthCredentialsSetCmd) Run(ctx context.Context, _ *RootFlags) error {
+func (c *AuthCredentialsSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	client, err := normalizeClientForFlag(authclient.ClientOverrideFromContext(ctx))
 	if err != nil {
@@ -57,6 +60,37 @@ func (c *AuthCredentialsSetCmd) Run(ctx context.Context, _ *RootFlags) error {
 		return err
 	}
 
+	domains := splitCommaList(c.Domains)
+	var (
+		configStore *config.ConfigStore
+		cfg         config.File
+	)
+	if len(domains) > 0 {
+		configStore, err = commandConfigStore(ctx)
+		if err != nil {
+			return err
+		}
+		cfg, err = configStore.Read()
+		if err != nil {
+			return err
+		}
+		for _, domain := range domains {
+			if setErr := config.SetClientDomain(&cfg, domain, client); setErr != nil {
+				return setErr
+			}
+		}
+	}
+
+	if dryRunErr := dryRunExit(ctx, flags, "auth.credentials.set", map[string]any{
+		"client":                   client,
+		"credentials_source":       inPath,
+		"domains":                  domains,
+		"expand_env":               c.ExpandEnv,
+		"client_secret_in_keyring": !c.Insecure,
+	}); dryRunErr != nil {
+		return dryRunErr
+	}
+
 	credentialStore, err := commandOAuthCredentialsStore(ctx)
 	if err != nil {
 		return err
@@ -65,28 +99,11 @@ func (c *AuthCredentialsSetCmd) Run(ctx context.Context, _ *RootFlags) error {
 		return writeErr
 	}
 
-	files, err := commandClientCredentialsStore(ctx)
+	outPath, err := credentialStore.PathFor(client)
 	if err != nil {
 		return err
 	}
-	outPath, err := files.PathFor(client)
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(c.Domains) != "" {
-		configStore, err := commandConfigStore(ctx)
-		if err != nil {
-			return err
-		}
-		cfg, err := configStore.Read()
-		if err != nil {
-			return err
-		}
-		for _, domain := range splitCommaList(c.Domains) {
-			if err := config.SetClientDomain(&cfg, domain, client); err != nil {
-				return err
-			}
-		}
+	if configStore != nil {
 		if err := configStore.Write(cfg); err != nil {
 			return err
 		}
@@ -125,6 +142,7 @@ func (c *AuthCredentialsListCmd) Run(ctx context.Context, _ *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	credentialStore, _ := commandOAuthCredentialsStore(ctx)
 
 	domainMap := make(map[string][]string)
 	for domain, client := range cfg.ClientDomains {
@@ -156,7 +174,7 @@ func (c *AuthCredentialsListCmd) Run(ctx context.Context, _ *RootFlags) error {
 			Path:                  info.Path,
 			Default:               info.Default,
 			Domains:               domains,
-			ClientSecretInKeyring: commandClientSecretInKeyring(ctx, info.Client),
+			ClientSecretInKeyring: credentialStore != nil && credentialStore.ClientSecretInKeyring(info.Client),
 		})
 		seen[info.Client] = struct{}{}
 	}
@@ -346,20 +364,21 @@ func commandClientCredentialsStore(ctx context.Context) (*config.ClientCredentia
 }
 
 func commandOAuthCredentialsStore(ctx context.Context) (*oauthclient.CredentialsStore, error) {
-	layout, err := commandLayout(ctx, config.PathKindConfig, config.PathKindData)
-	if err != nil {
-		return nil, err
+	runtime, ok := app.FromContext(ctx)
+	if !ok || runtime.Auth.OpenSecretStore == nil {
+		return nil, errOAuthCredentialSecretStoreRequired
 	}
-	configStore, err := commandConfigStore(ctx)
+
+	secretStore, err := runtime.Auth.OpenSecretStore()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open OAuth credential secret store: %w", err)
 	}
-	secretStore, err := secrets.OpenWithConfig(layout, configStore)
+	files, err := commandClientCredentialsStore(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return oauthclient.NewCredentialsStore(config.NewClientCredentialsStore(layout), secretStore)
+	return oauthclient.NewCredentialsStore(files, secretStore)
 }
 
 func commandClientSecretInKeyring(ctx context.Context, client string) bool {

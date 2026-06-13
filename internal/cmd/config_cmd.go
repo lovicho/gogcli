@@ -215,10 +215,10 @@ func loadConfig(ctx context.Context) (config.File, error) {
 
 func commandConfigStore(ctx context.Context) (*config.ConfigStore, error) {
 	if runtime, ok := app.FromContext(ctx); ok {
-		if err := configureRuntimeConfig(runtime, ""); err != nil {
+		if err := configureRuntimeConfig(runtime); err != nil {
 			return nil, err
 		}
 		return runtime.Config, nil
 	}
-	return config.DefaultConfigStore()
+	return nil, errRuntimeRequired
 }

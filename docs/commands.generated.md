@@ -41,11 +41,11 @@ Generated from `gog schema --json`.
       - [`gog auth credentials remove [<client>]`](commands/gog-auth-credentials-remove.md) - Remove stored OAuth client credentials
       - [`gog auth credentials set <credentials> [flags]`](commands/gog-auth-credentials-set.md) - Store OAuth client credentials
     - [`gog auth doctor [flags]`](commands/gog-auth-doctor.md) - Diagnose auth, keyring, and refresh-token issues
-    - [`gog auth import --email=STRING [flags]`](commands/gog-auth-import.md) - Import a refresh token non-interactively from stdin, file, or env
+    - [`gog auth import --email=STRING [flags]`](commands/gog-auth-import.md) - Import a required refresh token and optional current access token non-interactively
     - [`gog auth keep --key=STRING <email>`](commands/gog-auth-keep.md) - Configure service account for Google Keep (Workspace only)
     - [`gog auth keyring [<backend> [<backend2>]]`](commands/gog-auth-keyring.md) - Configure keyring backend
     - [`gog auth list [flags]`](commands/gog-auth-list.md) - List stored accounts
-    - [`gog auth manage (login) [flags]`](commands/gog-auth-manage.md) - Open accounts manager in browser
+    - [`gog auth manage (login) [flags]`](commands/gog-auth-manage.md) - Open interactive accounts manager in browser
     - [`gog auth remove <email>`](commands/gog-auth-remove.md) - Remove a stored refresh token
     - [`gog auth service-account <command>`](commands/gog-auth-service-account.md) - Configure service account (Workspace only; domain-wide delegation)
       - [`gog auth service-account set <email> [flags]`](commands/gog-auth-service-account-set.md) - Store a service account key for impersonation
@@ -80,13 +80,13 @@ Generated from `gog schema --json`.
       - [`gog calendar (cal) alias list`](commands/gog-calendar-alias-list.md) - List calendar aliases
       - [`gog calendar (cal) alias set <alias> <calendarId>`](commands/gog-calendar-alias-set.md) - Set a calendar alias
       - [`gog calendar (cal) alias unset <alias>`](commands/gog-calendar-alias-unset.md) - Remove a calendar alias
-    - [`gog calendar (cal) appointments (appointment-schedules,appt)`](commands/gog-calendar-appointments.md) - Report Calendar appointment schedule API limitation
     - [`gog calendar (cal) calendars [flags]`](commands/gog-calendar-calendars.md) - List calendars
     - [`gog calendar (cal) colors`](commands/gog-calendar-colors.md) - Show calendar colors
     - [`gog calendar (cal) conflicts [flags]`](commands/gog-calendar-conflicts.md) - Find busy-time overlaps across calendars
     - [`gog calendar (cal) create (add,new) <calendarId> [flags]`](commands/gog-calendar-create.md) - Create an event
     - [`gog calendar (cal) create-calendar (new-calendar) <summary> [flags]`](commands/gog-calendar-create-calendar.md) - Create a new secondary calendar
     - [`gog calendar (cal) delete (rm,del,remove) <calendarId> <eventId> [flags]`](commands/gog-calendar-delete.md) - Delete an event
+    - [`gog calendar (cal) delete-calendar <calendarId>`](commands/gog-calendar-delete-calendar.md) - Delete an owned secondary calendar
     - [`gog calendar (cal) event (get,info,show) <calendarId> <eventId>`](commands/gog-calendar-event.md) - Get event
     - [`gog calendar (cal) events (list,ls) [<calendarId> ...] [flags]`](commands/gog-calendar-events.md) - List events from a calendar or all calendars
     - [`gog calendar (cal) focus-time (focus) --from=STRING --to=STRING [<calendarId>] [flags]`](commands/gog-calendar-focus-time.md) - Create a Focus Time block
@@ -98,8 +98,9 @@ Generated from `gog schema --json`.
     - [`gog calendar (cal) respond (rsvp,reply) <calendarId> <eventId> [flags]`](commands/gog-calendar-respond.md) - Respond to an event invitation
     - [`gog calendar (cal) search (find,query) <query> [flags]`](commands/gog-calendar-search.md) - Search events
     - [`gog calendar (cal) subscribe (sub,add-calendar) <calendarId> [flags]`](commands/gog-calendar-subscribe.md) - Add a calendar to your calendar list
-    - [`gog calendar (cal) team <group-email> [flags]`](commands/gog-calendar-team.md) - Show events for all members of a Google Group
+    - [`gog calendar (cal) team <group-email> [flags]`](commands/gog-calendar-team.md) - Show events for Workspace group members (service account, direct token, or ADC)
     - [`gog calendar (cal) time [flags]`](commands/gog-calendar-time.md) - Show server time
+    - [`gog calendar (cal) unsubscribe (unsub) <calendarId>`](commands/gog-calendar-unsubscribe.md) - Remove a calendar from your calendar list
     - [`gog calendar (cal) update (edit,set) <calendarId> <eventId> [flags]`](commands/gog-calendar-update.md) - Update an event
     - [`gog calendar (cal) users [flags]`](commands/gog-calendar-users.md) - List workspace users (use their email as calendar ID)
     - [`gog calendar (cal) working-location (wl) --from=STRING --to=STRING --type=STRING [<calendarId>] [flags]`](commands/gog-calendar-working-location.md) - Set working location (home/office/custom)
@@ -130,14 +131,14 @@ Generated from `gog schema --json`.
       - [`gog classroom (class) announcements (announcement,ann) list (ls) <courseId> [flags]`](commands/gog-classroom-announcements-list.md) - List announcements
       - [`gog classroom (class) announcements (announcement,ann) update (edit,set) <courseId> <announcementId> [flags]`](commands/gog-classroom-announcements-update.md) - Update an announcement
     - [`gog classroom (class) courses (course) <command>`](commands/gog-classroom-courses.md) - Courses
-      - [`gog classroom (class) courses (course) archive (arch) <courseId>`](commands/gog-classroom-courses-archive.md) - Archive a course
+      - [`gog classroom (class) courses (course) archive (arch) <courseId>`](commands/gog-classroom-courses-archive.md) - Archive a course and wait until the state is visible
       - [`gog classroom (class) courses (course) create (add,new) --name=STRING [flags]`](commands/gog-classroom-courses-create.md) - Create a course
       - [`gog classroom (class) courses (course) delete (rm,del,remove) <courseId>`](commands/gog-classroom-courses-delete.md) - Delete an archived course
       - [`gog classroom (class) courses (course) get (info,show) <courseId>`](commands/gog-classroom-courses-get.md) - Get a course
       - [`gog classroom (class) courses (course) join (enroll) <courseId> [flags]`](commands/gog-classroom-courses-join.md) - Join a course
       - [`gog classroom (class) courses (course) leave (unenroll) <courseId> [flags]`](commands/gog-classroom-courses-leave.md) - Leave a course
       - [`gog classroom (class) courses (course) list (ls) [flags]`](commands/gog-classroom-courses-list.md) - List courses
-      - [`gog classroom (class) courses (course) unarchive (unarch,restore) <courseId>`](commands/gog-classroom-courses-unarchive.md) - Unarchive a course
+      - [`gog classroom (class) courses (course) unarchive (unarch,restore) <courseId>`](commands/gog-classroom-courses-unarchive.md) - Unarchive a course and wait until the state is visible
       - [`gog classroom (class) courses (course) update (edit,set) <courseId> [flags]`](commands/gog-classroom-courses-update.md) - Update a course
       - [`gog classroom (class) courses (course) url (link) <courseId> ...`](commands/gog-classroom-courses-url.md) - Print Classroom web URLs for courses
     - [`gog classroom (class) coursework (work) <command>`](commands/gog-classroom-coursework.md) - Coursework
@@ -450,7 +451,7 @@ Generated from `gog schema --json`.
     - [`gog gmail (mail,email) trash [<messageId> ...] [flags]`](commands/gog-gmail-trash.md) - Move messages to trash
     - [`gog gmail (mail,email) unread (mark-unread) [<messageId> ...] [flags]`](commands/gog-gmail-unread.md) - Mark messages as unread
     - [`gog gmail (mail,email) url <threadId> ...`](commands/gog-gmail-url.md) - Print Gmail web URLs for threads
-  - [`gog groups (group) <command> [flags]`](commands/gog-groups.md) - Google Groups
+  - [`gog groups (group) <command> [flags]`](commands/gog-groups.md) - Cloud Identity Groups (Workspace only)
     - [`gog groups (group) list (ls) [flags]`](commands/gog-groups-list.md) - List groups you belong to
     - [`gog groups (group) members <groupEmail> [flags]`](commands/gog-groups-members.md) - List members of a group
   - [`gog keep <command> [flags]`](commands/gog-keep.md) - Google Keep (Workspace only)

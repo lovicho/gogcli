@@ -1,12 +1,13 @@
-package cmd
+//nolint:wsl_v5 // Stateful byte scanner stays compact around position updates.
+package docssed
 
 import (
 	"strings"
 )
 
-// braceSpan represents a positioned brace expression within a replacement string.
+// BraceSpan represents a positioned brace expression within a replacement string.
 // It tracks where in the output text the formatting should be applied.
-type braceSpan struct {
+type BraceSpan struct {
 	Expr      *braceExpr // The parsed brace expression
 	Start     int        // Start position in the cleaned output text
 	End       int        // End position in the cleaned output text
@@ -14,13 +15,15 @@ type braceSpan struct {
 	RawBraces string     // Original {content} for debugging
 }
 
-// findBraceExprs finds all `{...}` groups in a replacement string and returns
+type braceSpan = BraceSpan
+
+// ParseBraceReplacement finds all `{...}` groups in a replacement string and returns
 // the cleaned text plus positioned spans. Handles:
 //   - `{b}` as entire replacement → whole-match formatting
 //   - `{b=text}` inline → inline span at position
 //   - Multiple brace groups: `H{,=2}O` → "H2O" with subscript on "2"
 //   - Escaped braces: `\{` and `\}` are literals
-func findBraceExprs(replacement string) (string, []*braceSpan) {
+func ParseBraceReplacement(replacement string) (string, []*BraceSpan) {
 	if !strings.Contains(replacement, "{") {
 		return replacement, nil
 	}
@@ -68,7 +71,7 @@ func findBraceExprs(replacement string) (string, []*braceSpan) {
 			braceContent := replacement[i+1 : closeIdx]
 			rawBraces := replacement[i : closeIdx+1]
 
-			expr, err := parseBraceExpr(braceContent)
+			expr, err := ParseBraceExpression(braceContent)
 			if err != nil {
 				// Parse error — treat as literal
 				cleaned.WriteByte('{')
@@ -194,9 +197,9 @@ func isGlobalBraceExpr(replacement string, openIdx, closeIdx int) bool {
 	return false
 }
 
-// hasBraceFormatting returns true if the replacement contains brace formatting.
+// HasBraceFormatting returns true if the replacement contains brace formatting.
 // Used to determine if fast-path native replacement can be used.
-func hasBraceFormatting(replacement string) bool {
+func HasBraceFormatting(replacement string) bool {
 	// Look for { not preceded by \
 	for i := 0; i < len(replacement); i++ {
 		if replacement[i] == '{' {
@@ -207,7 +210,7 @@ func hasBraceFormatting(replacement string) bool {
 					// Has non-empty brace content
 					content := replacement[i+1 : closeIdx]
 					// Verify it looks like a brace expr (has known flags or key=value)
-					if looksLikeBraceExpr(content) {
+					if looksLikeBraceExpression(content) {
 						return true
 					}
 				}
@@ -234,9 +237,9 @@ var valueKeySet = func() map[string]bool {
 	return m
 }()
 
-// looksLikeBraceExpr returns true if the content looks like a valid brace expression.
+// looksLikeBraceExpression returns true if the content looks like a valid brace expression.
 // Used for heuristic detection to distinguish {formatting} from literal braces.
-func looksLikeBraceExpr(content string) bool {
+func looksLikeBraceExpression(content string) bool {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return false
@@ -269,9 +272,9 @@ func looksLikeBraceExpr(content string) bool {
 	return false
 }
 
-// braceExprHasAnyFormat returns true if the expression sets any formatting.
+// BraceExpressionHasAnyFormat returns true if the expression sets any formatting.
 // Used to filter out empty or no-op expressions.
-func braceExprHasAnyFormat(expr *braceExpr) bool {
+func BraceExpressionHasAnyFormat(expr *BraceExpression) bool {
 	if expr == nil {
 		return false
 	}

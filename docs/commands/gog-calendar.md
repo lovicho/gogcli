@@ -18,13 +18,13 @@ gog calendar (cal) <command> [flags]
 
 - [gog calendar acl](gog-calendar-acl.md) - List calendar ACL
 - [gog calendar alias](gog-calendar-alias.md) - Manage calendar aliases
-- [gog calendar appointments](gog-calendar-appointments.md) - Report Calendar appointment schedule API limitation
 - [gog calendar calendars](gog-calendar-calendars.md) - List calendars
 - [gog calendar colors](gog-calendar-colors.md) - Show calendar colors
 - [gog calendar conflicts](gog-calendar-conflicts.md) - Find busy-time overlaps across calendars
 - [gog calendar create](gog-calendar-create.md) - Create an event
 - [gog calendar create-calendar](gog-calendar-create-calendar.md) - Create a new secondary calendar
 - [gog calendar delete](gog-calendar-delete.md) - Delete an event
+- [gog calendar delete-calendar](gog-calendar-delete-calendar.md) - Delete an owned secondary calendar
 - [gog calendar event](gog-calendar-event.md) - Get event
 - [gog calendar events](gog-calendar-events.md) - List events from a calendar or all calendars
 - [gog calendar focus-time](gog-calendar-focus-time.md) - Create a Focus Time block
@@ -36,8 +36,9 @@ gog calendar (cal) <command> [flags]
 - [gog calendar respond](gog-calendar-respond.md) - Respond to an event invitation
 - [gog calendar search](gog-calendar-search.md) - Search events
 - [gog calendar subscribe](gog-calendar-subscribe.md) - Add a calendar to your calendar list
-- [gog calendar team](gog-calendar-team.md) - Show events for all members of a Google Group
+- [gog calendar team](gog-calendar-team.md) - Show events for Workspace group members (service account, direct token, or ADC)
 - [gog calendar time](gog-calendar-time.md) - Show server time
+- [gog calendar unsubscribe](gog-calendar-unsubscribe.md) - Remove a calendar from your calendar list
 - [gog calendar update](gog-calendar-update.md) - Update an event
 - [gog calendar users](gog-calendar-users.md) - List workspace users (use their email as calendar ID)
 - [gog calendar working-location](gog-calendar-working-location.md) - Set working location (home/office/custom)
@@ -47,7 +48,7 @@ gog calendar (cal) <command> [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |

@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/docssed"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -88,7 +89,7 @@ const (
 )
 
 // buildImageSizeSpec returns a Size for the image spec, or nil if no dimensions set.
-func buildImageSizeSpec(spec *ImageSpec) *docs.Size {
+func buildImageSizeSpec(spec *docssed.ImageSpec) *docs.Size {
 	if spec.Width == 0 && spec.Height == 0 {
 		return nil
 	}
@@ -379,96 +380,6 @@ func parseHexColor(hex string) (r, g, b float64, ok bool) {
 	return float64((rgb>>16)&0xFF) / 255.0, float64((rgb>>8)&0xFF) / 255.0, float64(rgb&0xFF) / 255.0, true
 }
 
-// Markdown escape placeholders — package-level to avoid per-call allocation.
-const (
-	escAsterisk  = "\x00ESC_ASTERISK\x00"
-	escHash      = "\x00ESC_HASH\x00"
-	escTilde     = "\x00ESC_TILDE\x00"
-	escBacktick  = "\x00ESC_BACKTICK\x00"
-	escDash      = "\x00ESC_DASH\x00"
-	escPlus      = "\x00ESC_PLUS\x00"
-	escBackslash = "\x00ESC_BACKSLASH\x00"
-)
-
-// Package-level replacers for markdown escape/unescape — allocated once.
-var (
-	mdEscaper = strings.NewReplacer(
-		"\\\\", escBackslash, "\\*", escAsterisk, "\\#", escHash,
-		"\\~", escTilde, "\\`", escBacktick, "\\-", escDash,
-		"\\+", escPlus, "\\n", "\n",
-	)
-	mdUnescaper = strings.NewReplacer(
-		escAsterisk, "*", escHash, "#", escTilde, "~",
-		escBacktick, "`", escDash, "-", escPlus, "+",
-		escBackslash, "\\",
-	)
-)
-
-// escapeMarkdown replaces escaped markdown characters with placeholders.
-func escapeMarkdown(s string) string { return mdEscaper.Replace(s) }
-
-// unescapeMarkdown restores escaped markdown characters from placeholders.
-func unescapeMarkdown(s string) string { return mdUnescaper.Replace(s) }
-
-// nativeBlockMarkers are markdown format markers that prevent native API replacement.
-// Package-level to avoid per-call allocation.
-var nativeBlockMarkers = []string{
-	"**", "*", "~~", "`",
-	"# ", "## ", "### ", "#### ", "##### ", "###### ",
-	"- ", "+ ",
-	"> ",
-	"[^",
-}
-
-// canUseNativeReplace returns true if the replacement string contains no markdown
-// formatting or brace expressions that require manual (per-run) application,
-// allowing the faster native Google Docs FindReplace API to be used instead.
 func canUseNativeReplace(replacement string) bool {
-	// Check for SEDMAT brace formatting ({b}, {c=red}, etc.)
-	if hasBraceFormatting(replacement) {
-		return false
-	}
-	// Check for image syntax (both ![alt](url) and !(url) shorthand)
-	if strings.HasPrefix(replacement, "![") {
-		return false
-	}
-	if strings.HasPrefix(replacement, "!(") && strings.HasSuffix(replacement, ")") {
-		inner := replacement[2 : len(replacement)-1]
-		if strings.HasPrefix(inner, "http://") || strings.HasPrefix(inner, "https://") {
-			return false
-		}
-	}
-	for _, marker := range nativeBlockMarkers {
-		if strings.Contains(replacement, marker) {
-			return false
-		}
-	}
-	// Horizontal rule
-	trimmedRepl := strings.TrimSpace(replacement)
-	if trimmedRepl == literalMarkdownTripleDash || trimmedRepl == "***" || trimmedRepl == "___" {
-		return false
-	}
-	// Numbered list pattern
-	if len(replacement) >= 3 && replacement[0] >= '0' && replacement[0] <= '9' &&
-		replacement[1] == '.' && replacement[2] == ' ' {
-		return false
-	}
-	// Escape sequences
-	if strings.Contains(replacement, "\\n") {
-		return false
-	}
-	// Backreferences ($0, $1, ${1}, etc.)
-	for i := 0; i < len(replacement)-1; i++ {
-		if replacement[i] == '$' {
-			next := replacement[i+1]
-			if (next >= '0' && next <= '9') || next == '{' {
-				return false
-			}
-		}
-	}
-	// Link syntax [text](url)
-	if strings.Contains(replacement, "](") {
-		return false
-	}
-	return true
+	return docssed.CanUseNativeReplacement(replacement)
 }

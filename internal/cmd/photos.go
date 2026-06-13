@@ -17,10 +17,6 @@ import (
 	"github.com/steipete/gogcli/internal/ui"
 )
 
-func newPhotosClient(ctx context.Context, email string) (*googleapi.PhotosClient, error) {
-	return googleapi.NewPhotosClientForAccount(ctx, email, googleapi.WithPhotosBaseURL(os.Getenv("GOG_PHOTOS_BASE_URL")))
-}
-
 type PhotosCmd struct {
 	List     PhotosListCmd     `cmd:"" name:"list" aliases:"ls" help:"List app-created media items"`
 	Search   PhotosSearchCmd   `cmd:"" name:"search" aliases:"find" help:"Search app-created media items"`
@@ -132,6 +128,32 @@ func (c *PhotosDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if mediaItemID == "" {
 		return usage("empty mediaItemId")
 	}
+	outPathFlag := strings.TrimSpace(c.Out)
+	if outPathFlag != "" {
+		var expandErr error
+		outPathFlag, expandErr = config.ExpandPath(outPathFlag)
+		if expandErr != nil {
+			return expandErr
+		}
+	}
+	defaultDir := ""
+	if outPathFlag == "" {
+		layout, layoutErr := commandLayout(ctx, config.PathKindConfig)
+		if layoutErr != nil {
+			return layoutErr
+		}
+		defaultDir = layout.DriveDownloadsDir()
+	}
+	if dryRunErr := dryRunExit(ctx, flags, "photos.download", map[string]any{
+		"media_item_id":         mediaItemID,
+		"out":                   outPathFlag,
+		"default_downloads_dir": defaultDir,
+		"video":                 c.Video,
+		"overwrite":             c.Overwrite,
+	}); dryRunErr != nil {
+		return dryRunErr
+	}
+
 	client, err := requirePhotosClient(ctx, flags)
 	if err != nil {
 		return err
@@ -171,19 +193,11 @@ func (c *PhotosDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 	}
 
-	if isStdoutPath(c.Out) {
+	if isStdoutPath(outPathFlag) {
 		_, err = io.Copy(stdoutWriter(ctx), resp.Body)
 		return err
 	}
-	defaultDir := ""
-	if strings.TrimSpace(c.Out) == "" {
-		layout, layoutErr := commandLayout(ctx, config.PathKindConfig)
-		if layoutErr != nil {
-			return layoutErr
-		}
-		defaultDir = layout.DriveDownloadsDir()
-	}
-	dest, err := resolvePhotosDownloadDestPath(item, c.Out, defaultDir)
+	dest, err := resolvePhotosDownloadDestPath(item, outPathFlag, defaultDir)
 	if err != nil {
 		return err
 	}

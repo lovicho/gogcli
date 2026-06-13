@@ -19,7 +19,7 @@ gog gmail (mail,email) settings watch serve [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--bind` | `string` | 127.0.0.1 | Bind address |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
@@ -49,7 +49,7 @@ gog gmail (mail,email) settings watch serve [flags]
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--save-hook` | `bool` |  | Persist hook settings to watch state |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
-| `-z`<br>`--timezone` | `string` |  | Output timezone (IANA name, e.g. America/New_York, UTC). Default: local |
+| `-z`<br>`--timezone` | `string` |  | Output timezone (IANA name, e.g. America/New_York, UTC). Default: GOG_TIMEZONE, config, then local |
 | `--token` | `string` |  | Shared token for x-gog-token or ?token= |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--verify-oidc` | `bool` |  | Verify Pub/Sub OIDC tokens |

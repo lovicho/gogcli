@@ -17,10 +17,7 @@ import (
 func TestGmailWatchServer_ServeHTTP_ExcludeLabels_SkipsHook(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	// Seed state so StartHistoryID returns non-zero.
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"

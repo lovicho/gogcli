@@ -40,10 +40,7 @@ func TestGmailWatchPullCmd_UsesStoredHookAndReceiver(t *testing.T) {
 	t.Cleanup(func() { newGmailPubSubReceiver = origReceiver })
 
 	setWatchTestConfigHome(t)
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{
 			Account:   "a@b.com",
@@ -78,7 +75,8 @@ func TestGmailWatchPullCmd_UsesStoredHookAndReceiver(t *testing.T) {
 		"--subscription", "projects/p/subscriptions/s",
 		"--fetch-delay", "0",
 	}
-	if execErr := runKong(t, &GmailWatchPullCmd{}, args, ui.WithUI(context.Background(), u), &RootFlags{Account: "a@b.com"}); execErr != nil {
+	ctx := withGmailTestService(ui.WithUI(context.Background(), u), &gmail.Service{})
+	if execErr := runKong(t, &GmailWatchPullCmd{}, args, ctx, &RootFlags{Account: "a@b.com"}); execErr != nil {
 		t.Fatalf("execute: %v", execErr)
 	}
 	if gotSubscription != "projects/p/subscriptions/s" {
@@ -101,10 +99,7 @@ func TestGmailWatchPullCmd_RequiresFullSubscriptionAndHook(t *testing.T) {
 	}
 
 	setWatchTestConfigHome(t)
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{Account: "a@b.com", HistoryID: "100"}
 		return nil
@@ -236,10 +231,7 @@ func TestGmailWatchPullMessage_NacksHookFailureAndPreservesProgress(t *testing.T
 func TestGmailWatchRestoreProgressForRetrySkipsNewerProgress(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{
 			Account:           "a@b.com",
@@ -345,10 +337,7 @@ func newPullProcessorTestServer(t *testing.T, historyStatus int) (*gmailWatchSer
 	t.Helper()
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{
 			Account:   "a@b.com",

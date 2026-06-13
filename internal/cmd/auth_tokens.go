@@ -119,7 +119,11 @@ type AuthTokensExportCmd struct {
 	Overwrite bool                   `name:"overwrite" help:"Overwrite output file if it exists"`
 }
 
-func (c *AuthTokensExportCmd) Run(ctx context.Context, _ *RootFlags) error {
+type tokenNoMigrateGetter interface {
+	GetTokenNoMigrate(client string, email string) (secrets.Token, error)
+}
+
+func (c *AuthTokensExportCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	email := strings.TrimSpace(c.Email)
 	if email == "" {
@@ -128,6 +132,18 @@ func (c *AuthTokensExportCmd) Run(ctx context.Context, _ *RootFlags) error {
 	outPath := strings.TrimSpace(c.Output.Path)
 	if outPath == "" {
 		return usage("empty outPath")
+	}
+	outPath, err := config.ExpandPath(outPath)
+	if err != nil {
+		return err
+	}
+	if dryRunErr := dryRunExit(ctx, flags, "auth.tokens.export", map[string]any{
+		"email":            email,
+		"out":              outPath,
+		"overwrite":        c.Overwrite,
+		"contains_secrets": true,
+	}); dryRunErr != nil {
+		return dryRunErr
 	}
 
 	store, err := openAuthSecretsStore(ctx)
@@ -138,7 +154,7 @@ func (c *AuthTokensExportCmd) Run(ctx context.Context, _ *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	tok, err := store.GetToken(client, email)
+	tok, err := getTokenForExport(store, client, email)
 	if err != nil {
 		return err
 	}
@@ -204,6 +220,14 @@ func (c *AuthTokensExportCmd) Run(ctx context.Context, _ *RootFlags) error {
 	u.Out().Linef("client\t%s", client)
 	u.Out().Linef("path\t%s", outPath)
 	return nil
+}
+
+func getTokenForExport(store secrets.Store, client string, email string) (secrets.Token, error) {
+	if noMigrate, ok := store.(tokenNoMigrateGetter); ok {
+		return noMigrate.GetTokenNoMigrate(client, email)
+	}
+
+	return store.GetToken(client, email)
 }
 
 type AuthTokensImportCmd struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"testing"
 	"time"
 
@@ -455,6 +456,38 @@ func TestFindDocImages_PositionedObjects(t *testing.T) {
 	assert.True(t, images[0].IsPositioned)
 }
 
+func TestFindDocImages_DeterministicDocumentOrder(t *testing.T) {
+	doc := &docs.Document{
+		Body: &docs.Body{Content: []*docs.StructuralElement{
+			{
+				StartIndex: 1,
+				EndIndex:   5,
+				Paragraph: &docs.Paragraph{
+					PositionedObjectIds: []string{"positioned-z"},
+					Elements: []*docs.ParagraphElement{{
+						StartIndex:          3,
+						EndIndex:            4,
+						InlineObjectElement: &docs.InlineObjectElement{InlineObjectId: "inline"},
+					}},
+				},
+			},
+		}},
+		PositionedObjects: map[string]docs.PositionedObject{
+			"positioned-z": {},
+			"positioned-a": {},
+		},
+	}
+
+	images := findDocImages(doc)
+	require.Len(t, images, 3)
+	assert.Equal(t, []string{"positioned-z", "inline", "positioned-a"}, []string{
+		images[0].ObjectID,
+		images[1].ObjectID,
+		images[2].ObjectID,
+	})
+	assert.Equal(t, int64(1), images[0].Index)
+}
+
 // --- resolveAlign / resolveBreak edge cases ---
 
 func TestResolveAlign_CaseInsensitive(t *testing.T) {
@@ -471,23 +504,6 @@ func TestResolveBreak_AllValues(t *testing.T) {
 	assert.Equal(t, "column_break", resolveBreak("c"))
 	assert.Equal(t, "section_break", resolveBreak("s"))
 	assert.Equal(t, "x", resolveBreak("x"))
-}
-
-// --- tokenizeBraceContent edge cases ---
-
-func TestTokenizeBraceContent_Extended(t *testing.T) {
-	// Already tested at 70%, add edge cases
-	tokens := tokenizeBraceContent("{b,i,_}")
-	assert.NotEmpty(t, tokens)
-
-	// Nested braces
-	tokens = tokenizeBraceContent("{b,{color:#FF0000}}")
-	assert.NotEmpty(t, tokens)
-
-	// Empty
-	tokens = tokenizeBraceContent("{}")
-	// May return empty or single empty token depending on impl
-	_ = tokens
 }
 
 // --- parseFullExpr edge cases to increase coverage ---
@@ -696,6 +712,8 @@ func TestClassifyExpression_MoreCases(t *testing.T) {
 
 	// table op
 	assert.Equal(t, "delete table 1", classifyExpression(sedExpr{tableRef: 1}))
+	assert.Equal(t, "delete all tables", classifyExpression(sedExpr{tableRef: math.MinInt32}))
+	assert.Equal(t, "all tables op", classifyExpression(sedExpr{tableRef: math.MinInt32, replacement: "new"}))
 
 	// image
 	assert.Equal(t, "image", classifyExpression(sedExpr{pattern: "!(1)"}))

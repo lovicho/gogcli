@@ -10,6 +10,7 @@ import (
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/docssed"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -25,15 +26,15 @@ type DocsSedCmd struct {
 
 // parseExpressionLines splits data into trimmed non-empty, non-comment lines.
 func parseExpressionLines(data []byte) []string {
-	var exprs []string
+	var expressions []string
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		exprs = append(exprs, line)
+		expressions = append(expressions, line)
 	}
-	return exprs
+	return expressions
 }
 
 // collectExpressions gathers sed expressions from positional arg, -e flags, -f file, and stdin.
@@ -73,13 +74,7 @@ func (c *DocsSedCmd) collectExpressions(ctx context.Context) ([]string, error) {
 	return exprs, nil
 }
 
-// sedAddress represents a paragraph-number address prefix on a sed expression.
-// Addresses target specific paragraphs by number (1-based), or $ for last.
-type sedAddress struct {
-	Start    int  // 1-based paragraph number, -1 = last ($)
-	End      int  // 0 = same as Start (single paragraph), -1 = last ($)
-	HasRange bool // true if comma-separated range was given
-}
+type sedAddress = docssed.Address
 
 type sedExpr struct {
 	pattern     string
@@ -314,7 +309,7 @@ func (c *DocsSedCmd) runSingle(ctx context.Context, u *ui.UI, account, id string
 	}
 
 	// Check if pattern is an image reference (!(n), ![regex], etc.)
-	imgRef := parseImageRefPattern(expr.pattern)
+	imgRef := docssed.ParseImageReference(expr.pattern)
 	if imgRef != nil {
 		return c.runImageReplace(ctx, u, account, id, imgRef, expr.replacement, expr.global)
 	}
@@ -439,7 +434,7 @@ func (c *DocsSedCmd) runBatch(ctx context.Context, u *ui.UI, account, id string,
 			continue
 		}
 
-		imgRef := parseImageRefPattern(ie.expr.pattern)
+		imgRef := docssed.ParseImageReference(ie.expr.pattern)
 		if imgRef != nil {
 			if imgErr := c.runImageReplace(ctx, u, account, id, imgRef, ie.expr.replacement, ie.expr.global); imgErr != nil {
 				return fmt.Errorf("expression %d: %w", ie.index+1, imgErr)
@@ -544,7 +539,7 @@ func classifyExprForBatch(expr sedExpr) exprCategory {
 	if parseTableCreate(expr.replacement) != nil || parseTableFromPipes(expr.replacement) != nil {
 		return exprCatTableCreate
 	}
-	if parseImageRefPattern(expr.pattern) != nil {
+	if docssed.ParseImageReference(expr.pattern) != nil {
 		return exprCatImagePattern
 	}
 	if canUseNativeReplace(expr.replacement) && expr.global && expr.nthMatch <= 0 {

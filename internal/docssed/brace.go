@@ -1,5 +1,5 @@
-// Package cmd provides CLI commands for Google Docs operations.
-package cmd
+//nolint:err113,wsl_v5 // Parser diagnostics preserve the exact invalid token and compact parsing flow.
+package docssed
 
 import (
 	"fmt"
@@ -7,14 +7,16 @@ import (
 	"strings"
 )
 
-// indentNotSet is the sentinel value for braceExpr.Indent meaning "not specified".
+// IndentNotSet is the sentinel value for BraceExpression.Indent meaning "not specified".
 // Any non-negative value means the indent level was explicitly set.
-const indentNotSet = -1
+const IndentNotSet = -1
 
-// braceExpr represents a fully parsed brace expression from SEDMAT syntax.
+const indentNotSet = IndentNotSet
+
+// BraceExpression represents a fully parsed brace expression from SEDMAT syntax.
 // It captures all formatting, structural, and semantic attributes specified
 // within a {flags} block in a replacement string.
-type braceExpr struct {
+type BraceExpression struct {
 	// Boolean flags (nil = not set, *true = enabled, *false = negated)
 	Bold      *bool // {b} = true, {!b} = false
 	Italic    *bool
@@ -26,7 +28,7 @@ type braceExpr struct {
 	SmallCaps *bool
 
 	// Boolean flags with inline scoping
-	InlineSpans []inlineSpan // {b=Warning} → span with text + flags
+	InlineSpans []InlineSpan // {b=Warning} -> span with text + flags
 
 	// Value flags
 	Text    string  // t= (empty = not set, "$0" = default)
@@ -56,8 +58,8 @@ type braceExpr struct {
 	Cols int // cols= (0 = not set)
 
 	// Special flags
-	Reset    bool   // {0} — explicit full reset
-	NoReset  bool   // {!0} — opt out of implicit reset (additive mode)
+	Reset    bool   // {0} - explicit full reset
+	NoReset  bool   // {!0} - opt out of implicit reset (additive mode)
 	Break    string // += ("" = horizontal rule when + present, "p","c","s")
 	HasBreak bool   // whether + was present
 	Comment  string // "=text
@@ -77,11 +79,43 @@ type braceExpr struct {
 	TableRef string // T= (raw value for further parsing)
 }
 
-// inlineSpan represents an inline text span with associated boolean flags.
+type braceExpr = BraceExpression
+
+// InlineSpan represents an inline text span with associated boolean flags.
 // Used for inline scoping like {b=Warning} where "Warning" is bolded inline.
-type inlineSpan struct {
+type InlineSpan struct {
 	Text  string   // The text content of the span
 	Flags []string // Which boolean flags apply: "b", "i", "^", etc.
+}
+
+type inlineSpan = InlineSpan
+
+var namedColors = map[string]string{
+	"black":     "#000000",
+	"white":     "#FFFFFF",
+	"red":       "#FF0000",
+	"green":     "#00FF00",
+	"blue":      "#0000FF",
+	"yellow":    "#FFFF00",
+	"cyan":      "#00FFFF",
+	"magenta":   "#FF00FF",
+	"orange":    "#FF8C00",
+	"purple":    "#800080",
+	"pink":      "#FF69B4",
+	"brown":     "#8B4513",
+	"gray":      "#808080",
+	"grey":      "#808080",
+	"lightgray": "#D3D3D3",
+	"darkgray":  "#404040",
+	"navy":      "#000080",
+	"teal":      "#008080",
+}
+
+func resolveColor(value string) string {
+	if hex, ok := namedColors[strings.ToLower(value)]; ok {
+		return hex
+	}
+	return value
 }
 
 // boolFlagMap maps short and long names to canonical short names.
@@ -104,9 +138,9 @@ var boolFlagMap = map[string]string{
 	"smallcaps": "w",
 }
 
-// parseBraceExpr parses the content inside a brace expression.
+// ParseBraceExpression parses the content inside a brace expression.
 // Input is the content between { }, e.g. for `{b c=red t=hello}` the input is `b c=red t=hello`.
-func parseBraceExpr(s string) (*braceExpr, error) {
+func ParseBraceExpression(s string) (*BraceExpression, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return &braceExpr{Indent: indentNotSet}, nil // -1 means not set
@@ -139,8 +173,7 @@ func parseBraceExpr(s string) (*braceExpr, error) {
 	return expr, nil
 }
 
-// tokenizeBraceContent splits brace content into tokens.
-// Tokens are space-separated, but values can contain spaces if quoted.
+// tokenizeBraceContent splits space-separated tokens while preserving quoted values.
 func tokenizeBraceContent(s string) []string {
 	var tokens []string
 	var current strings.Builder
@@ -232,7 +265,7 @@ func parseBraceKeyValue(key, val string, expr *braceExpr) error {
 
 	// Value flags
 	switch key {
-	case "t", gmailMessageBodyFormatText:
+	case "t", "text":
 		expr.Text = val
 	case "c", "color":
 		expr.Color = resolveColor(val)
@@ -284,10 +317,10 @@ func parseBraceKeyValue(key, val string, expr *braceExpr) error {
 		}
 	case "check":
 		switch strings.ToLower(val) {
-		case "y", sendAsYes, boolTrue, "1":
+		case "y", "yes", "true", "1":
 			t := true
 			expr.Check = &t
-		case "n", "no", boolFalse, "0":
+		case "n", "no", "false", "0":
 			f := false
 			expr.Check = &f
 		}

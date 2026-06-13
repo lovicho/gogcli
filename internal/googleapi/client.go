@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/option"
 
+	"github.com/steipete/gogcli/internal/authclient"
 	"github.com/steipete/gogcli/internal/googleauth"
 )
 
@@ -29,8 +28,6 @@ const (
 	// for OAuth2 token refresh exchanges, which should always be fast.
 	tokenExchangeTimeout = 30 * time.Second
 )
-
-var newADCTokenSource = google.DefaultTokenSource
 
 func optionsForAccount(ctx context.Context, service googleauth.Service, email string) ([]option.ClientOption, error) {
 	scopes, err := googleauth.Scopes(service)
@@ -90,6 +87,22 @@ func newGoogleServiceForRequiredScopes[T any](
 	return newGoogleService(ctx, errorLabel, opts, factory)
 }
 
+func newGoogleServiceForServiceAccountScopes[T any](
+	ctx context.Context,
+	email string,
+	serviceLabel string,
+	errorLabel string,
+	scopes []string,
+	factory googleServiceFactory[T],
+) (*T, error) {
+	opts, err := optionsForServiceAccountScopes(ctx, serviceLabel, email, scopes)
+	if err != nil {
+		return nil, fmt.Errorf("%s options: %w", errorLabel, err)
+	}
+
+	return newGoogleService(ctx, errorLabel, opts, factory)
+}
+
 func newGoogleService[T any](
 	ctx context.Context,
 	label string,
@@ -102,15 +115,6 @@ func newGoogleService[T any](
 	}
 
 	return svc, nil
-}
-
-// IsADCMode reports whether Application Default Credentials mode is active.
-// When GOG_AUTH_MODE=adc, the CLI authenticates using the ambient credentials
-// (e.g. GKE Workload Identity, GOOGLE_APPLICATION_CREDENTIALS, or gcloud ADC)
-// instead of the keyring-based OAuth flow. The service account accesses only
-// resources explicitly shared with it — no domain-wide delegation needed.
-func IsADCMode() bool {
-	return os.Getenv("GOG_AUTH_MODE") == "adc"
 }
 
 func authenticatedTransport(ctx context.Context, serviceLabel string, email string, scopes []string) (http.RoundTripper, error) {
@@ -126,12 +130,12 @@ func authenticatedTransportWithStoredScopeCheck(
 ) (http.RoundTripper, error) {
 	var ts oauth2.TokenSource
 
-	if IsADCMode() {
+	if dependencies, ok := authDependenciesFromContext(ctx); ok && dependencies.Mode == AuthModeADC {
 		slog.Debug("using Application Default Credentials (GOG_AUTH_MODE=adc)", "serviceLabel", serviceLabel)
 
-		adcTS, err := newADCTokenSource(ctx, scopes...)
+		adcTS, err := dependencies.adcTokenSource(ctx, scopes)
 		if err != nil {
-			return nil, fmt.Errorf("ADC token source: %w", err)
+			return nil, err
 		}
 
 		ts = adcTS
@@ -156,6 +160,52 @@ func optionsForAccountScopes(ctx context.Context, serviceLabel string, email str
 
 func optionsForAccountScopesRequiringStoredGrant(ctx context.Context, serviceLabel string, email string, scopes []string) ([]option.ClientOption, error) {
 	return optionsForAccountScopesWithStoredScopeCheck(ctx, serviceLabel, email, scopes, true)
+}
+
+func optionsForServiceAccountScopes(ctx context.Context, serviceLabel string, email string, scopes []string) ([]option.ClientOption, error) {
+	if dependencies, ok := authDependenciesFromContext(ctx); ok && dependencies.Mode == AuthModeADC {
+		slog.Debug("using Application Default Credentials (GOG_AUTH_MODE=adc)", "serviceLabel", serviceLabel)
+
+		ts, err := dependencies.adcTokenSource(ctx, scopes)
+		if err != nil {
+			return nil, err
+		}
+
+		return tokenSourceClientOptions(ts), nil
+	}
+
+	if accessToken := authclient.AccessTokenFromContext(ctx); accessToken != "" {
+		slog.Debug("using direct access token", "serviceLabel", serviceLabel)
+
+		return tokenSourceClientOptions(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})), nil
+	}
+
+	dependencies, err := requireAuthDependencies(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	ts, path, ok, err := tokenSourceForServiceAccountScopes(ctx, dependencies, serviceLabel, email, scopes)
+	if err != nil {
+		return nil, fmt.Errorf("service account token source: %w", err)
+	}
+
+	if !ok {
+		return nil, &AuthRequiredError{Service: serviceLabel, Email: email}
+	}
+
+	slog.Debug("using required service account credentials", "email", email, "path", path)
+
+	return tokenSourceClientOptions(ts), nil
+}
+
+func tokenSourceClientOptions(ts oauth2.TokenSource) []option.ClientOption {
+	return []option.ClientOption{option.WithHTTPClient(&http.Client{
+		Transport: NewRetryTransport(&oauth2.Transport{
+			Source: ts,
+			Base:   newBaseTransport(),
+		}),
+	})}
 }
 
 func optionsForAccountScopesWithStoredScopeCheck(

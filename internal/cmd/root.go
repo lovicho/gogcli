@@ -15,6 +15,7 @@ import (
 	"github.com/steipete/gogcli/internal/authclient"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/errfmt"
+	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/secrets"
@@ -32,7 +33,7 @@ const (
 type RootFlags struct {
 	Color               string `help:"Color output: auto|always|never" default:"${color}"`
 	Home                string `name:"home" help:"Override gogcli config/data/state/cache root (equivalent to GOG_HOME)"`
-	Account             string `help:"Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos)" aliases:"acct" short:"a"`
+	Account             string `help:"Account email, alias, or auto for authenticated Google API commands" aliases:"acct" short:"a"`
 	Client              string `help:"OAuth client name (selects stored credentials + token bucket)" default:"${client}"`
 	AccessToken         string `help:"Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h)" env:"GOG_ACCESS_TOKEN"`
 	EnableCommands      string `help:"Comma-separated list of enabled command prefixes; dot paths allowed (restricts CLI)" default:"${enabled_commands}"`
@@ -50,6 +51,8 @@ type RootFlags struct {
 	Verbose             bool   `help:"Enable verbose logging" short:"v"`
 	diagnostics         io.Writer
 	authOperations      app.AuthOperations
+	configStoreResolver func() (*config.ConfigStore, error)
+	authMode            googleapi.AuthMode
 }
 
 type CLI struct {
@@ -73,7 +76,7 @@ type CLI struct {
 	Auth          AuthCmd               `cmd:"" help:"Auth and credentials"`
 	Backup        BackupCmd             `cmd:"" help:"Encrypted Google account backups"`
 	Batch         BatchCmd              `cmd:"" help:"Build and submit persisted Google Docs request batches"`
-	Groups        GroupsCmd             `cmd:"" aliases:"group" help:"Google Groups"`
+	Groups        GroupsCmd             `cmd:"" aliases:"group" help:"Cloud Identity Groups (Workspace only)"`
 	Admin         AdminCmd              `cmd:"" help:"Google Workspace Admin (Directory API) - requires domain-wide delegation"`
 	Drive         DriveCmd              `cmd:"" aliases:"drv" help:"Google Drive"`
 	Docs          DocsCmd               `cmd:"" aliases:"doc" help:"Google Docs (export via Drive)"`
@@ -123,17 +126,17 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	args = rewriteDesirePathArgs(args)
 	args = rewriteDocsCellUpdateContentArgs(args)
 
-	preHomeApplied := false
-	if home, ok := preScanHomeArg(args); ok {
-		restoreHome, homeErr := config.SetHomeOverride(home)
-		if homeErr != nil {
-			return reportEarlyError(runtimeIO.Err, newUsageError(homeErr))
+	home, homeProvided := preScanHomeArg(args)
+	if bindErr := bindRuntimeLayoutResolver(runtime, home); bindErr != nil {
+		return reportEarlyError(runtimeIO.Err, newUsageError(bindErr))
+	}
+	if homeProvided {
+		if validateErr := runtime.LayoutResolver.ValidateHomeOverride(); validateErr != nil {
+			return reportEarlyError(runtimeIO.Err, newUsageError(validateErr))
 		}
-		preHomeApplied = true
-		defer restoreHome()
 	}
 
-	parser, cli, err := newParserWithWriters(helpDescription(), runtimeIO.Out, runtimeIO.Err)
+	parser, cli, err := newParserWithWriters(helpDescription(runtime), runtimeIO.Out, runtimeIO.Err)
 	if err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
 	}
@@ -158,14 +161,8 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	}
 	cli.diagnostics = runtimeIO.Err
 	cli.authOperations = runtime.Auth
+	cli.authMode = googleapi.ParseAuthMode(os.Getenv("GOG_AUTH_MODE"))
 	applyExplicitOutputModePrecedence(kctx, &cli.RootFlags)
-	if !preHomeApplied && strings.TrimSpace(cli.Home) != "" {
-		restoreHome, homeErr := config.SetHomeOverride(cli.Home)
-		if homeErr != nil {
-			return reportEarlyError(runtimeIO.Err, newUsageError(homeErr))
-		}
-		defer restoreHome()
-	}
 
 	if err = enforceBakedSafetyProfile(kctx); err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
@@ -207,9 +204,52 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 
 	ctx := context.Background()
 	ctx = app.WithRuntime(ctx, runtime)
-	ctx = authclient.WithClientResolver(ctx, func(email string, override string) (string, error) {
-		return resolveRuntimeClient(runtime, cli.Home, email, override)
-	})
+	runtimeContext := ctx
+	serviceAccounts := func() (*config.ServiceAccountStore, error) {
+		return commandServiceAccountStore(runtimeContext)
+	}
+	cli.configStoreResolver = func() (*config.ConfigStore, error) {
+		return commandConfigStore(runtimeContext)
+	}
+	readCredentials := func(client string) (config.ClientCredentials, error) {
+		store, resolveErr := commandOAuthCredentialsStore(runtimeContext)
+		if resolveErr != nil {
+			return config.ClientCredentials{}, resolveErr
+		}
+		return store.Read(client)
+	}
+	openTokens := func() (secrets.Store, error) {
+		return runtime.Auth.OpenSecretsStore()
+	}
+	updateEmailReferences := func(oldEmail, newEmail string) error {
+		store, resolveErr := cli.configStoreResolver()
+		if resolveErr != nil {
+			return resolveErr
+		}
+		return store.MigrateAccountEmailReferences(oldEmail, newEmail)
+	}
+	resolveClient := func(email string, override string) (string, error) {
+		return resolveRuntimeClient(runtime, email, override)
+	}
+	authDependencies := googleapi.AuthDependencies{
+		ResolveClient:             resolveClient,
+		ReadCredentials:           readCredentials,
+		OpenTokens:                openTokens,
+		ServiceAccounts:           serviceAccounts,
+		UpdateEmailReferences:     updateEmailReferences,
+		Mode:                      cli.authMode,
+		ADCTokenSource:            googleapi.DefaultADCTokenSource,
+		ServiceAccountTokenSource: googleapi.DefaultServiceAccountTokenSource,
+	}
+	ctx = googleapi.WithAuthDependencies(ctx, authDependencies)
+	composeRuntimeGoogleServices(runtime, googleapi.NewFactory(authDependencies, googleapi.FactoryOptions{
+		PhotosBaseURL:       os.Getenv("GOG_PHOTOS_BASE_URL"),
+		PhotosPickerBaseURL: os.Getenv("GOG_PHOTOS_PICKER_BASE_URL"),
+	}))
+	ctx = authclient.WithCredentialsReader(ctx, readCredentials)
+	ctx = authclient.WithSecretsStoreOpener(ctx, openTokens)
+	ctx = authclient.WithEmailReferenceUpdater(ctx, updateEmailReferences)
+	ctx = authclient.WithClientResolver(ctx, resolveClient)
 	ctx = outfmt.WithMode(ctx, mode)
 	ctx = outfmt.WithJSONTransform(ctx, outfmt.JSONTransform{
 		ResultsOnly: cli.ResultsOnly,
@@ -569,18 +609,17 @@ func baseDescription() string {
 	return "Google CLI for Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People/Forms/Meet/App Script/Analytics/Search Console/Groups/Admin/Keep/YouTube/Maps/Photos"
 }
 
-func helpDescription() string {
+func helpDescription(runtime *app.Runtime) string {
 	desc := baseDescription()
 
-	configPath, err := config.ConfigPath()
 	configLine := "unknown"
-	if err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		configLine = fmt.Sprintf("error: %v", err)
-	} else if configPath != "" {
-		configLine = configPath
+	} else if runtime.Config.Path() != "" {
+		configLine = runtime.Config.Path()
 	}
 
-	backendInfo, err := secrets.ResolveKeyringBackendInfo()
+	backendInfo, err := runtimeKeyringBackendInfo(runtime)
 	var backendLine string
 	if err != nil {
 		backendLine = fmt.Sprintf("error: %v", err)

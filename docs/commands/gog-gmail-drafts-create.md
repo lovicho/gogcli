@@ -19,12 +19,13 @@ gog gmail (mail,email) drafts (draft) create (add,new) [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--attach` | `[]string` |  | Attachment file path (repeatable) |
 | `--bcc` | `string` |  | BCC recipients (comma-separated) |
 | `--body` | `string` |  | Body (plain text; required unless --body-html is set) |
 | `--body-file` | `string` |  | Body file path (plain text; '-' for stdin) |
 | `--body-html` | `string` |  | Body (HTML; optional) |
+| `--body-html-file` | `string` |  | HTML body file path ('-' for stdin) |
 | `--cc` | `string` |  | CC recipients (comma-separated) |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |

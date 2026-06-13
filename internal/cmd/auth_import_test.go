@@ -75,6 +75,9 @@ func TestAuthImportCmd_RejectsMissingRefreshTokenSource(t *testing.T) {
 	if !strings.Contains(err.Error(), "--refresh-token-stdin") {
 		t.Fatalf("expected safe source hint in error, got %q", err.Error())
 	}
+	if !strings.Contains(err.Error(), "required refresh token") || !strings.Contains(err.Error(), "cannot replace it") {
+		t.Fatalf("expected refresh/access dependency guidance, got %q", err.Error())
+	}
 }
 
 func TestAuthImportCmd_RejectsMultipleRefreshTokenSources(t *testing.T) {
@@ -368,7 +371,7 @@ func TestAuthImportCmd_CustomClientNamespace(t *testing.T) {
 	if _, err := store.GetToken("default", "a@b.com"); err == nil {
 		t.Fatalf("expected no token under default client")
 	}
-	cfg, err := config.ReadConfig()
+	cfg, err := defaultConfigStoreForTest(t).Read()
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}
@@ -381,7 +384,7 @@ func TestAuthImportCmd_UsesConfiguredClientMapping(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
-	if err := config.WriteConfig(config.File{ClientDomains: map[string]string{
+	if err := defaultConfigStoreForTest(t).Write(config.File{ClientDomains: map[string]string{
 		"example.com": "work",
 	}}); err != nil {
 		t.Fatalf("WriteConfig: %v", err)

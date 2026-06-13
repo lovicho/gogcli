@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/secrets"
 )
@@ -15,14 +16,33 @@ func openAuthSecretsStore(ctx context.Context) (secrets.Store, error) {
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.OpenSecretsStore != nil {
 		return runtime.Auth.OpenSecretsStore()
 	}
-	return secrets.OpenDefault()
+	return nil, errRuntimeRequired
 }
 
 func authorizeGoogleAccount(ctx context.Context, opts googleauth.AuthorizeOptions) (string, error) {
+	if err := bindManualAuthStateStore(ctx, &opts); err != nil {
+		return "", err
+	}
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.AuthorizeGoogle != nil {
 		return runtime.Auth.AuthorizeGoogle(ctx, opts)
 	}
-	return googleauth.Authorize(ctx, opts)
+	return "", fmt.Errorf("%w: Google authorization", errRuntimeServiceRequired)
+}
+
+func bindManualAuthStateStore(ctx context.Context, opts *googleauth.AuthorizeOptions) error {
+	if !opts.Manual || opts.ManualStateStore != nil {
+		return nil
+	}
+	layout, err := commandLayout(ctx, config.PathKindConfig)
+	if err != nil {
+		return err
+	}
+	store, err := googleauth.NewManualStateStore(layout)
+	if err != nil {
+		return err
+	}
+	opts.ManualStateStore = store
+	return nil
 }
 
 func fetchAuthIdentity(
@@ -35,7 +55,7 @@ func fetchAuthIdentity(
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.FetchAuthorizedIdentity != nil {
 		return runtime.Auth.FetchAuthorizedIdentity(ctx, client, refreshToken, scopes, timeout)
 	}
-	return googleauth.IdentityForRefreshToken(ctx, client, refreshToken, scopes, timeout)
+	return googleauth.Identity{}, fmt.Errorf("%w: authorized identity", errRuntimeServiceRequired)
 }
 
 func ensureKeychainAccessIfNeeded(ctx context.Context) error {
@@ -49,15 +69,14 @@ func ensureKeychainAccessIfNeeded(ctx context.Context) error {
 	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.EnsureKeychainAccess != nil {
 		return runtime.Auth.EnsureKeychainAccess(ctx)
 	}
-	return secrets.EnsureKeychainAccessContext(ctx)
+	return fmt.Errorf("%w: keychain access", errRuntimeServiceRequired)
 }
 
 func resolveKeyringBackendInfo(ctx context.Context) (secrets.KeyringBackendInfo, error) {
-	store, err := commandConfigStore(ctx)
-	if err != nil {
-		return secrets.KeyringBackendInfo{}, err
+	if runtime, ok := app.FromContext(ctx); ok {
+		return runtimeKeyringBackendInfo(runtime)
 	}
-	return secrets.ResolveKeyringBackendInfoFor(store)
+	return secrets.KeyringBackendInfo{}, errRuntimeRequired
 }
 
 func normalizeEmail(value string) string {
@@ -73,7 +92,7 @@ const (
 type AuthCmd struct {
 	Credentials AuthCredentialsCmd    `cmd:"" name:"credentials" help:"Manage OAuth client credentials"`
 	Add         AuthAddCmd            `cmd:"" name:"add" help:"Authorize and store a refresh token"`
-	Import      AuthImportCmd         `cmd:"" name:"import" help:"Import a refresh token non-interactively from stdin, file, or env"`
+	Import      AuthImportCmd         `cmd:"" name:"import" help:"Import a required refresh token and optional current access token non-interactively"`
 	Services    AuthServicesCmd       `cmd:"" name:"services" help:"List supported auth services and scopes"`
 	List        AuthListCmd           `cmd:"" name:"list" help:"List stored accounts"`
 	Doctor      AuthDoctorCmd         `cmd:"" name:"doctor" help:"Diagnose auth, keyring, and refresh-token issues"`
@@ -82,7 +101,7 @@ type AuthCmd struct {
 	Keyring     AuthKeyringCmd        `cmd:"" name:"keyring" help:"Configure keyring backend"`
 	Remove      AuthRemoveCmd         `cmd:"" name:"remove" help:"Remove a stored refresh token"`
 	Tokens      AuthTokensCmd         `cmd:"" name:"tokens" help:"Manage stored refresh tokens"`
-	Manage      AuthManageCmd         `cmd:"" name:"manage" help:"Open accounts manager in browser" aliases:"login"`
+	Manage      AuthManageCmd         `cmd:"" name:"manage" help:"Open interactive accounts manager in browser" aliases:"login"`
 	ServiceAcct AuthServiceAccountCmd `cmd:"" name:"service-account" help:"Configure service account (Workspace only; domain-wide delegation)"`
 	Keep        AuthKeepCmd           `cmd:"" name:"keep" help:"Configure service account for Google Keep (Workspace only)"`
 }

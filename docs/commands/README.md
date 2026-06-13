@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 642.
+Generated pages: 643.
 
 ## Top-level Commands
 
@@ -23,7 +23,7 @@ Generated pages: 642.
 - [gog drive](gog-drive.md) - Google Drive
 - [gog forms](gog-forms.md) - Google Forms
 - [gog gmail](gog-gmail.md) - Gmail
-- [gog groups](gog-groups.md) - Google Groups
+- [gog groups](gog-groups.md) - Cloud Identity Groups (Workspace only)
 - [gog keep](gog-keep.md) - Google Keep (Workspace only)
 - [gog login](gog-login.md) - Authorize and store a refresh token (alias for 'auth add')
 - [gog logout](gog-logout.md) - Remove a stored refresh token (alias for 'auth remove')
@@ -92,11 +92,11 @@ Generated pages: 642.
       - [gog auth credentials remove](gog-auth-credentials-remove.md) - Remove stored OAuth client credentials
       - [gog auth credentials set](gog-auth-credentials-set.md) - Store OAuth client credentials
     - [gog auth doctor](gog-auth-doctor.md) - Diagnose auth, keyring, and refresh-token issues
-    - [gog auth import](gog-auth-import.md) - Import a refresh token non-interactively from stdin, file, or env
+    - [gog auth import](gog-auth-import.md) - Import a required refresh token and optional current access token non-interactively
     - [gog auth keep](gog-auth-keep.md) - Configure service account for Google Keep (Workspace only)
     - [gog auth keyring](gog-auth-keyring.md) - Configure keyring backend
     - [gog auth list](gog-auth-list.md) - List stored accounts
-    - [gog auth manage](gog-auth-manage.md) - Open accounts manager in browser
+    - [gog auth manage](gog-auth-manage.md) - Open interactive accounts manager in browser
     - [gog auth remove](gog-auth-remove.md) - Remove a stored refresh token
     - [gog auth service-account](gog-auth-service-account.md) - Configure service account (Workspace only; domain-wide delegation)
       - [gog auth service-account set](gog-auth-service-account-set.md) - Store a service account key for impersonation
@@ -131,13 +131,13 @@ Generated pages: 642.
       - [gog calendar alias list](gog-calendar-alias-list.md) - List calendar aliases
       - [gog calendar alias set](gog-calendar-alias-set.md) - Set a calendar alias
       - [gog calendar alias unset](gog-calendar-alias-unset.md) - Remove a calendar alias
-    - [gog calendar appointments](gog-calendar-appointments.md) - Report Calendar appointment schedule API limitation
     - [gog calendar calendars](gog-calendar-calendars.md) - List calendars
     - [gog calendar colors](gog-calendar-colors.md) - Show calendar colors
     - [gog calendar conflicts](gog-calendar-conflicts.md) - Find busy-time overlaps across calendars
     - [gog calendar create](gog-calendar-create.md) - Create an event
     - [gog calendar create-calendar](gog-calendar-create-calendar.md) - Create a new secondary calendar
     - [gog calendar delete](gog-calendar-delete.md) - Delete an event
+    - [gog calendar delete-calendar](gog-calendar-delete-calendar.md) - Delete an owned secondary calendar
     - [gog calendar event](gog-calendar-event.md) - Get event
     - [gog calendar events](gog-calendar-events.md) - List events from a calendar or all calendars
     - [gog calendar focus-time](gog-calendar-focus-time.md) - Create a Focus Time block
@@ -149,8 +149,9 @@ Generated pages: 642.
     - [gog calendar respond](gog-calendar-respond.md) - Respond to an event invitation
     - [gog calendar search](gog-calendar-search.md) - Search events
     - [gog calendar subscribe](gog-calendar-subscribe.md) - Add a calendar to your calendar list
-    - [gog calendar team](gog-calendar-team.md) - Show events for all members of a Google Group
+    - [gog calendar team](gog-calendar-team.md) - Show events for Workspace group members (service account, direct token, or ADC)
     - [gog calendar time](gog-calendar-time.md) - Show server time
+    - [gog calendar unsubscribe](gog-calendar-unsubscribe.md) - Remove a calendar from your calendar list
     - [gog calendar update](gog-calendar-update.md) - Update an event
     - [gog calendar users](gog-calendar-users.md) - List workspace users (use their email as calendar ID)
     - [gog calendar working-location](gog-calendar-working-location.md) - Set working location (home/office/custom)
@@ -181,14 +182,14 @@ Generated pages: 642.
       - [gog classroom announcements list](gog-classroom-announcements-list.md) - List announcements
       - [gog classroom announcements update](gog-classroom-announcements-update.md) - Update an announcement
     - [gog classroom courses](gog-classroom-courses.md) - Courses
-      - [gog classroom courses archive](gog-classroom-courses-archive.md) - Archive a course
+      - [gog classroom courses archive](gog-classroom-courses-archive.md) - Archive a course and wait until the state is visible
       - [gog classroom courses create](gog-classroom-courses-create.md) - Create a course
       - [gog classroom courses delete](gog-classroom-courses-delete.md) - Delete an archived course
       - [gog classroom courses get](gog-classroom-courses-get.md) - Get a course
       - [gog classroom courses join](gog-classroom-courses-join.md) - Join a course
       - [gog classroom courses leave](gog-classroom-courses-leave.md) - Leave a course
       - [gog classroom courses list](gog-classroom-courses-list.md) - List courses
-      - [gog classroom courses unarchive](gog-classroom-courses-unarchive.md) - Unarchive a course
+      - [gog classroom courses unarchive](gog-classroom-courses-unarchive.md) - Unarchive a course and wait until the state is visible
       - [gog classroom courses update](gog-classroom-courses-update.md) - Update a course
       - [gog classroom courses url](gog-classroom-courses-url.md) - Print Classroom web URLs for courses
     - [gog classroom coursework](gog-classroom-coursework.md) - Coursework
@@ -501,7 +502,7 @@ Generated pages: 642.
     - [gog gmail trash](gog-gmail-trash.md) - Move messages to trash
     - [gog gmail unread](gog-gmail-unread.md) - Mark messages as unread
     - [gog gmail url](gog-gmail-url.md) - Print Gmail web URLs for threads
-  - [gog groups](gog-groups.md) - Google Groups
+  - [gog groups](gog-groups.md) - Cloud Identity Groups (Workspace only)
     - [gog groups list](gog-groups-list.md) - List groups you belong to
     - [gog groups members](gog-groups-members.md) - List members of a group
   - [gog keep](gog-keep.md) - Google Keep (Workspace only)

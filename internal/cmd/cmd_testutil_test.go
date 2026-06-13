@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"io"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/people/v1"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/authclient"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/secrets"
 	"github.com/steipete/gogcli/internal/ui"
@@ -22,7 +25,7 @@ func newCmdOutputContext(t *testing.T, stdout, stderr io.Writer) context.Context
 	if err != nil {
 		t.Fatalf("ui.New: %v", err)
 	}
-	return ui.WithUI(context.Background(), u)
+	return withTestRuntime(ui.WithUI(context.Background(), u), func(*app.Runtime) {})
 }
 
 func newCmdRuntimeOutputContext(t *testing.T, stdout, stderr io.Writer) context.Context {
@@ -36,7 +39,7 @@ func newCmdRuntimeIOContext(t *testing.T, stdin io.Reader, stdout, stderr io.Wri
 		In:  stdin,
 		Out: stdout,
 		Err: stderr,
-	}})
+	}, KeyringOptions: testKeyringOptions()})
 }
 
 func newCmdJSONContext(t *testing.T) context.Context {
@@ -58,18 +61,85 @@ func withTestRuntime(ctx context.Context, configure func(*app.Runtime)) context.
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = withTestClientResolver(ctx)
+
 	runtime := &app.Runtime{}
 	if existing, ok := app.FromContext(ctx); ok {
 		*runtime = *existing
 	}
+	if runtime.KeyringOptions == nil {
+		runtime.KeyringOptions = testKeyringOptions()
+	}
 	configure(runtime)
 	return app.WithRuntime(ctx, runtime)
+}
+
+func withDefaultTestRuntime(ctx context.Context) context.Context {
+	return withTestRuntime(ctx, func(*app.Runtime) {})
+}
+
+func withTestClientResolver(ctx context.Context) context.Context {
+	resolver := config.NewSystemResolver("")
+	resolveStores := func() (*config.ConfigStore, *config.ClientCredentialsStore, error) {
+		layout, err := resolver.Resolve(config.PathKindConfig, config.PathKindData)
+		if err != nil {
+			return nil, nil, err
+		}
+		return config.NewConfigStore(layout), config.NewClientCredentialsStore(layout), nil
+	}
+	ctx = authclient.WithClientResolver(ctx, func(email string, override string) (string, error) {
+		store, files, err := resolveStores()
+		if err != nil {
+			return "", err
+		}
+		cfg, err := store.Read()
+		if err != nil {
+			return "", err
+		}
+		return config.ResolveClientForAccountWithCredentials(cfg, email, override, func(client string) (bool, error) {
+			_, ok, existingErr := files.ExistingPath(client)
+			return ok, existingErr
+		})
+	})
+	return authclient.WithEmailReferenceUpdater(ctx, func(oldEmail, newEmail string) error {
+		store, _, err := resolveStores()
+		if err != nil {
+			return err
+		}
+		return store.MigrateAccountEmailReferences(oldEmail, newEmail)
+	})
+}
+
+func defaultConfigStoreForTest(t *testing.T) *config.ConfigStore {
+	t.Helper()
+
+	return config.NewConfigStore(defaultLayoutForTest(t, config.PathKindConfig))
+}
+
+func defaultLayoutForTest(t *testing.T, kinds ...config.PathKind) config.Layout {
+	t.Helper()
+
+	layout, err := config.NewSystemResolver("").Resolve(kinds...)
+	if err != nil {
+		t.Fatalf("resolve test layout: %v", err)
+	}
+	return layout
+}
+
+func defaultCredentialsStoreForTest(t *testing.T) *config.ClientCredentialsStore {
+	t.Helper()
+	return config.NewClientCredentialsStore(defaultLayoutForTest(t, config.PathKindConfig, config.PathKindData))
 }
 
 func withAuthStore(ctx context.Context, store secrets.Store) context.Context {
 	return withTestRuntime(ctx, func(runtime *app.Runtime) {
 		runtime.Auth.OpenSecretsStore = func() (secrets.Store, error) {
 			return store, nil
+		}
+		if secretStore, ok := store.(secrets.SecretStore); ok {
+			runtime.Auth.OpenSecretStore = func() (secrets.SecretStore, error) {
+				return secretStore, nil
+			}
 		}
 	})
 }
@@ -81,11 +151,26 @@ func withAuthOperations(ctx context.Context, operations app.AuthOperations) cont
 }
 
 func runtimeWithAuthStore(store secrets.Store) *app.Runtime {
-	return &app.Runtime{Auth: app.AuthOperations{
+	operations := app.AuthOperations{
 		OpenSecretsStore: func() (secrets.Store, error) {
 			return store, nil
 		},
-	}}
+	}
+	if secretStore, ok := store.(secrets.SecretStore); ok {
+		operations.OpenSecretStore = func() (secrets.SecretStore, error) {
+			return secretStore, nil
+		}
+	}
+	return &app.Runtime{Auth: operations, KeyringOptions: testKeyringOptions()}
+}
+
+func testKeyringOptions() *secrets.OpenOptions {
+	return &secrets.OpenOptions{
+		Backend:     "file",
+		Password:    "test-password",
+		PasswordSet: true,
+		GOOS:        goruntime.GOOS,
+	}
 }
 
 func rootFlagsWithAuthStore(flags *RootFlags, store secrets.Store) *RootFlags {
@@ -124,6 +209,9 @@ func executeWithTestRuntime(t *testing.T, args []string, runtime *app.Runtime) e
 	} else {
 		runtimeCopy := *runtime
 		runtime = &runtimeCopy
+	}
+	if runtime.KeyringOptions == nil {
+		runtime.KeyringOptions = testKeyringOptions()
 	}
 	runtime.IO = app.IO{
 		In:  strings.NewReader(""),

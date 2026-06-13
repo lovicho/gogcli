@@ -3,11 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/docssed"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -18,117 +17,24 @@ type tableCreateSpec struct {
 	cells  [][]string // optional cell content for pipe-table syntax
 }
 
-// parseTableFromPipes detects markdown-style pipe tables like:
-//
-//	| Name | Role | Status |
-//	| Alice | Engineer | Active |
-//	| Bob | Designer | Active |
-//
-// Returns a tableCreateSpec with rows, cols, and cell content filled in.
-// Returns nil if the replacement is not a pipe table.
 func parseTableFromPipes(s string) *tableCreateSpec {
-	// Convert escaped newlines to real newlines (sed replacements use \n)
-	s = strings.ReplaceAll(s, "\\n", "\n")
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "|") {
-		return nil
-	}
-
-	lines := strings.Split(s, "\n")
-	if len(lines) < 1 {
-		return nil
-	}
-
-	var rows [][]string
-	colCount := 0
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, "|") {
-			return nil // not a pipe table
-		}
-
-		// Split by | and trim
-		parts := strings.Split(line, "|")
-		var cells []string
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			// Skip empty parts from leading/trailing |
-			if p == "" {
-				continue
-			}
-			// Skip separator rows like |---|---|
-			if strings.Trim(p, "-: ") == "" {
-				cells = nil
-				break
-			}
-			cells = append(cells, p)
-		}
-		if cells == nil {
-			continue // skip separator row
-		}
-		if len(cells) == 0 {
-			return nil
-		}
-
-		if colCount == 0 {
-			colCount = len(cells)
-		} else if len(cells) != colCount {
-			// Pad or truncate to match first row
-			for len(cells) < colCount {
-				cells = append(cells, "")
-			}
-			cells = cells[:colCount]
-		}
-		rows = append(rows, cells)
-	}
-
-	if len(rows) < 1 || colCount < 1 {
-		return nil
-	}
-
-	return &tableCreateSpec{
-		rows:  len(rows),
-		cols:  colCount,
-		cells: rows,
-	}
+	return tableCreateSpecFromParsed(docssed.ParsePipeTable(s))
 }
 
-// parseTableCreate checks if a replacement string is a table creation spec like |3x4| or |3x4:header|
-// Returns nil if it's not a table creation spec.
 func parseTableCreate(s string) *tableCreateSpec {
-	s = strings.TrimSpace(s)
-	if len(s) < 4 || s[0] != '|' || s[len(s)-1] != '|' {
-		return nil
-	}
-	inner := s[1 : len(s)-1]
+	return tableCreateSpecFromParsed(docssed.ParseTableCreate(s))
+}
 
-	// Check for :header suffix
-	header := false
-	if idx := strings.Index(inner, ":"); idx >= 0 {
-		suffix := strings.ToLower(strings.TrimSpace(inner[idx+1:]))
-		if suffix != "header" {
-			return nil
-		}
-		header = true
-		inner = inner[:idx]
-	}
-
-	// Parse RxC
-	inner = strings.ToLower(inner)
-	parts := strings.SplitN(inner, "x", 2)
-	if len(parts) != 2 {
+func tableCreateSpecFromParsed(spec *docssed.TableCreateSpec) *tableCreateSpec {
+	if spec == nil {
 		return nil
 	}
-	rows, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
-	cols, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err1 != nil || err2 != nil || rows < 1 || cols < 1 || rows > 100 || cols > 26 {
-		return nil
+	return &tableCreateSpec{
+		rows:   spec.Rows,
+		cols:   spec.Columns,
+		header: spec.Header,
+		cells:  spec.Cells,
 	}
-	return &tableCreateSpec{rows: rows, cols: cols, header: header}
 }
 
 // runTableCreate handles creating a table at the location of matched text

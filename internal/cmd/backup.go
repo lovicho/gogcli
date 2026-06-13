@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/steipete/gogcli/internal/backup"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -72,6 +74,11 @@ type backupReadFlags struct {
 	NoPull   bool   `name:"no-pull" help:"Use local backup repository state without pulling first"`
 }
 
+type backupReadCompatFlags struct {
+	NoPush     bool     `name:"no-push" hidden:"" help:"(deprecated) Ignored for read commands"`
+	Recipients []string `name:"recipient" hidden:"" help:"(deprecated) Ignored for read commands"`
+}
+
 func (f backupReadFlags) options() backup.Options {
 	return backup.Options{
 		ConfigPath: f.Config,
@@ -83,12 +90,39 @@ func (f backupReadFlags) options() backup.Options {
 	}
 }
 
+func bindBackupConfigStore(ctx context.Context, opts *backup.Options) error {
+	if opts == nil || opts.ConfigStore != nil {
+		return nil
+	}
+	layout, err := commandLayout(ctx, config.PathKindConfig)
+	if err != nil {
+		return err
+	}
+	store, err := backup.NewConfigStore(layout, os.UserHomeDir)
+	if err != nil {
+		return err
+	}
+	opts.ConfigStore = store
+	return nil
+}
+
+func backupCommandContext(ctx context.Context, flags *RootFlags) context.Context {
+	if flags != nil && flags.NoInput {
+		return backup.WithNoInput(ctx)
+	}
+	return ctx
+}
+
 type BackupInitCmd struct {
 	backupFlags
 }
 
 func (c *BackupInitCmd) Run(ctx context.Context, flags *RootFlags) error {
+	ctx = backupCommandContext(ctx, flags)
 	opts := c.options()
+	if err := bindBackupConfigStore(ctx, &opts); err != nil {
+		return err
+	}
 	if c.NoPush && strings.TrimSpace(c.Remote) == "" {
 		opts.SuppressDefaultRemote = true
 	}
@@ -149,6 +183,7 @@ type BackupPushCmd struct {
 }
 
 func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
+	ctx = backupCommandContext(ctx, flags)
 	services := expandBackupServices(splitCSV(c.Services))
 	if len(services) == 0 {
 		return usage("at least one --services value is required")
@@ -157,6 +192,9 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 	backupOpts := c.options()
+	if err := bindBackupConfigStore(ctx, &backupOpts); err != nil {
+		return err
+	}
 	backupOpts.AsyncPush = c.GmailCheckpoints
 	backupOpts.Progress = func(format string, args ...any) { gmailBackupProgressf(ctx, format, args...) }
 	snapshots, err := buildBackupSnapshots(services, c.snapshotBuilders(ctx, flags, backupOpts))
@@ -221,10 +259,14 @@ type BackupGmailPushCmd struct {
 }
 
 func (c *BackupGmailPushCmd) Run(ctx context.Context, flags *RootFlags) error {
+	ctx = backupCommandContext(ctx, flags)
 	if err := c.validate(); err != nil {
 		return err
 	}
 	backupOpts := c.options()
+	if err := bindBackupConfigStore(ctx, &backupOpts); err != nil {
+		return err
+	}
 	backupOpts.AsyncPush = c.Checkpoints
 	backupOpts.Progress = func(format string, args ...any) { gmailBackupProgressf(ctx, format, args...) }
 	snapshot, err := buildGmailBackupSnapshot(ctx, flags, gmailBackupOptions{
@@ -266,11 +308,27 @@ func (c *BackupGmailPushCmd) validate() error {
 }
 
 type BackupStatusCmd struct {
-	backupFlags
+	backupReadFlags
+	backupReadCompatFlags
 }
 
-func (c *BackupStatusCmd) Run(ctx context.Context) error {
-	manifest, repo, err := backup.Status(ctx, c.options())
+func (c *BackupStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
+	ctx = backupCommandContext(ctx, flags)
+	opts := c.options()
+	if err := bindBackupConfigStore(ctx, &opts); err != nil {
+		return err
+	}
+	if flags != nil && flags.DryRun {
+		cfg, err := backup.ResolveOptions(opts)
+		if err != nil {
+			return err
+		}
+		return dryRunExit(ctx, flags, "backup.status", map[string]any{
+			"repo": cfg.Repo,
+			"pull": !c.NoPull,
+		})
+	}
+	manifest, repo, err := backup.Status(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -296,11 +354,27 @@ func (c *BackupStatusCmd) Run(ctx context.Context) error {
 }
 
 type BackupVerifyCmd struct {
-	backupFlags
+	backupReadFlags
+	backupReadCompatFlags
 }
 
-func (c *BackupVerifyCmd) Run(ctx context.Context) error {
-	result, err := backup.Verify(ctx, c.options())
+func (c *BackupVerifyCmd) Run(ctx context.Context, flags *RootFlags) error {
+	ctx = backupCommandContext(ctx, flags)
+	opts := c.options()
+	if err := bindBackupConfigStore(ctx, &opts); err != nil {
+		return err
+	}
+	if flags != nil && flags.DryRun {
+		cfg, err := backup.ResolveOptions(opts)
+		if err != nil {
+			return err
+		}
+		return dryRunExit(ctx, flags, "backup.verify", map[string]any{
+			"repo": cfg.Repo,
+			"pull": !c.NoPull,
+		})
+	}
+	result, err := backup.Verify(ctx, opts)
 	if err != nil {
 		return err
 	}

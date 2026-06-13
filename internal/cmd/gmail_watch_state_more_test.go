@@ -2,10 +2,14 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 )
 
@@ -42,10 +46,7 @@ func TestIsStaleHistoryID(t *testing.T) {
 func TestGmailWatchStoreUpdateReloadsDiskState(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("me@example.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "me@example.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{
 			Account:              "me@example.com",
@@ -83,6 +84,90 @@ func TestGmailWatchStoreUpdateReloadsDiskState(t *testing.T) {
 	}
 }
 
+func TestGmailWatchStoreSerializesConcurrentInstances(t *testing.T) {
+	setWatchTestConfigHome(t)
+
+	stores := []*gmailWatchStore{
+		newGmailWatchTestStore(t, "me@example.com"),
+		newGmailWatchTestStore(t, "me@example.com"),
+	}
+	if err := stores[0].Update(func(state *gmailWatchState) error {
+		*state = gmailWatchState{Account: "me@example.com"}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	const updates = 20
+	errs := make(chan error, updates)
+	var wg sync.WaitGroup
+	for index := range updates {
+		wg.Add(1)
+		go func(store *gmailWatchStore) {
+			defer wg.Done()
+			errs <- store.Update(func(state *gmailWatchState) error {
+				time.Sleep(time.Millisecond)
+				state.LastDeliveryAtMs++
+				return nil
+			})
+		}(stores[index%len(stores)])
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent update: %v", err)
+		}
+	}
+
+	state := loadGmailWatchTestStore(t, "me@example.com").Get()
+	if state.LastDeliveryAtMs != updates {
+		t.Fatalf("updates = %d, want %d", state.LastDeliveryAtMs, updates)
+	}
+}
+
+func TestGmailWatchStoreUsesInjectedRuntimeLayout(t *testing.T) {
+	root := t.TempDir()
+	runtimeConfigDir := filepath.Join(root, "runtime-config")
+	runtimeStateDir := filepath.Join(root, "runtime-state")
+	ambientConfigDir := filepath.Join(root, "ambient-config")
+	ambientStateDir := filepath.Join(root, "ambient-state")
+	t.Setenv("GOG_CONFIG_DIR", ambientConfigDir)
+	t.Setenv("GOG_STATE_DIR", ambientStateDir)
+
+	ctx := withTestRuntime(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), func(runtime *app.Runtime) {
+		runtime.Layout = config.Layout{
+			ConfigDir:      runtimeConfigDir,
+			StateDir:       runtimeStateDir,
+			ExplicitConfig: true,
+			ExplicitState:  true,
+		}
+	})
+	store, err := newGmailWatchStore(ctx, "me@example.com")
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	if err := store.Update(func(state *gmailWatchState) error {
+		*state = gmailWatchState{Account: "me@example.com", HistoryID: "1"}
+		return nil
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	expected := filepath.Join(runtimeStateDir, "gmail-watch", "me_example_com.json")
+	if store.path != expected {
+		t.Fatalf("path = %q, want %q", store.path, expected)
+	}
+	if _, err := os.Stat(expected); err != nil {
+		t.Fatalf("runtime state file: %v", err)
+	}
+	for _, path := range []string{ambientConfigDir, ambientStateDir} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("ambient path unexpectedly touched: %s (%v)", path, err)
+		}
+	}
+}
+
 func TestGmailWatchStatePathFallsBackToLegacyAccountFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -101,7 +186,7 @@ func TestGmailWatchStatePathFallsBackToLegacyAccountFile(t *testing.T) {
 	legacyPath := filepath.Join(legacyDir, sanitizeAccountForPath("me@example.com")+".json")
 	writeGmailWatchStateFile(t, legacyPath, gmailWatchState{Account: "me@example.com", HistoryID: "1"})
 
-	got, err := gmailWatchStatePath("me@example.com")
+	got, err := gmailWatchStatePath(gmailWatchTestLayout(t), "me@example.com")
 	if err != nil {
 		t.Fatalf("gmailWatchStatePath: %v", err)
 	}
@@ -123,7 +208,7 @@ func TestGmailWatchStatePathExplicitStateSkipsLegacyAccountFile(t *testing.T) {
 	legacyPath := filepath.Join(legacyDir, sanitizeAccountForPath("me@example.com")+".json")
 	writeGmailWatchStateFile(t, legacyPath, gmailWatchState{Account: "me@example.com", HistoryID: "1"})
 
-	got, err := gmailWatchStatePath("me@example.com")
+	got, err := gmailWatchStatePath(gmailWatchTestLayout(t), "me@example.com")
 	if err != nil {
 		t.Fatalf("gmailWatchStatePath: %v", err)
 	}

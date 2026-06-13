@@ -90,10 +90,7 @@ func TestGmailWatchStartCmd_JSON(t *testing.T) {
 		t.Fatalf("unexpected max bytes: %#v", parsed.Watch.Hook)
 	}
 
-	store, err := loadGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("load store: %v", err)
-	}
+	store := loadGmailWatchTestStore(t, "a@b.com")
 	if store.Get().HistoryID != "123" {
 		t.Fatalf("store missing history: %#v", store.Get())
 	}
@@ -102,10 +99,7 @@ func TestGmailWatchStartCmd_JSON(t *testing.T) {
 func TestGmailWatchServerServeHTTP_TruncateBody(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("me@example.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "me@example.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{Account: "me@example.com", HistoryID: "100"}
 		return nil

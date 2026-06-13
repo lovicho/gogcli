@@ -71,6 +71,26 @@ func (l Layout) LegacyGmailWatchDir() string {
 	return filepath.Join(l.ConfigDir, "state", "gmail-watch")
 }
 
+func (l Layout) GmailWatchDir() string {
+	primary := l.PrimaryGmailWatchDir()
+	if l.ExplicitState {
+		return primary
+	}
+
+	legacy := l.LegacyGmailWatchDir()
+	if !l.UsesXDG && !l.UsesXDGState {
+		return legacy
+	}
+
+	if _, primaryErr := os.Stat(primary); os.IsNotExist(primaryErr) {
+		if st, legacyErr := os.Stat(legacy); legacyErr == nil && st.IsDir() {
+			return legacy
+		}
+	}
+
+	return primary
+}
+
 func (l Layout) KeepServiceAccountPath(email string) string {
 	return filepath.Join(l.DataDir, fmt.Sprintf("keep-sa-%s.json", safeEmailFilename(email)))
 }

@@ -17,13 +17,7 @@ import (
 	"github.com/steipete/gogcli/internal/authclient"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleauth"
-	"github.com/steipete/gogcli/internal/oauthclient"
 	"github.com/steipete/gogcli/internal/secrets"
-)
-
-var (
-	readClientCredentials = oauthclient.ReadClientCredentialsFor
-	openSecretsStore      = secrets.OpenDefault
 )
 
 type persistingTokenSource struct {
@@ -34,7 +28,8 @@ type persistingTokenSource struct {
 	// Metadata repair uses only scopes returned by the OAuth server, not the
 	// requested set. serviceLabel is added only when the observed grant covers
 	// the canonical scope set for that service.
-	serviceLabel string
+	serviceLabel          string
+	updateEmailReferences googleauth.EmailReferenceUpdater
 
 	mu  sync.Mutex
 	tok secrets.Token
@@ -44,14 +39,15 @@ type tokenAliasDeleter interface {
 	DeleteTokenAlias(client string, email string) error
 }
 
-func newPersistingTokenSource(base oauth2.TokenSource, store secrets.Store, client string, email string, tok secrets.Token, serviceLabel string) oauth2.TokenSource {
+func newPersistingTokenSource(base oauth2.TokenSource, store secrets.Store, client string, email string, tok secrets.Token, serviceLabel string, updateEmailReferences googleauth.EmailReferenceUpdater) oauth2.TokenSource {
 	return &persistingTokenSource{
-		base:         base,
-		store:        store,
-		client:       client,
-		email:        email,
-		serviceLabel: strings.TrimSpace(serviceLabel),
-		tok:          tok,
+		base:                  base,
+		store:                 store,
+		client:                client,
+		email:                 email,
+		serviceLabel:          strings.TrimSpace(serviceLabel),
+		updateEmailReferences: updateEmailReferences,
+		tok:                   tok,
 	}
 }
 
@@ -135,7 +131,7 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 	}
 
 	if !strings.EqualFold(p.email, persistEmail) {
-		if err := googleauth.MigrateStoredEmailReferences(p.store, p.client, p.email, persistEmail); err != nil {
+		if err := googleauth.MigrateStoredEmailReferences(p.store, p.updateEmailReferences, p.client, p.email, persistEmail); err != nil {
 			slog.Warn("migrate renamed token email references failed", "old_email", p.email, "new_email", persistEmail, "client", p.client, "err", err)
 		}
 
@@ -154,29 +150,15 @@ func (p *persistingTokenSource) Token() (*oauth2.Token, error) {
 	return t, nil
 }
 
-func tokenSourceForAccount(ctx context.Context, service googleauth.Service, email string) (oauth2.TokenSource, error) {
-	client, creds, err := clientCredentialsForAccount(ctx, email)
+func clientCredentialsForAccount(ctx context.Context, dependencies AuthDependencies, email string) (string, config.ClientCredentials, error) {
+	client, err := dependencies.resolveClient(email, authclient.ClientOverrideFromContext(ctx))
 	if err != nil {
-		return nil, err
+		return "", config.ClientCredentials{}, err
 	}
 
-	scopes, err := googleauth.Scopes(service)
+	creds, err := dependencies.readCredentials(client)
 	if err != nil {
-		return nil, fmt.Errorf("resolve scopes: %w", err)
-	}
-
-	return tokenSourceForAccountScopes(ctx, string(service), email, client, creds.ClientID, creds.ClientSecret, scopes)
-}
-
-func clientCredentialsForAccount(ctx context.Context, email string) (string, config.ClientCredentials, error) {
-	client, err := authclient.ResolveClient(ctx, email)
-	if err != nil {
-		return "", config.ClientCredentials{}, fmt.Errorf("resolve client: %w", err)
-	}
-
-	creds, err := readClientCredentials(client)
-	if err != nil {
-		return "", config.ClientCredentials{}, fmt.Errorf("read credentials: %w", err)
+		return "", config.ClientCredentials{}, err
 	}
 
 	return client, creds, nil
@@ -194,20 +176,29 @@ func tokenSourceForAvailableAccountAuthWithStoredScopeCheck(
 		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken}), nil
 	}
 
-	if serviceAccountTS, saPath, ok, err := tokenSourceForServiceAccountScopes(ctx, serviceLabel, email, scopes); err != nil {
+	dependencies, err := requireAuthDependencies(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	serviceAccountTS, saPath, ok, err := tokenSourceForServiceAccountScopes(ctx, dependencies, serviceLabel, email, scopes)
+	if err != nil {
 		return nil, fmt.Errorf("service account token source: %w", err)
-	} else if ok {
+	}
+
+	if ok {
 		slog.Debug("using service account credentials", "email", email, "path", saPath)
 		return serviceAccountTS, nil
 	}
 
-	client, creds, err := clientCredentialsForAccount(ctx, email)
+	client, creds, err := clientCredentialsForAccount(ctx, dependencies, email)
 	if err != nil {
 		return nil, err
 	}
 
 	tokenSource, err := tokenSourceForAccountScopesWithStoredScopeCheck(
 		ctx,
+		dependencies,
 		serviceLabel,
 		email,
 		client,
@@ -223,21 +214,9 @@ func tokenSourceForAvailableAccountAuthWithStoredScopeCheck(
 	return tokenSource, nil
 }
 
-func tokenSourceForAccountScopes(ctx context.Context, serviceLabel string, email string, client string, clientID string, clientSecret string, requiredScopes []string) (oauth2.TokenSource, error) {
-	return tokenSourceForAccountScopesWithStoredScopeCheck(
-		ctx,
-		serviceLabel,
-		email,
-		client,
-		clientID,
-		clientSecret,
-		requiredScopes,
-		false,
-	)
-}
-
 func tokenSourceForAccountScopesWithStoredScopeCheck(
 	ctx context.Context,
+	dependencies AuthDependencies,
 	serviceLabel string,
 	email string,
 	client string,
@@ -248,8 +227,8 @@ func tokenSourceForAccountScopesWithStoredScopeCheck(
 ) (oauth2.TokenSource, error) {
 	var store secrets.Store
 
-	if s, err := openSecretsStore(); err != nil {
-		return nil, fmt.Errorf("open secrets store: %w", err)
+	if s, err := dependencies.openTokens(); err != nil {
+		return nil, err
 	} else {
 		store = s
 	}
@@ -303,7 +282,7 @@ func tokenSourceForAccountScopesWithStoredScopeCheck(
 		Expiry:       tok.AccessTokenExpiresAt,
 	})
 
-	return newPersistingTokenSource(baseSource, store, client, email, tok, serviceLabel), nil
+	return newPersistingTokenSource(baseSource, store, client, email, tok, serviceLabel, dependencies.updateEmailReferences), nil
 }
 
 func tokenGrantedScopes(t *oauth2.Token) []string {

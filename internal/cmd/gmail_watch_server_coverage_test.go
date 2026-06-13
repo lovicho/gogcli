@@ -24,10 +24,7 @@ func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 func TestGmailWatchServer_SendHook_TransportError(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error { s.Account = "a@b.com"; return nil })
 
 	server := &gmailWatchServer{
@@ -45,7 +42,7 @@ func TestGmailWatchServer_SendHook_TransportError(t *testing.T) {
 		warnf: func(string, ...any) {},
 	}
 
-	err = server.sendHook(context.Background(), &gmailHookPayload{Source: "gmail", Account: "a@b.com", HistoryID: "1"})
+	err := server.sendHook(context.Background(), &gmailHookPayload{Source: "gmail", Account: "a@b.com", HistoryID: "1"})
 	if err == nil || !strings.Contains(err.Error(), "dial failed") {
 		t.Fatalf("expected transport error, got: %v", err)
 	}
@@ -81,10 +78,7 @@ func TestGmailWatchServer_ServeHTTP_HandlePushError(t *testing.T) {
 func TestGmailWatchServer_ServeHTTP_NoHook_Accepted(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"
@@ -154,10 +148,7 @@ func TestGmailWatchServer_ServeHTTP_NoHook_Accepted(t *testing.T) {
 func TestGmailWatchServer_ServeHTTP_HookSuccess(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"

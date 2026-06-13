@@ -12,9 +12,7 @@ import (
 	"html/template"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -37,37 +35,40 @@ type Identity struct {
 	Email   string `json:"email"`
 }
 
-// ManageServerOptions configures the accounts management server
-type ManageServerOptions struct {
-	Timeout      time.Duration
+type FetchIdentityFunc func(context.Context, *oauth2.Token) (Identity, error)
+
+// ManagerOptions configures the accounts manager application.
+type ManagerOptions struct {
 	Services     []Service
 	ForceConsent bool
 	Client       string
-	ListenAddr   string
 	RedirectURI  string
 }
 
-// ManageServer handles the accounts management UI
-type ManageServer struct {
-	opts          ManageServerOptions
-	client        string
-	csrfToken     string
-	listener      net.Listener
-	server        *http.Server
-	store         secrets.Store
-	fetchIdentity func(ctx context.Context, tok *oauth2.Token) (Identity, error)
-	oauthMu       sync.Mutex
-	oauthState    string
-	oauthVerifier string
-	oauthStates   map[string]string
-	resultCh      chan error
+// ManagerDependencies contains the accounts manager's external operations.
+type ManagerDependencies struct {
+	Tokens                secrets.Store
+	ReadCredentials       func(client string) (config.ClientCredentials, error)
+	UpdateEmailReferences EmailReferenceUpdater
+	FetchIdentity         FetchIdentityFunc
+	EnsureKeychainAccess  func(context.Context) error
+	Random                io.Reader
+	OAuthEndpoint         oauth2.Endpoint
 }
 
-var (
-	openDefaultStore          = secrets.OpenDefault
-	resolveKeyringBackendInfo = secrets.ResolveKeyringBackendInfo
-	ensureKeychainAccess      = secrets.EnsureKeychainAccess
-)
+// ManagerApplication handles the accounts management UI.
+type ManagerApplication struct {
+	opts         ManagerOptions
+	deps         ManagerDependencies
+	client       string
+	csrfToken    string
+	handler      http.Handler
+	accountsPage *template.Template
+	successPage  *template.Template
+	oauthMu      sync.Mutex
+	oauthStates  map[string]string
+	randomMu     sync.Mutex
+}
 
 var (
 	errUserinfoRequestFailed = errors.New("userinfo request failed")
@@ -78,124 +79,88 @@ var (
 	errNoEmailInResponse     = errors.New("no email in userinfo response")
 )
 
+var (
+	errManagerTokensRequired       = errors.New("accounts manager token store is required")
+	errManagerRedirectURIRequired  = errors.New("accounts manager redirect URI is required")
+	errManagerRandomRequired       = errors.New("accounts manager random source is required")
+	errManagerIdentityRequired     = errors.New("accounts manager identity fetcher is required")
+	errManagerKeychainRequired     = errors.New("accounts manager keychain check is required")
+	errManagerOAuthEndpointInvalid = errors.New("accounts manager OAuth endpoint is required")
+)
+
 const userinfoURL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
-func shouldEnsureKeychainAccess() (bool, error) {
-	backendInfo, err := resolveKeyringBackendInfo()
-	if err != nil {
-		return false, err
-	}
-
-	return backendInfo.Value != "file", nil
-}
-
-// StartManageServer starts the accounts management server and opens browser
-func StartManageServer(ctx context.Context, opts ManageServerOptions) error {
-	if opts.Timeout <= 0 {
-		opts.Timeout = 10 * time.Minute
-	}
-
+// NewManagerApplication builds the accounts manager HTTP application.
+func NewManagerApplication(opts ManagerOptions, deps ManagerDependencies) (*ManagerApplication, error) {
 	client, err := config.NormalizeClientNameOrDefault(opts.Client)
 	if err != nil {
-		return fmt.Errorf("resolve client: %w", err)
+		return nil, fmt.Errorf("resolve client: %w", err)
 	}
-
 	opts.Client = client
+	opts.RedirectURI = strings.TrimSpace(opts.RedirectURI)
 
-	listenAddr, err := normalizeListenAddr(opts.ListenAddr)
+	switch {
+	case deps.Tokens == nil:
+		return nil, errManagerTokensRequired
+	case deps.ReadCredentials == nil:
+		return nil, errCredentialsReaderRequired
+	case deps.UpdateEmailReferences == nil:
+		return nil, errEmailReferenceUpdaterRequired
+	case deps.FetchIdentity == nil:
+		return nil, errManagerIdentityRequired
+	case deps.EnsureKeychainAccess == nil:
+		return nil, errManagerKeychainRequired
+	case deps.Random == nil:
+		return nil, errManagerRandomRequired
+	case deps.OAuthEndpoint.AuthURL == "" || deps.OAuthEndpoint.TokenURL == "":
+		return nil, errManagerOAuthEndpointInvalid
+	case opts.RedirectURI == "":
+		return nil, errManagerRedirectURIRequired
+	}
+
+	accountsPage, err := template.New("accounts").Parse(accountsTemplate)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("parse accounts manager template: %w", err)
 	}
 
-	if validationErr := validateManagementListenAddr(listenAddr); validationErr != nil {
-		return validationErr
-	}
-
-	if strings.TrimSpace(opts.RedirectURI) != "" {
-		resolvedRedirectURI, normalizeErr := normalizeRedirectURI(opts.RedirectURI)
-		if normalizeErr != nil {
-			return normalizeErr
-		}
-		opts.RedirectURI = resolvedRedirectURI
-	}
-
-	store, err := openDefaultStore()
+	successPage, err := template.New("success").Parse(successTemplate)
 	if err != nil {
-		return fmt.Errorf("failed to open secrets store: %w", err)
+		return nil, fmt.Errorf("parse accounts manager success template: %w", err)
 	}
 
-	csrfToken, err := generateCSRFToken()
+	csrfToken, err := generateRandomHex(deps.Random, 32)
 	if err != nil {
-		return fmt.Errorf("failed to generate CSRF token: %w", err)
+		return nil, fmt.Errorf("generate CSRF token: %w", err)
 	}
 
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", listenAddr)
-	if err != nil {
-		return fmt.Errorf("failed to start listener: %w", err)
+	app := &ManagerApplication{
+		opts:         opts,
+		deps:         deps,
+		client:       client,
+		csrfToken:    csrfToken,
+		accountsPage: accountsPage,
+		successPage:  successPage,
+		oauthStates:  make(map[string]string),
 	}
-
-	ms := &ManageServer{
-		opts:          opts,
-		client:        opts.Client,
-		csrfToken:     csrfToken,
-		listener:      ln,
-		store:         store,
-		fetchIdentity: fetchUserIdentityDefault,
-		resultCh:      make(chan error, 1),
-	}
-
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", ms.handleAccountsPage)
-	mux.HandleFunc("/accounts", ms.handleListAccounts)
-	mux.HandleFunc("/auth/start", ms.handleAuthStart)
-	mux.HandleFunc("/auth/upgrade", ms.handleAuthUpgrade)
-	mux.HandleFunc("/oauth2/callback", ms.handleOAuthCallback)
-	mux.HandleFunc("/set-default", ms.handleSetDefault)
-	mux.HandleFunc("/remove-account", ms.handleRemoveAccount)
+	mux.HandleFunc("/", app.handleAccountsPage)
+	mux.HandleFunc("/accounts", app.handleListAccounts)
+	mux.HandleFunc("/auth/start", app.handleAuthStart)
+	mux.HandleFunc("/auth/upgrade", app.handleAuthUpgrade)
+	mux.HandleFunc("/oauth2/callback", app.handleOAuthCallback)
+	mux.HandleFunc("/set-default", app.handleSetDefault)
+	mux.HandleFunc("/remove-account", app.handleRemoveAccount)
+	app.handler = mux
 
-	ms.server = &http.Server{
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
-	defer cancel()
-
-	go func() {
-		<-ctx.Done()
-		_ = ms.server.Close()
-	}()
-
-	go func() {
-		if err := ms.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			select {
-			case ms.resultCh <- err:
-			default:
-			}
-		}
-	}()
-
-	url := listenerBaseURL(ln)
-
-	fmt.Fprintln(os.Stderr, "Opening accounts manager in browser...")
-	fmt.Fprintln(os.Stderr, "If the browser doesn't open, visit:", url)
-
-	if strings.TrimSpace(opts.ListenAddr) != "" {
-		fmt.Fprintf(os.Stderr, "Server listening on %s\n", ln.Addr().String())
-	}
-	_ = openBrowserFn(url)
-
-	select {
-	case err := <-ms.resultCh:
-		return err
-	case <-ctx.Done():
-		_ = ms.server.Close()
-		return nil
-	}
+	return app, nil
 }
 
-func (ms *ManageServer) handleAccountsPage(w http.ResponseWriter, r *http.Request) {
+// Handler returns the accounts manager HTTP handler.
+func (app *ManagerApplication) Handler() http.Handler {
+	return app.handler
+}
+
+func (app *ManagerApplication) handleAccountsPage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -208,28 +173,22 @@ func (ms *ManageServer) handleAccountsPage(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	tmpl, err := template.New("accounts").Parse(accountsTemplate)
-	if err != nil {
-		http.Error(w, "Failed to render page", http.StatusInternalServerError)
-		return
-	}
-
 	data := struct {
 		CSRFToken string
 	}{
-		CSRFToken: ms.csrfToken,
+		CSRFToken: app.csrfToken,
 	}
 
-	_ = tmpl.Execute(w, data)
+	_ = app.accountsPage.Execute(w, data)
 }
 
-func (ms *ManageServer) handleListAccounts(w http.ResponseWriter, r *http.Request) {
+func (app *ManagerApplication) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	tokens, err := ms.store.ListTokens()
+	tokens, err := app.deps.Tokens.ListTokens()
 	if err != nil {
 		writeJSONError(w, "Failed to list accounts", http.StatusInternalServerError)
 		return
@@ -237,12 +196,12 @@ func (ms *ManageServer) handleListAccounts(w http.ResponseWriter, r *http.Reques
 
 	filtered := make([]secrets.Token, 0, len(tokens))
 	for _, tok := range tokens {
-		if tok.Client == ms.client {
+		if tok.Client == app.client {
 			filtered = append(filtered, tok)
 		}
 	}
 
-	defaultEmail, _ := ms.store.GetDefaultAccount(ms.client)
+	defaultEmail, _ := app.deps.Tokens.GetDefaultAccount(app.client)
 	if !tokenListHasEmail(filtered, defaultEmail) {
 		defaultEmail = ""
 	}
@@ -264,33 +223,30 @@ func (ms *ManageServer) handleListAccounts(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, map[string]any{"accounts": accounts})
 }
 
-func (ms *ManageServer) handleAuthStart(w http.ResponseWriter, r *http.Request) {
+func (app *ManagerApplication) handleAuthStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if !ms.validQueryCSRF(r) {
+	if !app.validQueryCSRF(r) {
 		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
 
-	creds, err := readClientCredentials(ms.client)
+	creds, err := app.deps.ReadCredentials(app.client)
 	if err != nil {
 		http.Error(w, "OAuth credentials not configured. Run: gog auth credentials <file>", http.StatusInternalServerError)
 		return
 	}
 
-	state, err := randomStateFn()
+	state, codeVerifier, err := app.newOAuthState()
 	if err != nil {
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
 
-	codeVerifier := generateVerifierFn()
-	ms.addOAuthState(state, codeVerifier)
-
-	services := manageServices(ms.opts.Services)
+	services := manageServices(app.opts.Services)
 
 	scopes, err := ScopesForManage(services)
 	if err != nil {
@@ -298,28 +254,26 @@ func (ms *ManageServer) handleAuthStart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	redirectURI := resolveServerRedirectURI(ms.listener, ms.opts.RedirectURI)
-
 	cfg := oauth2.Config{
 		ClientID:     creds.ClientID,
 		ClientSecret: creds.ClientSecret,
-		Endpoint:     oauthEndpoint,
-		RedirectURL:  redirectURI,
+		Endpoint:     app.deps.OAuthEndpoint,
+		RedirectURL:  app.opts.RedirectURI,
 		Scopes:       scopes,
 	}
 
-	authURL := cfg.AuthCodeURL(state, pkceAuthURLParams(ms.opts.ForceConsent, true, codeVerifier)...)
+	authURL := cfg.AuthCodeURL(state, pkceAuthURLParams(app.opts.ForceConsent, true, codeVerifier)...)
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-func (ms *ManageServer) handleAuthUpgrade(w http.ResponseWriter, r *http.Request) {
+func (app *ManagerApplication) handleAuthUpgrade(w http.ResponseWriter, r *http.Request) {
 	// Similar to handleAuthStart, but always forces consent to get new scopes
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if !ms.validQueryCSRF(r) {
+	if !app.validQueryCSRF(r) {
 		http.Error(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
@@ -330,23 +284,20 @@ func (ms *ManageServer) handleAuthUpgrade(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	creds, err := readClientCredentials(ms.client)
+	creds, err := app.deps.ReadCredentials(app.client)
 	if err != nil {
 		http.Error(w, "OAuth credentials not configured. Run: gog auth credentials <file>", http.StatusInternalServerError)
 		return
 	}
 
-	state, err := randomStateFn()
+	state, codeVerifier, err := app.newOAuthState()
 	if err != nil {
 		http.Error(w, "Failed to generate state", http.StatusInternalServerError)
 		return
 	}
 
-	codeVerifier := generateVerifierFn()
-	ms.addOAuthState(state, codeVerifier)
-
 	// Use requested manage services (exclude Keep)
-	services := manageServices(ms.opts.Services)
+	services := manageServices(app.opts.Services)
 
 	scopes, err := ScopesForManage(services)
 	if err != nil {
@@ -354,13 +305,11 @@ func (ms *ManageServer) handleAuthUpgrade(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	redirectURI := resolveServerRedirectURI(ms.listener, ms.opts.RedirectURI)
-
 	cfg := oauth2.Config{
 		ClientID:     creds.ClientID,
 		ClientSecret: creds.ClientSecret,
-		Endpoint:     oauthEndpoint,
-		RedirectURL:  redirectURI,
+		Endpoint:     app.deps.OAuthEndpoint,
+		RedirectURL:  app.opts.RedirectURI,
 		Scopes:       scopes,
 	}
 
@@ -373,7 +322,7 @@ func (ms *ManageServer) handleAuthUpgrade(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
-func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+func (app *ManagerApplication) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -385,7 +334,7 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	codeVerifier, ok := ms.consumeOAuthState(q.Get("state"))
+	codeVerifier, ok := app.consumeOAuthState(q.Get("state"))
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
 		renderErrorPage(w, "State mismatch - possible CSRF attack. Please try again.")
@@ -408,7 +357,7 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	creds, err := readClientCredentials(ms.client)
+	creds, err := app.deps.ReadCredentials(app.client)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		renderErrorPage(w, "Failed to read credentials")
@@ -416,7 +365,7 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	services := manageServices(ms.opts.Services)
+	services := manageServices(app.opts.Services)
 
 	scopes, err := ScopesForManage(services)
 	if err != nil {
@@ -426,13 +375,11 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	redirectURI := resolveServerRedirectURI(ms.listener, ms.opts.RedirectURI)
-
 	cfg := oauth2.Config{
 		ClientID:     creds.ClientID,
 		ClientSecret: creds.ClientSecret,
-		Endpoint:     oauthEndpoint,
-		RedirectURL:  redirectURI,
+		Endpoint:     app.deps.OAuthEndpoint,
+		RedirectURL:  app.opts.RedirectURI,
 		Scopes:       scopes,
 	}
 
@@ -454,12 +401,7 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	fetchIdentity := ms.fetchIdentity
-	if fetchIdentity == nil {
-		fetchIdentity = fetchUserIdentityDefault
-	}
-
-	identity, err := fetchIdentity(ctx, tok)
+	identity, err := app.deps.FetchIdentity(ctx, tok)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		renderErrorPage(w, "Failed to fetch user email: "+err.Error())
@@ -468,22 +410,11 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 	}
 	email := identity.Email
 
-	// Pre-flight: ensure keychain is accessible before storing token
-	needKeychain, err := shouldEnsureKeychainAccess()
-	if err != nil {
+	if keychainErr := app.deps.EnsureKeychainAccess(ctx); keychainErr != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		renderErrorPage(w, "Failed to resolve keyring backend: "+err.Error())
+		renderErrorPage(w, "Keychain is locked: "+keychainErr.Error())
 
 		return
-	}
-
-	if needKeychain {
-		if keychainErr := ensureKeychainAccess(); keychainErr != nil { //nolint:contextcheck,nolintlint // keychain ops don't use context; nolint unused on non-Darwin
-			w.WriteHeader(http.StatusInternalServerError)
-			renderErrorPage(w, "Keychain is locked: "+keychainErr.Error())
-
-			return
-		}
 	}
 
 	serviceNames := make([]string, 0, len(services))
@@ -491,7 +422,7 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		serviceNames = append(serviceNames, string(svc))
 	}
 
-	migratedEmail, err := FindStoredSubjectIdentityEmail(ms.store, ms.client, identity)
+	migratedEmail, err := FindStoredSubjectIdentityEmail(app.deps.Tokens, app.client, identity)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		renderErrorPage(w, "Failed to inspect stored token: "+err.Error())
@@ -499,7 +430,7 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := ms.store.SetToken(ms.client, email, secrets.Token{
+	if err := app.deps.Tokens.SetToken(app.client, email, secrets.Token{
 		Subject:      identity.Subject,
 		Email:        email,
 		Services:     serviceNames,
@@ -513,30 +444,35 @@ func (ms *ManageServer) handleOAuthCallback(w http.ResponseWriter, r *http.Reque
 	}
 
 	if migratedEmail != "" {
-		if err := MigrateStoredEmailReferences(ms.store, ms.client, migratedEmail, email); err != nil {
+		if err := MigrateStoredEmailReferences(
+			app.deps.Tokens,
+			app.deps.UpdateEmailReferences,
+			app.client,
+			migratedEmail,
+			email,
+		); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			renderErrorPage(w, "Failed to migrate stored token references: "+err.Error())
 
 			return
 		}
 
-		if err := DeleteStoredEmailAlias(ms.store, ms.client, migratedEmail); err != nil {
-			slog.Warn("delete migrated token alias failed", "old_email", migratedEmail, "new_email", email, "client", ms.client, "err", err)
+		if err := DeleteStoredEmailAlias(app.deps.Tokens, app.client, migratedEmail); err != nil {
+			slog.Warn("delete migrated token alias failed", "old_email", migratedEmail, "new_email", email, "client", app.client, "err", err)
 		}
 	}
 
-	// Render success page with the new template
 	w.WriteHeader(http.StatusOK)
-	renderSuccessPageWithDetailsAndCSRF(w, email, serviceNames, ms.csrfToken)
+	app.renderSuccessPage(w, email, serviceNames)
 }
 
-func (ms *ManageServer) handleSetDefault(w http.ResponseWriter, r *http.Request) {
+func (app *ManagerApplication) handleSetDefault(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if r.Header.Get("X-CSRF-Token") != ms.csrfToken {
+	if r.Header.Get("X-CSRF-Token") != app.csrfToken {
 		writeJSONError(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
@@ -551,12 +487,12 @@ func (ms *ManageServer) handleSetDefault(w http.ResponseWriter, r *http.Request)
 	}
 
 	email := normalizeEmail(req.Email)
-	if !ms.accountExists(email) {
+	if !app.accountExists(email) {
 		writeJSONError(w, "Account not found", http.StatusBadRequest)
 		return
 	}
 
-	if err := ms.store.SetDefaultAccount(ms.client, email); err != nil {
+	if err := app.deps.Tokens.SetDefaultAccount(app.client, email); err != nil {
 		writeJSONError(w, "Failed to set default account", http.StatusInternalServerError)
 		return
 	}
@@ -564,13 +500,13 @@ func (ms *ManageServer) handleSetDefault(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, map[string]any{"success": true})
 }
 
-func (ms *ManageServer) handleRemoveAccount(w http.ResponseWriter, r *http.Request) {
+func (app *ManagerApplication) handleRemoveAccount(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if r.Header.Get("X-CSRF-Token") != ms.csrfToken {
+	if r.Header.Get("X-CSRF-Token") != app.csrfToken {
 		writeJSONError(w, "Invalid CSRF token", http.StatusForbidden)
 		return
 	}
@@ -585,13 +521,13 @@ func (ms *ManageServer) handleRemoveAccount(w http.ResponseWriter, r *http.Reque
 	}
 
 	email := normalizeEmail(req.Email)
-	if err := ms.store.DeleteToken(ms.client, email); err != nil {
+	if err := app.deps.Tokens.DeleteToken(app.client, email); err != nil {
 		writeJSONError(w, "Failed to remove account", http.StatusInternalServerError)
 		return
 	}
 
-	if defaultEmail, err := ms.store.GetDefaultAccount(ms.client); err == nil && normalizeEmail(defaultEmail) == email {
-		if err := ms.resetDefaultAfterRemoval(email); err != nil {
+	if defaultEmail, err := app.deps.Tokens.GetDefaultAccount(app.client); err == nil && normalizeEmail(defaultEmail) == email {
+		if err := app.resetDefaultAfterRemoval(email); err != nil {
 			writeJSONError(w, "Failed to update default account", http.StatusInternalServerError)
 			return
 		}
@@ -600,66 +536,61 @@ func (ms *ManageServer) handleRemoveAccount(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, map[string]any{"success": true})
 }
 
-func (ms *ManageServer) validQueryCSRF(r *http.Request) bool {
-	return ms.csrfToken != "" && r.URL.Query().Get("csrf") == ms.csrfToken
+func (app *ManagerApplication) validQueryCSRF(r *http.Request) bool {
+	return app.csrfToken != "" && r.URL.Query().Get("csrf") == app.csrfToken
 }
 
 type defaultAccountDeleter interface {
 	DeleteDefaultAccount(client string) error
 }
 
-func (ms *ManageServer) addOAuthState(state string, codeVerifier string) {
-	ms.oauthMu.Lock()
-	defer ms.oauthMu.Unlock()
+func (app *ManagerApplication) newOAuthState() (string, string, error) {
+	app.randomMu.Lock()
+	defer app.randomMu.Unlock()
 
-	ms.oauthState = state
-	ms.oauthVerifier = codeVerifier
-
-	if ms.oauthStates == nil {
-		ms.oauthStates = make(map[string]string)
+	state, err := generateRandomBase64(app.deps.Random, 32)
+	if err != nil {
+		return "", "", fmt.Errorf("generate OAuth state: %w", err)
 	}
 
-	ms.oauthStates[state] = codeVerifier
+	codeVerifier, err := generateRandomBase64(app.deps.Random, 32)
+	if err != nil {
+		return "", "", fmt.Errorf("generate PKCE verifier: %w", err)
+	}
+
+	app.addOAuthState(state, codeVerifier)
+
+	return state, codeVerifier, nil
 }
 
-func (ms *ManageServer) consumeOAuthState(state string) (string, bool) {
-	ms.oauthMu.Lock()
-	defer ms.oauthMu.Unlock()
+func (app *ManagerApplication) addOAuthState(state string, codeVerifier string) {
+	app.oauthMu.Lock()
+	defer app.oauthMu.Unlock()
+	app.oauthStates[state] = codeVerifier
+}
 
-	if ms.oauthStates != nil {
-		if codeVerifier, ok := ms.oauthStates[state]; ok {
-			delete(ms.oauthStates, state)
+func (app *ManagerApplication) consumeOAuthState(state string) (string, bool) {
+	app.oauthMu.Lock()
+	defer app.oauthMu.Unlock()
 
-			if state == ms.oauthState {
-				ms.oauthState = ""
-				ms.oauthVerifier = ""
-			}
-
-			return codeVerifier, true
-		}
-
+	codeVerifier, ok := app.oauthStates[state]
+	if !ok {
 		return "", false
 	}
 
-	if state == "" || state != ms.oauthState {
-		return "", false
-	}
-
-	ms.oauthState = ""
-	codeVerifier := ms.oauthVerifier
-	ms.oauthVerifier = ""
+	delete(app.oauthStates, state)
 
 	return codeVerifier, true
 }
 
-func (ms *ManageServer) accountExists(email string) bool {
-	tokens, err := ms.store.ListTokens()
+func (app *ManagerApplication) accountExists(email string) bool {
+	tokens, err := app.deps.Tokens.ListTokens()
 	if err != nil {
 		return false
 	}
 
 	for _, tok := range tokens {
-		if tok.Client == ms.client && normalizeEmail(tok.Email) == email {
+		if tok.Client == app.client && normalizeEmail(tok.Email) == email {
 			return true
 		}
 	}
@@ -667,16 +598,16 @@ func (ms *ManageServer) accountExists(email string) bool {
 	return false
 }
 
-func (ms *ManageServer) resetDefaultAfterRemoval(removedEmail string) error {
-	tokens, err := ms.store.ListTokens()
+func (app *ManagerApplication) resetDefaultAfterRemoval(removedEmail string) error {
+	tokens, err := app.deps.Tokens.ListTokens()
 	if err != nil {
 		return fmt.Errorf("list accounts after removing default: %w", err)
 	}
 
 	for _, tok := range tokens {
 		email := normalizeEmail(tok.Email)
-		if tok.Client == ms.client && email != "" && email != removedEmail {
-			if err := ms.store.SetDefaultAccount(ms.client, email); err != nil {
+		if tok.Client == app.client && email != "" && email != removedEmail {
+			if err := app.deps.Tokens.SetDefaultAccount(app.client, email); err != nil {
 				return fmt.Errorf("set replacement default account: %w", err)
 			}
 
@@ -684,8 +615,8 @@ func (ms *ManageServer) resetDefaultAfterRemoval(removedEmail string) error {
 		}
 	}
 
-	if deleter, ok := ms.store.(defaultAccountDeleter); ok {
-		if err := deleter.DeleteDefaultAccount(ms.client); err != nil {
+	if deleter, ok := app.deps.Tokens.(defaultAccountDeleter); ok {
+		if err := deleter.DeleteDefaultAccount(app.client); err != nil {
 			return fmt.Errorf("delete default account: %w", err)
 		}
 	}
@@ -708,7 +639,8 @@ func tokenListHasEmail(tokens []secrets.Token, email string) bool {
 	return false
 }
 
-func fetchUserIdentityDefault(ctx context.Context, tok *oauth2.Token) (Identity, error) {
+// FetchUserIdentity resolves an OAuth token to a stable Google identity.
+func FetchUserIdentity(ctx context.Context, tok *oauth2.Token) (Identity, error) {
 	if tok == nil {
 		return Identity{}, errMissingToken
 	}
@@ -727,7 +659,7 @@ func fetchUserIdentityDefault(ctx context.Context, tok *oauth2.Token) (Identity,
 }
 
 func fetchUserEmailDefault(ctx context.Context, tok *oauth2.Token) (string, error) {
-	identity, err := fetchUserIdentityDefault(ctx, tok)
+	identity, err := FetchUserIdentity(ctx, tok)
 	if err != nil {
 		return "", err
 	}
@@ -853,12 +785,25 @@ func readHTTPBodySnippet(r io.Reader, limit int64) string {
 }
 
 func generateCSRFToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("generate csrf token: %w", err)
+	return generateRandomHex(rand.Reader, 32)
+}
+
+func generateRandomHex(random io.Reader, size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := io.ReadFull(random, b); err != nil {
+		return "", fmt.Errorf("read random bytes: %w", err)
 	}
 
 	return hex.EncodeToString(b), nil
+}
+
+func generateRandomBase64(random io.Reader, size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := io.ReadFull(random, b); err != nil {
+		return "", fmt.Errorf("read random bytes: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 func writeJSON(w http.ResponseWriter, data any) {
@@ -884,7 +829,20 @@ func renderSuccessPageWithDetailsAndCSRF(w http.ResponseWriter, email string, se
 		return
 	}
 
-	// Show available user services for connected vs missing
+	renderSuccessTemplate(w, tmpl, email, services, csrfToken)
+}
+
+func (app *ManagerApplication) renderSuccessPage(w http.ResponseWriter, email string, services []string) {
+	renderSuccessTemplate(w, app.successPage, email, services, app.csrfToken)
+}
+
+func renderSuccessTemplate(
+	w http.ResponseWriter,
+	tmpl *template.Template,
+	email string,
+	services []string,
+	csrfToken string,
+) {
 	userServices := UserServices()
 	allServices := make([]string, 0, len(userServices))
 

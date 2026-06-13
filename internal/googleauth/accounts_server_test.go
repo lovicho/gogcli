@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,9 +26,123 @@ import (
 )
 
 var (
-	errBoom          = errors.New("boom")
-	errShouldNotCall = errors.New("should not call")
+	errBoom               = errors.New("boom")
+	errBrowserUnavailable = errors.New("browser unavailable")
 )
+
+func newTestManagerApplication(
+	t *testing.T,
+	opts ManagerOptions,
+	deps ManagerDependencies,
+) *ManagerApplication {
+	t.Helper()
+
+	if deps.Tokens == nil {
+		deps.Tokens = &fakeStore{}
+	}
+
+	if store, ok := deps.Tokens.(*fakeStore); ok {
+		for i := range store.tokens {
+			if store.tokens[i].Client == "" {
+				store.tokens[i].Client = config.DefaultClientName
+			}
+		}
+	}
+
+	if deps.ReadCredentials == nil {
+		deps.ReadCredentials = func(string) (config.ClientCredentials, error) {
+			return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
+		}
+	}
+
+	if deps.UpdateEmailReferences == nil {
+		deps.UpdateEmailReferences = func(string, string) error { return nil }
+	}
+
+	if deps.FetchIdentity == nil {
+		deps.FetchIdentity = func(context.Context, *oauth2.Token) (Identity, error) {
+			return Identity{Email: "me@example.com"}, nil
+		}
+	}
+
+	if deps.EnsureKeychainAccess == nil {
+		deps.EnsureKeychainAccess = func(context.Context) error { return nil }
+	}
+
+	if deps.Random == nil {
+		deps.Random = bytes.NewReader(make([]byte, 4096))
+	}
+
+	if deps.OAuthEndpoint.AuthURL == "" {
+		deps.OAuthEndpoint = oauth2.Endpoint{
+			AuthURL:  "https://example.com/auth",
+			TokenURL: "https://example.com/token",
+		}
+	}
+
+	if opts.RedirectURI == "" {
+		opts.RedirectURI = "http://127.0.0.1:8080/oauth2/callback"
+	}
+
+	app, err := NewManagerApplication(opts, deps)
+	if err != nil {
+		t.Fatalf("NewManagerApplication: %v", err)
+	}
+
+	return app
+}
+
+func newTestManagerLauncher(
+	t *testing.T,
+	edit func(*ManagerLauncherDependencies),
+) *ManagerLauncher {
+	t.Helper()
+
+	deps := ManagerLauncherDependencies{
+		OpenTokens: func(context.Context) (secrets.Store, error) {
+			return &fakeStore{}, nil
+		},
+		ReadCredentials: func(context.Context, string) (config.ClientCredentials, error) {
+			return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
+		},
+		UpdateEmailReferences: func(context.Context, string, string) error { return nil },
+		FetchIdentity:         FetchUserIdentity,
+		EnsureKeychainAccess:  func(context.Context) error { return nil },
+		OpenBrowser:           func(context.Context, string) error { return nil },
+		Out:                   io.Discard,
+		Listen: func(ctx context.Context, network, address string) (net.Listener, error) {
+			return (&net.ListenConfig{}).Listen(ctx, network, address)
+		},
+		Random: bytes.NewReader(make([]byte, 4096)),
+		OAuthEndpoint: oauth2.Endpoint{
+			AuthURL:  "https://example.com/auth",
+			TokenURL: "https://example.com/token",
+		},
+	}
+	if edit != nil {
+		edit(&deps)
+	}
+
+	launcher, err := NewManagerLauncher(deps)
+	if err != nil {
+		t.Fatalf("NewManagerLauncher: %v", err)
+	}
+
+	return launcher
+}
+
+func managerRandom(stateByte byte, verifierByte byte) (*bytes.Reader, string, string) {
+	stateBytes := bytes.Repeat([]byte{stateByte}, 32)
+	verifierBytes := bytes.Repeat([]byte{verifierByte}, 32)
+	random := make([]byte, 0, 32+len(stateBytes)+len(verifierBytes))
+	random = append(random, make([]byte, 32)...)
+	random = append(random, stateBytes...)
+	random = append(random, verifierBytes...)
+
+	return bytes.NewReader(random),
+		base64.RawURLEncoding.EncodeToString(stateBytes),
+		base64.RawURLEncoding.EncodeToString(verifierBytes)
+}
 
 type fakeStore struct {
 	tokens       []secrets.Token
@@ -112,9 +228,8 @@ func (s *fakeStore) SetDefaultAccount(client string, email string) error {
 }
 
 func TestManageServer_HandleAccountsPage(t *testing.T) {
-	ms := &ManageServer{
-		csrfToken: "csrf",
-	}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	ms.csrfToken = "csrf"
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	ms.handleAccountsPage(rr, req)
@@ -156,6 +271,58 @@ func TestManageServer_HandleAccountsPage(t *testing.T) {
 	}
 }
 
+func TestNewManagerApplicationRequiresDependencies(t *testing.T) {
+	valid := ManagerDependencies{
+		Tokens:                &fakeStore{},
+		ReadCredentials:       func(string) (config.ClientCredentials, error) { return config.ClientCredentials{}, nil },
+		UpdateEmailReferences: func(string, string) error { return nil },
+		FetchIdentity:         func(context.Context, *oauth2.Token) (Identity, error) { return Identity{}, nil },
+		EnsureKeychainAccess:  func(context.Context) error { return nil },
+		Random:                bytes.NewReader(make([]byte, 32)),
+		OAuthEndpoint:         oauth2.Endpoint{AuthURL: "https://example.com/auth", TokenURL: "https://example.com/token"},
+	}
+	opts := ManagerOptions{RedirectURI: "http://127.0.0.1/oauth2/callback"}
+
+	tests := []struct {
+		name string
+		edit func(*ManagerOptions, *ManagerDependencies)
+		want error
+	}{
+		{name: "tokens", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.Tokens = nil }, want: errManagerTokensRequired},
+		{name: "credentials", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.ReadCredentials = nil }, want: errCredentialsReaderRequired},
+		{name: "updater", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.UpdateEmailReferences = nil }, want: errEmailReferenceUpdaterRequired},
+		{name: "identity", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.FetchIdentity = nil }, want: errManagerIdentityRequired},
+		{name: "keychain", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.EnsureKeychainAccess = nil }, want: errManagerKeychainRequired},
+		{name: "random", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.Random = nil }, want: errManagerRandomRequired},
+		{name: "endpoint", edit: func(_ *ManagerOptions, deps *ManagerDependencies) { deps.OAuthEndpoint = oauth2.Endpoint{} }, want: errManagerOAuthEndpointInvalid},
+		{name: "redirect", edit: func(opts *ManagerOptions, _ *ManagerDependencies) { opts.RedirectURI = "" }, want: errManagerRedirectURIRequired},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotOpts := opts
+			gotDeps := valid
+			tc.edit(&gotOpts, &gotDeps)
+
+			_, err := NewManagerApplication(gotOpts, gotDeps)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestManagerApplicationHandlerRoutes(t *testing.T) {
+	app := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/accounts", nil)
+	app.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
 func TestManageServer_HandleListAccounts_DefaultFirst(t *testing.T) {
 	store := &fakeStore{
 		tokens: []secrets.Token{
@@ -163,10 +330,8 @@ func TestManageServer_HandleListAccounts_DefaultFirst(t *testing.T) {
 			{Email: "c@d.com", Services: []string{"drive"}},
 		},
 	}
-	ms := &ManageServer{
-		csrfToken: "csrf",
-		store:     store,
-	}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/accounts", nil)
@@ -196,10 +361,8 @@ func TestManageServer_HandleListAccounts_DefaultExplicit(t *testing.T) {
 		},
 		defaultEmail: "c@d.com",
 	}
-	ms := &ManageServer{
-		csrfToken: "csrf",
-		store:     store,
-	}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/accounts", nil)
@@ -223,10 +386,8 @@ func TestManageServer_HandleListAccounts_StaleDefaultFallsBackToFirst(t *testing
 		tokens:       []secrets.Token{{Email: "a@b.com"}, {Email: "c@d.com"}},
 		defaultEmail: "missing@example.com",
 	}
-	ms := &ManageServer{
-		csrfToken: "csrf",
-		store:     store,
-	}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/accounts", nil)
@@ -245,7 +406,7 @@ func TestManageServer_HandleListAccounts_StaleDefaultFallsBackToFirst(t *testing
 }
 
 func TestManageServer_OAuthStatesAreIndependent(t *testing.T) {
-	ms := &ManageServer{}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
 	ms.addOAuthState("state1", "verifier1")
 	ms.addOAuthState("state2", "verifier2")
 
@@ -261,25 +422,48 @@ func TestManageServer_OAuthStatesAreIndependent(t *testing.T) {
 		t.Fatalf("expected second state accepted")
 	}
 
-	if ms.oauthState != "" || ms.oauthVerifier != "" {
-		t.Fatalf("expected consumed current verifier to be cleared, got state=%q verifier=%q", ms.oauthState, ms.oauthVerifier)
+	if len(ms.oauthStates) != 0 {
+		t.Fatalf("expected all states consumed, got %#v", ms.oauthStates)
 	}
 }
 
-func TestManageServer_HandleOAuthCallback_ErrorAndValidation(t *testing.T) {
-	ms := &ManageServer{
-		csrfToken:     "csrf",
-		oauthState:    "state1",
-		oauthVerifier: testCodeVerifier,
-	}
-	// Need a listener for redirectURI generation even though we don't reach exchange.
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+func TestManagerApplicationOAuthStateRegistryConcurrent(t *testing.T) {
+	app := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	const count = 100
+
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			state := strconv.Itoa(i)
+			app.addOAuthState(state, "verifier-"+state)
+		}()
 	}
 
-	t.Cleanup(func() { _ = ln.Close() })
-	ms.listener = ln
+	wg.Wait()
+
+	for i := range count {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			state := strconv.Itoa(i)
+			if verifier, ok := app.consumeOAuthState(state); !ok || verifier != "verifier-"+state {
+				t.Errorf("state %s: verifier=%q ok=%v", state, verifier, ok)
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+func TestManageServer_HandleOAuthCallback_ErrorAndValidation(t *testing.T) {
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	ms.csrfToken = "csrf"
+	ms.addOAuthState("state1", testCodeVerifier)
 
 	t.Run("cancelled", func(t *testing.T) {
 		rr := httptest.NewRecorder()
@@ -316,10 +500,8 @@ func TestManageServer_HandleSetDefault_AndRemove(t *testing.T) {
 	store := &fakeStore{
 		tokens: []secrets.Token{{Email: "a@b.com"}},
 	}
-	ms := &ManageServer{
-		csrfToken: "csrf",
-		store:     store,
-	}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 
 	t.Run("set-default csrf", func(t *testing.T) {
 		rr := httptest.NewRecorder()
@@ -450,7 +632,8 @@ func TestManageServer_HandleRemoveAccountResetsDefault(t *testing.T) {
 		tokens:       []secrets.Token{{Email: "a@b.com"}, {Email: "c@d.com"}},
 		defaultEmail: "a@b.com",
 	}
-	ms := &ManageServer{csrfToken: "csrf", store: store}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/remove-account", bytes.NewReader([]byte(`{"email":"a@b.com"}`)))
@@ -471,7 +654,8 @@ func TestManageServer_HandleRemoveAccountClearsLastDefault(t *testing.T) {
 		tokens:       []secrets.Token{{Email: "a@b.com"}},
 		defaultEmail: "a@b.com",
 	}
-	ms := &ManageServer{csrfToken: "csrf", store: store}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/remove-account", bytes.NewReader([]byte(`{"email":"a@b.com"}`)))
@@ -482,8 +666,8 @@ func TestManageServer_HandleRemoveAccountClearsLastDefault(t *testing.T) {
 		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
 	}
 
-	if !store.deleteDefault || store.deleteDefaultCalled != "" {
-		t.Fatalf("expected default cleared for empty client, called=%v client=%q", store.deleteDefault, store.deleteDefaultCalled)
+	if !store.deleteDefault || store.deleteDefaultCalled != config.DefaultClientName {
+		t.Fatalf("expected default cleared for default client, called=%v client=%q", store.deleteDefault, store.deleteDefaultCalled)
 	}
 
 	if store.defaultEmail != "" {
@@ -493,7 +677,8 @@ func TestManageServer_HandleRemoveAccountClearsLastDefault(t *testing.T) {
 
 func TestManageServer_HandleListAccounts_Error(t *testing.T) {
 	store := &fakeStore{listErr: errBoom}
-	ms := &ManageServer{csrfToken: "csrf", store: store}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{Tokens: store})
+	ms.csrfToken = "csrf"
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/accounts", nil)
 	ms.handleListAccounts(rr, req)
@@ -536,33 +721,15 @@ func TestRenderSuccessPageWithDetails(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthStart(t *testing.T) {
-	origRead := readClientCredentials
-	origState := randomStateFn
-	origEndpoint := oauthEndpoint
-	origVerifier := generateVerifierFn
-
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		randomStateFn = origState
-		oauthEndpoint = origEndpoint
-		generateVerifierFn = origVerifier
+	random, expectedState, expectedVerifier := managerRandom(1, 2)
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{
+		Random: random,
+		OAuthEndpoint: oauth2.Endpoint{
+			AuthURL:  "http://example.com/auth",
+			TokenURL: "http://example.com/token",
+		},
 	})
-
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
-	}
-	randomStateFn = func() (string, error) { return "state123", nil }
-	generateVerifierFn = func() string { return testCodeVerifier }
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: "http://example.com/token"}
-
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	t.Cleanup(func() { _ = ln.Close() })
-
-	ms := &ManageServer{listener: ln, csrfToken: "csrf"}
+	ms.csrfToken = "csrf"
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/start?csrf=csrf", nil)
 	ms.handleAuthStart(rr, req)
@@ -581,23 +748,19 @@ func TestManageServer_HandleAuthStart(t *testing.T) {
 		t.Fatalf("unexpected host: %q", parsed.Host)
 	}
 
-	if state := parsed.Query().Get("state"); state != "state123" {
+	if state := parsed.Query().Get("state"); state != expectedState {
 		t.Fatalf("unexpected state: %q", state)
 	}
 
-	if ms.oauthState != "state123" {
-		t.Fatalf("expected oauthState set")
-	}
-
-	if ms.oauthVerifier != testCodeVerifier {
-		t.Fatalf("expected oauthVerifier set")
+	if verifier := ms.oauthStates[expectedState]; verifier != expectedVerifier {
+		t.Fatalf("unexpected stored verifier: %q", verifier)
 	}
 
 	if got := parsed.Query().Get("code_challenge_method"); got != "S256" {
 		t.Fatalf("expected S256 challenge method, got %q", got)
 	}
 
-	if got, want := parsed.Query().Get("code_challenge"), pkceChallengeForTest(); got != want {
+	if got, want := parsed.Query().Get("code_challenge"), oauth2.S256ChallengeFromVerifier(expectedVerifier); got != want {
 		t.Fatalf("unexpected code_challenge: got %q want %q", got, want)
 	}
 
@@ -633,34 +796,17 @@ func TestManageServer_HandleAuthStart(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthStart_RedirectURIOverride(t *testing.T) {
-	origRead := readClientCredentials
-	origState := randomStateFn
-	origEndpoint := oauthEndpoint
-
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		randomStateFn = origState
-		oauthEndpoint = origEndpoint
+	random, _, _ := managerRandom(1, 2)
+	ms := newTestManagerApplication(t, ManagerOptions{
+		RedirectURI: "https://gog.example.com/oauth2/callback",
+	}, ManagerDependencies{
+		Random: random,
+		OAuthEndpoint: oauth2.Endpoint{
+			AuthURL:  "http://example.com/auth",
+			TokenURL: "http://example.com/token",
+		},
 	})
-
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
-	}
-	randomStateFn = func() (string, error) { return "state123", nil }
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: "http://example.com/token"}
-
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	t.Cleanup(func() { _ = ln.Close() })
-
-	ms := &ManageServer{
-		listener:  ln,
-		csrfToken: "csrf",
-		opts:      ManageServerOptions{RedirectURI: "https://gog.example.com/oauth2/callback"},
-	}
+	ms.csrfToken = "csrf"
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/start?csrf=csrf", nil)
 	ms.handleAuthStart(rr, req)
@@ -678,17 +824,14 @@ func TestManageServer_HandleAuthStart_RedirectURIOverride(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthStart_CredentialsError(t *testing.T) {
-	origRead := readClientCredentials
-
-	t.Cleanup(func() { readClientCredentials = origRead })
-
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{}, errBoom
-	}
-
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/start?csrf=csrf", nil)
-	ms := &ManageServer{csrfToken: "csrf"}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{
+		ReadCredentials: func(string) (config.ClientCredentials, error) {
+			return config.ClientCredentials{}, errBoom
+		},
+	})
+	ms.csrfToken = "csrf"
 	ms.handleAuthStart(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
@@ -697,7 +840,8 @@ func TestManageServer_HandleAuthStart_CredentialsError(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthStart_RejectsBadRequest(t *testing.T) {
-	ms := &ManageServer{csrfToken: "csrf"}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	ms.csrfToken = "csrf"
 
 	tests := []struct {
 		name   string
@@ -724,18 +868,6 @@ func TestManageServer_HandleAuthStart_RejectsBadRequest(t *testing.T) {
 }
 
 func TestManageServer_HandleOAuthCallback_Success(t *testing.T) {
-	origRead := readClientCredentials
-	origEndpoint := oauthEndpoint
-
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		oauthEndpoint = origEndpoint
-	})
-
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
-	}
-
 	// Mock userinfo endpoint
 	userinfoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/oauth2/v2/userinfo" {
@@ -781,26 +913,17 @@ func TestManageServer_HandleOAuthCallback_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL}
-
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	t.Cleanup(func() { _ = ln.Close() })
-
 	store := &fakeStore{}
-	ms := &ManageServer{
-		oauthState:    "state1",
-		oauthVerifier: testCodeVerifier,
-		listener:      ln,
-		store:         store,
-		fetchIdentity: func(ctx context.Context, tok *oauth2.Token) (Identity, error) {
+	ms := newTestManagerApplication(t, ManagerOptions{
+		Services: []Service{ServiceGmail},
+	}, ManagerDependencies{
+		Tokens: store,
+		FetchIdentity: func(ctx context.Context, tok *oauth2.Token) (Identity, error) {
 			return fetchUserIdentityWithURL(ctx, tok.AccessToken, userinfoSrv.URL+"/oauth2/v2/userinfo")
 		},
-		opts: ManageServerOptions{Services: []Service{ServiceGmail}},
-	}
+		OAuthEndpoint: oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL},
+	})
+	ms.addOAuthState("state1", testCodeVerifier)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/oauth2/callback?state=state1&code=abc", nil)
@@ -827,28 +950,6 @@ func TestManageServer_HandleOAuthCallback_MigratesAndDeletesAliasAfterSetToken(t
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	origRead := readClientCredentials
-	origEndpoint := oauthEndpoint
-	origResolve := resolveKeyringBackendInfo
-	origEnsure := ensureKeychainAccess
-
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		oauthEndpoint = origEndpoint
-		resolveKeyringBackendInfo = origResolve
-		ensureKeychainAccess = origEnsure
-	})
-
-	resolveKeyringBackendInfo = func() (secrets.KeyringBackendInfo, error) {
-		return secrets.KeyringBackendInfo{Value: "file", Source: "env"}, nil
-	}
-	ensureKeychainAccess = func() error {
-		return errShouldNotCall
-	}
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
-	}
-
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -860,15 +961,6 @@ func TestManageServer_HandleOAuthCallback_MigratesAndDeletesAliasAfterSetToken(t
 	}))
 	defer srv.Close()
 
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL}
-
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	t.Cleanup(func() { _ = ln.Close() })
-
 	store := &fakeStore{
 		tokens: []secrets.Token{{
 			Client:       config.DefaultClientName,
@@ -877,17 +969,25 @@ func TestManageServer_HandleOAuthCallback_MigratesAndDeletesAliasAfterSetToken(t
 			RefreshToken: "old-refresh",
 		}},
 	}
-	ms := &ManageServer{
-		oauthState:    "state1",
-		oauthVerifier: testCodeVerifier,
-		listener:      ln,
-		store:         store,
-		fetchIdentity: func(context.Context, *oauth2.Token) (Identity, error) {
+
+	configStore := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
+	if writeErr := configStore.Write(config.File{
+		AccountAliases: map[string]string{"work": "old@example.com"},
+	}); writeErr != nil {
+		t.Fatalf("write config: %v", writeErr)
+	}
+	ms := newTestManagerApplication(t, ManagerOptions{
+		Services: []Service{ServiceGmail},
+		Client:   config.DefaultClientName,
+	}, ManagerDependencies{
+		Tokens: store,
+		FetchIdentity: func(context.Context, *oauth2.Token) (Identity, error) {
 			return Identity{Subject: "sub-123", Email: "new@example.com"}, nil
 		},
-		opts:   ManageServerOptions{Services: []Service{ServiceGmail}},
-		client: config.DefaultClientName,
-	}
+		UpdateEmailReferences: configStore.MigrateAccountEmailReferences,
+		OAuthEndpoint:         oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL},
+	})
+	ms.addOAuthState("state1", testCodeVerifier)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/oauth2/callback?state=state1&code=abc", nil)
@@ -901,10 +1001,21 @@ func TestManageServer_HandleOAuthCallback_MigratesAndDeletesAliasAfterSetToken(t
 	if len(store.ops) != len(wantOps) || store.ops[0] != wantOps[0] || store.ops[1] != wantOps[1] {
 		t.Fatalf("unexpected store ops: %#v", store.ops)
 	}
+
+	cfg, err := configStore.Read()
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	if cfg.AccountAliases["work"] != "new@example.com" {
+		t.Fatalf("account aliases = %#v", cfg.AccountAliases)
+	}
 }
 
 func TestStartManageServerRejectsNonLoopbackListenAddr(t *testing.T) {
-	err := StartManageServer(context.Background(), ManageServerOptions{
+	launcher := newTestManagerLauncher(t, nil)
+
+	err := launcher.Start(context.Background(), ManageServerOptions{
 		ListenAddr: "0.0.0.0:0",
 		Timeout:    50 * time.Millisecond,
 	})
@@ -917,30 +1028,96 @@ func TestStartManageServerRejectsNonLoopbackListenAddr(t *testing.T) {
 	}
 }
 
-func TestManageServer_HandleOAuthCallback_FileBackendSkipsKeychain(t *testing.T) {
-	origRead := readClientCredentials
-	origEndpoint := oauthEndpoint
-	origResolve := resolveKeyringBackendInfo
-	origEnsure := ensureKeychainAccess
+func TestNewManagerLauncherRequiresDependencies(t *testing.T) {
+	valid := ManagerLauncherDependencies{
+		OpenTokens: func(context.Context) (secrets.Store, error) { return &fakeStore{}, nil },
+		ReadCredentials: func(context.Context, string) (config.ClientCredentials, error) {
+			return config.ClientCredentials{}, nil
+		},
+		UpdateEmailReferences: func(context.Context, string, string) error { return nil },
+		FetchIdentity:         FetchUserIdentity,
+		EnsureKeychainAccess:  func(context.Context) error { return nil },
+		OpenBrowser:           func(context.Context, string) error { return nil },
+		Out:                   io.Discard,
+		Listen: func(ctx context.Context, network, address string) (net.Listener, error) {
+			return (&net.ListenConfig{}).Listen(ctx, network, address)
+		},
+		Random:        bytes.NewReader(make([]byte, 32)),
+		OAuthEndpoint: oauth2.Endpoint{AuthURL: "https://example.com/auth", TokenURL: "https://example.com/token"},
+	}
 
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		oauthEndpoint = origEndpoint
-		resolveKeyringBackendInfo = origResolve
-		ensureKeychainAccess = origEnsure
+	tests := []struct {
+		name string
+		edit func(*ManagerLauncherDependencies)
+		want error
+	}{
+		{name: "tokens", edit: func(deps *ManagerLauncherDependencies) { deps.OpenTokens = nil }, want: errManagerTokenOpenerRequired},
+		{name: "credentials", edit: func(deps *ManagerLauncherDependencies) { deps.ReadCredentials = nil }, want: errCredentialsReaderRequired},
+		{name: "updater", edit: func(deps *ManagerLauncherDependencies) { deps.UpdateEmailReferences = nil }, want: errManagerConfigUpdateRequired},
+		{name: "identity", edit: func(deps *ManagerLauncherDependencies) { deps.FetchIdentity = nil }, want: errManagerIdentityRequired},
+		{name: "keychain", edit: func(deps *ManagerLauncherDependencies) { deps.EnsureKeychainAccess = nil }, want: errManagerKeychainRequired},
+		{name: "browser", edit: func(deps *ManagerLauncherDependencies) { deps.OpenBrowser = nil }, want: errManagerBrowserRequired},
+		{name: "output", edit: func(deps *ManagerLauncherDependencies) { deps.Out = nil }, want: errManagerOutputRequired},
+		{name: "listener", edit: func(deps *ManagerLauncherDependencies) { deps.Listen = nil }, want: errManagerListenerRequired},
+		{name: "random", edit: func(deps *ManagerLauncherDependencies) { deps.Random = nil }, want: errManagerRandomRequired},
+		{name: "endpoint", edit: func(deps *ManagerLauncherDependencies) { deps.OAuthEndpoint = oauth2.Endpoint{} }, want: errManagerOAuthEndpointInvalid},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			deps := valid
+			tc.edit(&deps)
+
+			_, err := NewManagerLauncher(deps)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestManagerLauncherBindsApplicationDependenciesToStartContext(t *testing.T) {
+	type contextKey struct{}
+	startCtx := context.WithValue(context.Background(), contextKey{}, "start")
+	launcher := newTestManagerLauncher(t, func(deps *ManagerLauncherDependencies) {
+		deps.ReadCredentials = func(ctx context.Context, _ string) (config.ClientCredentials, error) {
+			if ctx.Value(contextKey{}) != "start" {
+				t.Fatalf("credentials context = %v", ctx.Value(contextKey{}))
+			}
+
+			return config.ClientCredentials{}, nil
+		}
+		deps.UpdateEmailReferences = func(ctx context.Context, _, _ string) error {
+			if ctx.Value(contextKey{}) != "start" {
+				t.Fatalf("updater context = %v", ctx.Value(contextKey{}))
+			}
+
+			return nil
+		}
+		deps.EnsureKeychainAccess = func(ctx context.Context) error {
+			if ctx.Value(contextKey{}) != "start" {
+				t.Fatalf("keychain context = %v", ctx.Value(contextKey{}))
+			}
+
+			return nil
+		}
 	})
 
-	resolveKeyringBackendInfo = func() (secrets.KeyringBackendInfo, error) {
-		return secrets.KeyringBackendInfo{Value: "file", Source: "env"}, nil
-	}
-	ensureKeychainAccess = func() error {
-		return errShouldNotCall
+	deps := launcher.applicationDependencies(startCtx, &fakeStore{})
+	if _, err := deps.ReadCredentials(""); err != nil {
+		t.Fatalf("ReadCredentials: %v", err)
 	}
 
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
+	if err := deps.UpdateEmailReferences("", ""); err != nil {
+		t.Fatalf("UpdateEmailReferences: %v", err)
 	}
 
+	if err := deps.EnsureKeychainAccess(context.Background()); err != nil {
+		t.Fatalf("EnsureKeychainAccess: %v", err)
+	}
+}
+
+func TestManageServer_HandleOAuthCallback_NoKeychainPreflight(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -952,26 +1129,17 @@ func TestManageServer_HandleOAuthCallback_FileBackendSkipsKeychain(t *testing.T)
 	}))
 	defer srv.Close()
 
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL}
-
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	t.Cleanup(func() { _ = ln.Close() })
-
 	store := &fakeStore{}
-	ms := &ManageServer{
-		oauthState:    "state1",
-		oauthVerifier: testCodeVerifier,
-		listener:      ln,
-		store:         store,
-		fetchIdentity: func(ctx context.Context, tok *oauth2.Token) (Identity, error) {
+	ms := newTestManagerApplication(t, ManagerOptions{
+		Services: []Service{ServiceGmail},
+	}, ManagerDependencies{
+		Tokens: store,
+		FetchIdentity: func(context.Context, *oauth2.Token) (Identity, error) {
 			return Identity{Email: "me@example.com"}, nil
 		},
-		opts: ManageServerOptions{Services: []Service{ServiceGmail}},
-	}
+		OAuthEndpoint: oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL},
+	})
+	ms.addOAuthState("state1", testCodeVerifier)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/oauth2/callback?state=state1&code=abc", nil)
@@ -987,18 +1155,6 @@ func TestManageServer_HandleOAuthCallback_FileBackendSkipsKeychain(t *testing.T)
 }
 
 func TestManageServer_HandleOAuthCallback_Success_IDTokenEmail(t *testing.T) {
-	origRead := readClientCredentials
-	origEndpoint := oauthEndpoint
-
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		oauthEndpoint = origEndpoint
-	})
-
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
-	}
-
 	idToken := strings.Join([]string{
 		base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none"}`)),
 		base64.RawURLEncoding.EncodeToString([]byte(`{"email":"me@example.com"}`)),
@@ -1017,23 +1173,20 @@ func TestManageServer_HandleOAuthCallback_Success_IDTokenEmail(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL}
-
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	t.Cleanup(func() { _ = ln.Close() })
-
 	store := &fakeStore{}
-	ms := &ManageServer{
-		oauthState:    "state1",
-		oauthVerifier: testCodeVerifier,
-		listener:      ln,
-		store:         store,
-		opts:          ManageServerOptions{Services: []Service{ServiceGmail}},
-	}
+	preflightCalled := false
+	ms := newTestManagerApplication(t, ManagerOptions{
+		Services: []Service{ServiceGmail},
+	}, ManagerDependencies{
+		Tokens: store,
+		EnsureKeychainAccess: func(context.Context) error {
+			preflightCalled = true
+			return nil
+		},
+		FetchIdentity: FetchUserIdentity,
+		OAuthEndpoint: oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: srv.URL},
+	})
+	ms.addOAuthState("state1", testCodeVerifier)
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/oauth2/callback?state=state1&code=abc", nil)
@@ -1045,6 +1198,10 @@ func TestManageServer_HandleOAuthCallback_Success_IDTokenEmail(t *testing.T) {
 
 	if store.setTokenEmail != "me@example.com" {
 		t.Fatalf("expected token stored for me@example.com, got %q", store.setTokenEmail)
+	}
+
+	if !preflightCalled {
+		t.Fatal("expected keychain preflight")
 	}
 }
 
@@ -1174,24 +1331,17 @@ func TestEmailFromIDToken(t *testing.T) {
 }
 
 func TestStartManageServer_Timeout(t *testing.T) {
-	origStore := openDefaultStore
-	origOpen := openBrowserFn
-
-	t.Cleanup(func() {
-		openDefaultStore = origStore
-		openBrowserFn = origOpen
+	var opened string
+	launcher := newTestManagerLauncher(t, func(deps *ManagerLauncherDependencies) {
+		deps.OpenBrowser = func(_ context.Context, url string) error {
+			opened = url
+			return nil
+		}
 	})
 
-	openDefaultStore = func() (secrets.Store, error) { return &fakeStore{}, nil }
-	var opened string
-	openBrowserFn = func(url string) error {
-		opened = url
-		return nil
-	}
-
 	ctx := context.Background()
-	if err := StartManageServer(ctx, ManageServerOptions{Timeout: 50 * time.Millisecond}); err != nil {
-		t.Fatalf("StartManageServer: %v", err)
+	if err := launcher.Start(ctx, ManageServerOptions{Timeout: 50 * time.Millisecond}); err != nil {
+		t.Fatalf("ManagerLauncher.Start: %v", err)
 	}
 
 	if !strings.Contains(opened, "http://127.0.0.1:") {
@@ -1199,38 +1349,81 @@ func TestStartManageServer_Timeout(t *testing.T) {
 	}
 }
 
-func TestManageServer_HandleAuthUpgrade(t *testing.T) {
-	origRead := readClientCredentials
-	origState := randomStateFn
-	origEndpoint := oauthEndpoint
-	origVerifier := generateVerifierFn
+func TestManagerLauncherRoutesOutputAndClosesListener(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	t.Cleanup(func() {
-		readClientCredentials = origRead
-		randomStateFn = origState
-		oauthEndpoint = origEndpoint
-		generateVerifierFn = origVerifier
+	var output bytes.Buffer
+	var opened string
+	client := &http.Client{Timeout: time.Second}
+	launcher := newTestManagerLauncher(t, func(deps *ManagerLauncherDependencies) {
+		deps.Out = &output
+		deps.OpenBrowser = func(browserCtx context.Context, url string) error {
+			opened = url
+
+			for _, path := range []string{"/", "/accounts"} {
+				req, err := http.NewRequestWithContext(browserCtx, http.MethodGet, url+path, nil)
+				if err != nil {
+					t.Fatalf("create GET %s: %v", path, err)
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Fatalf("GET %s: %v", path, err)
+				}
+
+				_ = resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("GET %s status = %d", path, resp.StatusCode)
+				}
+			}
+
+			cancel()
+
+			return errBrowserUnavailable
+		}
 	})
 
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{ClientID: "id", ClientSecret: "secret"}, nil
+	if err := launcher.Start(ctx, ManageServerOptions{Timeout: time.Second}); err != nil {
+		t.Fatalf("ManagerLauncher.Start: %v", err)
 	}
-	randomStateFn = func() (string, error) { return "state456", nil }
-	generateVerifierFn = func() string { return testCodeVerifier }
-	oauthEndpoint = oauth2.Endpoint{AuthURL: "http://example.com/auth", TokenURL: "http://example.com/token"}
 
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if !strings.Contains(output.String(), "If the browser doesn't open, visit: "+opened) {
+		t.Fatalf("missing fallback URL output: %q", output.String())
+	}
+
+	if !strings.Contains(output.String(), "Failed to open browser: "+errBrowserUnavailable.Error()) {
+		t.Fatalf("missing browser error output: %q", output.String())
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, opened+"/accounts", nil)
 	if err != nil {
-		t.Fatalf("listen: %v", err)
+		t.Fatalf("create closed-listener request: %v", err)
 	}
 
-	t.Cleanup(func() { _ = ln.Close() })
-
-	ms := &ManageServer{
-		listener:  ln,
-		csrfToken: "csrf",
-		opts:      ManageServerOptions{Services: []Service{ServiceGmail}},
+	resp, err := client.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close()
 	}
+
+	if err == nil {
+		t.Fatal("expected listener to be closed")
+	}
+}
+
+func TestManageServer_HandleAuthUpgrade(t *testing.T) {
+	random, expectedState, expectedVerifier := managerRandom(2, 3)
+	ms := newTestManagerApplication(t, ManagerOptions{
+		Services: []Service{ServiceGmail},
+	}, ManagerDependencies{
+		Random: random,
+		OAuthEndpoint: oauth2.Endpoint{
+			AuthURL:  "http://example.com/auth",
+			TokenURL: "http://example.com/token",
+		},
+	})
+	ms.csrfToken = "csrf"
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/upgrade?email=test@example.com&csrf=csrf", nil)
 	ms.handleAuthUpgrade(rr, req)
@@ -1250,23 +1443,19 @@ func TestManageServer_HandleAuthUpgrade(t *testing.T) {
 		t.Fatalf("unexpected host: %q", parsed.Host)
 	}
 
-	if state := parsed.Query().Get("state"); state != "state456" {
+	if state := parsed.Query().Get("state"); state != expectedState {
 		t.Fatalf("unexpected state: %q", state)
 	}
 
-	if ms.oauthState != "state456" {
-		t.Fatalf("expected oauthState set")
-	}
-
-	if ms.oauthVerifier != testCodeVerifier {
-		t.Fatalf("expected oauthVerifier set")
+	if verifier := ms.oauthStates[expectedState]; verifier != expectedVerifier {
+		t.Fatalf("unexpected stored verifier: %q", verifier)
 	}
 
 	if got := parsed.Query().Get("code_challenge_method"); got != "S256" {
 		t.Fatalf("expected S256 challenge method, got %q", got)
 	}
 
-	if got, want := parsed.Query().Get("code_challenge"), pkceChallengeForTest(); got != want {
+	if got, want := parsed.Query().Get("code_challenge"), oauth2.S256ChallengeFromVerifier(expectedVerifier); got != want {
 		t.Fatalf("unexpected code_challenge: got %q want %q", got, want)
 	}
 
@@ -1304,7 +1493,8 @@ func TestManageServer_HandleAuthUpgrade(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthUpgrade_MissingEmail(t *testing.T) {
-	ms := &ManageServer{csrfToken: "csrf"}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	ms.csrfToken = "csrf"
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/upgrade?csrf=csrf", nil)
 	ms.handleAuthUpgrade(rr, req)
@@ -1315,17 +1505,14 @@ func TestManageServer_HandleAuthUpgrade_MissingEmail(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthUpgrade_CredentialsError(t *testing.T) {
-	origRead := readClientCredentials
-
-	t.Cleanup(func() { readClientCredentials = origRead })
-
-	readClientCredentials = func(string) (config.ClientCredentials, error) {
-		return config.ClientCredentials{}, errBoom
-	}
-
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/upgrade?email=test@example.com&csrf=csrf", nil)
-	ms := &ManageServer{csrfToken: "csrf"}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{
+		ReadCredentials: func(string) (config.ClientCredentials, error) {
+			return config.ClientCredentials{}, errBoom
+		},
+	})
+	ms.csrfToken = "csrf"
 	ms.handleAuthUpgrade(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {
@@ -1334,7 +1521,8 @@ func TestManageServer_HandleAuthUpgrade_CredentialsError(t *testing.T) {
 }
 
 func TestManageServer_HandleAuthUpgrade_RejectsBadRequest(t *testing.T) {
-	ms := &ManageServer{csrfToken: "csrf"}
+	ms := newTestManagerApplication(t, ManagerOptions{}, ManagerDependencies{})
+	ms.csrfToken = "csrf"
 
 	tests := []struct {
 		name   string

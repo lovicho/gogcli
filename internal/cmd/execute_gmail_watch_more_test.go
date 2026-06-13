@@ -89,7 +89,7 @@ func TestExecute_GmailWatch_MoreCommands(t *testing.T) {
 		t.Fatalf("expected stop called")
 	}
 	// State file removed.
-	p, err := gmailWatchStatePath("a@b.com")
+	p, err := gmailWatchStatePath(gmailWatchTestLayout(t), "a@b.com")
 	if err != nil {
 		t.Fatalf("state path: %v", err)
 	}

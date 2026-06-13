@@ -68,11 +68,11 @@ func (c *AuthServiceAccountSetCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	layout, err := commandLayout(ctx, config.PathKindData)
+	store, err := commandServiceAccountStore(ctx)
 	if err != nil {
 		return err
 	}
-	destPath := layout.ServiceAccountPath(email)
+	destPath := store.Path(email)
 
 	if err := dryRunExit(ctx, flags, "auth.service-account.set", map[string]any{
 		"email":        email,
@@ -84,11 +84,8 @@ func (c *AuthServiceAccountSetCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	if _, err := layout.EnsureDataDir(); err != nil {
+	if _, err := store.Write(email, data); err != nil {
 		return err
-	}
-	if err := config.WriteFileAtomic(destPath, data, 0o600); err != nil {
-		return fmt.Errorf("write service account: %w", err)
 	}
 
 	if outfmt.IsJSON(ctx) {
@@ -181,13 +178,13 @@ func (c *AuthServiceAccountUnsetCmd) Run(ctx context.Context, flags *RootFlags) 
 		return err
 	}
 
-	layout, err := commandLayout(ctx, config.PathKindConfig, config.PathKindData)
+	store, err := commandServiceAccountStore(ctx)
 	if err != nil {
 		return err
 	}
-	path := layout.ServiceAccountPath(email)
+	path := store.Path(email)
 
-	removed, err := layout.RemoveServiceAccountFiles(email)
+	removed, err := store.Remove(email)
 	if err != nil {
 		return fmt.Errorf("remove service account: %w", err)
 	}
@@ -211,41 +208,38 @@ func (c *AuthServiceAccountStatusCmd) Run(ctx context.Context) error {
 		return usage("empty email")
 	}
 
-	layout, err := commandLayout(ctx, config.PathKindConfig, config.PathKindData)
+	store, err := commandServiceAccountStore(ctx)
 	if err != nil {
 		return err
 	}
-	path, err := layout.ExistingServiceAccountPath(email)
+	file, exists, err := store.Read(email, false)
 	if err != nil {
 		return err
 	}
+	path := file.Path
 
-	data, err := os.ReadFile(path) //nolint:gosec // stored in user config dir
-	if err != nil {
-		if os.IsNotExist(err) {
-			if outfmt.IsJSON(ctx) {
-				return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
-					"email":   email,
-					"path":    path,
-					"exists":  false,
-					"stored":  false,
-					"message": "no service account configured",
-					"hint":    fmt.Sprintf("configure with: gog auth service-account set %s --key <service-account.json>", email),
-				})
-			}
-			return writeResult(ctx, u,
-				kv("email", email),
-				kv("path", path),
-				kv("exists", false),
-				kv("stored", false),
-				kv("message", "no service account configured"),
-				kv("hint", fmt.Sprintf("gog auth service-account set %s --key <service-account.json>", email)),
-			)
+	if !exists {
+		if outfmt.IsJSON(ctx) {
+			return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
+				"email":   email,
+				"path":    path,
+				"exists":  false,
+				"stored":  false,
+				"message": "no service account configured",
+				"hint":    fmt.Sprintf("configure with: gog auth service-account set %s --key <service-account.json>", email),
+			})
 		}
-		return fmt.Errorf("read service account: %w", err)
+		return writeResult(ctx, u,
+			kv("email", email),
+			kv("path", path),
+			kv("exists", false),
+			kv("stored", false),
+			kv("message", "no service account configured"),
+			kv("hint", fmt.Sprintf("gog auth service-account set %s --key <service-account.json>", email)),
+		)
 	}
 
-	info, parseErr := parseServiceAccountJSON(data)
+	info, parseErr := parseServiceAccountJSON(file.Data)
 	if parseErr != nil {
 		return parseErr
 	}

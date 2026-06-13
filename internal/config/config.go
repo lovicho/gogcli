@@ -42,15 +42,6 @@ func (s *ConfigStore) Layout() Layout {
 	return s.layout
 }
 
-func ConfigPath() (string, error) {
-	store, err := defaultConfigStore()
-	if err != nil {
-		return "", err
-	}
-
-	return store.Path(), nil
-}
-
 func (s *ConfigStore) Path() string {
 	return s.layout.ConfigPath()
 }
@@ -102,15 +93,6 @@ func (s *ConfigStore) acquireLock() (func(), error) {
 	}
 }
 
-func WriteConfig(cfg File) error {
-	store, err := defaultConfigStore()
-	if err != nil {
-		return err
-	}
-
-	return store.Write(cfg)
-}
-
 func (s *ConfigStore) Write(cfg File) error {
 	unlock, err := s.acquireLock()
 	if err != nil {
@@ -141,15 +123,6 @@ func (s *ConfigStore) write(cfg File) error {
 	}
 
 	return nil
-}
-
-func UpdateConfig(update func(*File) error) error {
-	store, err := defaultConfigStore()
-	if err != nil {
-		return err
-	}
-
-	return store.Update(update)
 }
 
 func (s *ConfigStore) Update(update func(*File) error) error {
@@ -225,15 +198,6 @@ func (s *ConfigStore) Exists() (bool, error) {
 	return true, nil
 }
 
-func ReadConfig() (File, error) {
-	store, err := defaultConfigStore()
-	if err != nil {
-		return File{}, err
-	}
-
-	return store.Read()
-}
-
 func (s *ConfigStore) Read() (File, error) {
 	path := s.Path()
 
@@ -252,17 +216,4 @@ func (s *ConfigStore) Read() (File, error) {
 	}
 
 	return cfg, nil
-}
-
-func defaultConfigStore() (*ConfigStore, error) {
-	layout, err := currentLayoutFor(PathKindConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewConfigStore(layout), nil
-}
-
-func DefaultConfigStore() (*ConfigStore, error) {
-	return defaultConfigStore()
 }

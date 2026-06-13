@@ -176,10 +176,7 @@ func TestUpdateStateAfterHistoryKeepsConcurrentRateLimitCircuit(t *testing.T) {
 
 func newRateLimitWatchStore(t *testing.T) *gmailWatchStore {
 	t.Helper()
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if err := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"

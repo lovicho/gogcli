@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/docs/v1"
+
+	"github.com/steipete/gogcli/internal/docssed"
 )
 
 func TestParseFullExpr_SCommands(t *testing.T) {
@@ -191,34 +193,6 @@ func TestParseFullExpr_CommandAmbiguity(t *testing.T) {
 	}
 }
 
-func TestSplitByDelim(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		delim byte
-		want  []string
-	}{
-		{"basic", "a/b/c", '/', []string{"a", "b", "c"}},
-		{"escaped", `a\/b/c`, '/', []string{"a/b", "c"}},
-		{"empty parts", "//", '/', []string{"", "", ""}},
-		{"no delim", "abc", '/', []string{"abc"}},
-		{"custom delim", "a|b|c", '|', []string{"a", "b", "c"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, splitByDelim(tt.input, tt.delim))
-		})
-	}
-}
-
-func TestApplyRegexFlags(t *testing.T) {
-	assert.Equal(t, "foo", applyRegexFlags("foo", ""))
-	assert.Equal(t, "(?i)foo", applyRegexFlags("foo", "i"))
-	assert.Equal(t, "(?m)foo", applyRegexFlags("foo", "m"))
-	assert.Equal(t, "(?m)(?i)foo", applyRegexFlags("foo", "im"))
-	assert.Equal(t, "(?m)(?i)foo", applyRegexFlags("foo", "gim")) // g ignored here
-}
-
 func TestExtractParagraphText(t *testing.T) {
 	// nil elements
 	p := &docs.Paragraph{}
@@ -242,28 +216,6 @@ func TestExtractParagraphText(t *testing.T) {
 	assert.Equal(t, "Hello World", extractParagraphText(p))
 }
 
-func TestExtractNumber(t *testing.T) {
-	tests := []struct {
-		input string
-		want  int
-	}{
-		{"", 0},
-		{"g", 0},
-		{"2", 2},
-		{"g3", 3},
-		{"2g", 2},
-		{"10", 10},
-		{"gi", 0},
-		{"0", 0},
-		{"-1", 1}, // extracts digits only, ignores minus
-	}
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractNumber(tt.input))
-		})
-	}
-}
-
 func TestEscapeUnescapeMarkdown(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -279,21 +231,10 @@ func TestEscapeUnescapeMarkdown(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			escaped := escapeMarkdown(tt.input)
-			restored := unescapeMarkdown(escaped)
-			// After escape+unescape, \n should be real newline, others literal
-			assert.Equal(t, tt.want, restored)
+			parsed := docssed.ParseMarkdownReplacement(tt.input)
+			assert.Equal(t, tt.want, parsed.Text)
 		})
 	}
-}
-
-func TestIsAlphanumeric(t *testing.T) {
-	assert.True(t, isAlphanumeric('a'))
-	assert.True(t, isAlphanumeric('Z'))
-	assert.True(t, isAlphanumeric('5'))
-	assert.False(t, isAlphanumeric('/'))
-	assert.False(t, isAlphanumeric('|'))
-	assert.False(t, isAlphanumeric(' '))
 }
 
 func TestClassifyExpression(t *testing.T) {
@@ -398,14 +339,14 @@ func TestBuildCellReplaceRequests(t *testing.T) {
 }
 
 func TestBuildImageSizeSpec(t *testing.T) {
-	assert.Nil(t, buildImageSizeSpec(&ImageSpec{URL: "http://x.com/img.png"}))
+	assert.Nil(t, buildImageSizeSpec(&docssed.ImageSpec{URL: "http://x.com/img.png"}))
 
-	size := buildImageSizeSpec(&ImageSpec{URL: "http://x.com/img.png", Width: 100})
+	size := buildImageSizeSpec(&docssed.ImageSpec{URL: "http://x.com/img.png", Width: 100})
 	require.NotNil(t, size)
 	assert.NotNil(t, size.Width)
 	assert.Nil(t, size.Height)
 
-	size = buildImageSizeSpec(&ImageSpec{URL: "http://x.com/img.png", Width: 100, Height: 200})
+	size = buildImageSizeSpec(&docssed.ImageSpec{URL: "http://x.com/img.png", Width: 100, Height: 200})
 	require.NotNil(t, size)
 	assert.NotNil(t, size.Width)
 	assert.NotNil(t, size.Height)

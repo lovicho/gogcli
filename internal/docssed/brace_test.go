@@ -1,10 +1,17 @@
-package cmd
+//nolint:wsl_v5 // Table-driven parser tests stay compact around optional assertions.
+package docssed
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	parseBraceExpr        = ParseBraceExpression
+	findBraceExprs        = ParseBraceReplacement
+	braceExprHasAnyFormat = BraceExpressionHasAnyFormat
 )
 
 func TestParseBraceExpr_BooleanFlags(t *testing.T) {
@@ -375,24 +382,6 @@ func TestParseBraceExpr_NoReset(t *testing.T) {
 			assert.Equal(t, tt.wantBold, expr.Bold)
 		})
 	}
-}
-
-func TestBuildBraceTextStyleRequests_ImplicitReset(t *testing.T) {
-	// Without NoReset, a simple {b} should produce 2 requests: reset + bold
-	expr := &braceExpr{Bold: boolPtr(true), Indent: indentNotSet}
-	reqs := buildBraceTextStyleRequests(expr, 1, 10)
-	require.Len(t, reqs, 2, "implicit reset should produce reset + style requests")
-	// First request is the reset
-	assert.Contains(t, reqs[0].UpdateTextStyle.Fields, "bold")
-	assert.Contains(t, reqs[0].UpdateTextStyle.Fields, "baselineOffset")
-	// Second request is the bold
-	assert.True(t, reqs[1].UpdateTextStyle.TextStyle.Bold)
-
-	// With NoReset, only 1 request (additive)
-	exprAdditive := &braceExpr{Bold: boolPtr(true), NoReset: true, Indent: indentNotSet}
-	reqs2 := buildBraceTextStyleRequests(exprAdditive, 1, 10)
-	require.Len(t, reqs2, 1, "additive mode should produce only style request")
-	assert.True(t, reqs2[0].UpdateTextStyle.TextStyle.Bold)
 }
 
 func TestParseBraceExpr_Break(t *testing.T) {
@@ -812,36 +801,44 @@ func TestTokenizeBraceContent_Quotes(t *testing.T) {
 	assert.Nil(t, tokens)
 }
 
-func TestResolveHeading_AllValues(t *testing.T) {
-	assert.Equal(t, "TITLE", resolveHeading("t"))
-	assert.Equal(t, "SUBTITLE", resolveHeading("s"))
-	assert.Equal(t, "HEADING_1", resolveHeading("1"))
-	assert.Equal(t, "HEADING_6", resolveHeading("6"))
-	assert.Equal(t, "NORMAL_TEXT", resolveHeading("0"))
-	// Numeric string fallthrough
-	assert.Equal(t, "HEADING_3", resolveHeading("3"))
-	// Unknown passthrough
-	assert.Equal(t, "CUSTOM", resolveHeading("CUSTOM"))
-}
-
-func TestClassifyMatch_BraceImage(t *testing.T) {
-	expr := sedExpr{
-		brace: &braceExpr{ImgRef: "https://example.com/img.png", Width: 100, Height: 50, Indent: indentNotSet},
+func TestResolveColor(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "red", want: "#FF0000"},
+		{input: "RED", want: "#FF0000"},
+		{input: "#ABCDEF", want: "#ABCDEF"},
+		{input: "unknown", want: "unknown"},
+		{input: "navy", want: "#000080"},
 	}
-	m := classifyMatch(10, "hello", []int{0, 5}, "hello", "world", expr)
-	assert.NotNil(t, m.image)
-	assert.Equal(t, "https://example.com/img.png", m.image.URL)
-	assert.Equal(t, 100, m.image.Width)
-	assert.Equal(t, 50, m.image.Height)
-	assert.Equal(t, int64(10), m.start)
-	assert.Equal(t, int64(15), m.end)
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			assert.Equal(t, test.want, resolveColor(test.input))
+		})
+	}
 }
 
-func TestClassifyMatch_PlainText(t *testing.T) {
-	expr := sedExpr{}
-	m := classifyMatch(0, "foo", []int{0, 3}, "foo", "bar", expr)
-	assert.Nil(t, m.image)
-	assert.Equal(t, "bar", m.newText)
+func TestLooksLikeBraceExpression(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{input: "b", want: true},
+		{input: "bold", want: true},
+		{input: "!b", want: true},
+		{input: "0 b", want: true},
+		{input: "+=p", want: true},
+		{input: "c=red", want: true},
+		{input: "unknown"},
+		{input: ""},
+		{input: "12345"},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			assert.Equal(t, test.want, looksLikeBraceExpression(test.input))
+		})
+	}
 }
 
 func TestBraceExprHasAnyFormat_Comprehensive(t *testing.T) {
@@ -861,4 +858,8 @@ func TestBraceExprHasAnyFormat_Comprehensive(t *testing.T) {
 	tr := true
 	assert.True(t, braceExprHasAnyFormat(&braceExpr{Indent: indentNotSet, Check: &tr}))
 	assert.True(t, braceExprHasAnyFormat(&braceExpr{Indent: indentNotSet, InlineSpans: []inlineSpan{{Text: "x"}}}))
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

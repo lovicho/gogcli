@@ -20,11 +20,11 @@ gog auth <command> [flags]
 - [gog auth alias](gog-auth-alias.md) - Manage account aliases
 - [gog auth credentials](gog-auth-credentials.md) - Manage OAuth client credentials
 - [gog auth doctor](gog-auth-doctor.md) - Diagnose auth, keyring, and refresh-token issues
-- [gog auth import](gog-auth-import.md) - Import a refresh token non-interactively from stdin, file, or env
+- [gog auth import](gog-auth-import.md) - Import a required refresh token and optional current access token non-interactively
 - [gog auth keep](gog-auth-keep.md) - Configure service account for Google Keep (Workspace only)
 - [gog auth keyring](gog-auth-keyring.md) - Configure keyring backend
 - [gog auth list](gog-auth-list.md) - List stored accounts
-- [gog auth manage](gog-auth-manage.md) - Open accounts manager in browser
+- [gog auth manage](gog-auth-manage.md) - Open interactive accounts manager in browser
 - [gog auth remove](gog-auth-remove.md) - Remove a stored refresh token
 - [gog auth service-account](gog-auth-service-account.md) - Configure service account (Workspace only; domain-wide delegation)
 - [gog auth services](gog-auth-services.md) - List supported auth services and scopes
@@ -36,7 +36,7 @@ gog auth <command> [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |

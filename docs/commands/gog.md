@@ -33,7 +33,7 @@ gog <command> [flags]
 - [gog drive](gog-drive.md) - Google Drive
 - [gog forms](gog-forms.md) - Google Forms
 - [gog gmail](gog-gmail.md) - Gmail
-- [gog groups](gog-groups.md) - Google Groups
+- [gog groups](gog-groups.md) - Cloud Identity Groups (Workspace only)
 - [gog keep](gog-keep.md) - Google Keep (Workspace only)
 - [gog login](gog-login.md) - Authorize and store a refresh token (alias for 'auth add')
 - [gog logout](gog-logout.md) - Remove a stored refresh token (alias for 'auth remove')
@@ -66,7 +66,7 @@ gog <command> [flags]
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |

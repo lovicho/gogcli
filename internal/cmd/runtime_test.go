@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 
 	admin "google.golang.org/api/admin/directory/v1"
 	analyticsadmin "google.golang.org/api/analyticsadmin/v1beta"
@@ -34,14 +36,229 @@ import (
 	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
+	"github.com/steipete/gogcli/internal/googleauth"
+	"github.com/steipete/gogcli/internal/secrets"
 )
+
+func TestDefaultRuntimeSnapshotsKeyringOptions(t *testing.T) {
+	t.Setenv("GOG_KEYRING_BACKEND", "file")
+	t.Setenv("GOG_KEYRING_PASSWORD", "")
+	t.Setenv("GOG_KEYRING_SERVICE_NAME", "snapshot")
+	t.Setenv("GOG_KEYRING_LOCK_TIMEOUT", "250ms")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/snapshot")
+
+	runtime := newDefaultRuntime()
+	t.Setenv("GOG_KEYRING_BACKEND", "keychain")
+	t.Setenv("GOG_KEYRING_SERVICE_NAME", "changed")
+
+	options := runtime.KeyringOptions
+	if options == nil {
+		t.Fatal("expected keyring options")
+	}
+	if options.Backend != "file" || options.ServiceName != "snapshot" {
+		t.Fatalf("options = %#v", options)
+	}
+	if options.Password != "" || !options.PasswordSet {
+		t.Fatalf("empty password presence was not captured: %#v", options)
+	}
+	if options.GOOS != goruntime.GOOS || options.DBusAddress != "unix:path=/snapshot" {
+		t.Fatalf("platform options = %#v", options)
+	}
+	if options.LockTimeout != 250*time.Millisecond {
+		t.Fatalf("lock timeout = %v", options.LockTimeout)
+	}
+}
+
+func TestNormalizedRuntimeRequiresKeyringOptions(t *testing.T) {
+	t.Parallel()
+
+	layout := config.Layout{ConfigDir: t.TempDir(), DataDir: t.TempDir()}
+	runtime := normalizedRuntime(&app.Runtime{
+		Layout: layout,
+		Config: config.NewConfigStore(layout),
+	})
+
+	if _, err := runtime.Auth.OpenSecretsStore(); !errors.Is(err, errRuntimeKeyringRequired) {
+		t.Fatalf("error = %v, want keyring options required", err)
+	}
+}
+
+func TestNormalizedInjectedRuntimeDoesNotFillServices(t *testing.T) {
+	t.Parallel()
+
+	runtime := normalizedRuntime(&app.Runtime{})
+	if runtime.Services.Drive != nil || runtime.Services.Gmail != nil || runtime.Services.Zoom != nil {
+		t.Fatalf("injected runtime services were completed: %#v", runtime.Services)
+	}
+}
+
+func TestComposeRuntimeGoogleServicesPreservesOverrides(t *testing.T) {
+	t.Parallel()
+
+	wantDrive := &drive.Service{}
+	runtime := &app.Runtime{
+		ServicesManaged: true,
+		Services: app.Services{
+			Drive: func(context.Context, string) (*drive.Service, error) {
+				return wantDrive, nil
+			},
+		},
+	}
+	factory := googleapi.NewFactory(googleapi.AuthDependencies{}, googleapi.FactoryOptions{})
+
+	composeRuntimeGoogleServices(runtime, factory)
+
+	gotDrive, err := runtime.Services.Drive(context.Background(), "user@example.com")
+	if err != nil || gotDrive != wantDrive {
+		t.Fatalf("Drive override = (%p, %v), want %p", gotDrive, err, wantDrive)
+	}
+	if runtime.Services.Gmail == nil ||
+		runtime.Services.Docs == nil ||
+		runtime.Services.Calendar == nil ||
+		runtime.Services.Photos == nil ||
+		runtime.Services.YouTubeWrite == nil {
+		t.Fatalf("representative factory services missing: %#v", runtime.Services)
+	}
+}
+
+func TestComposeRuntimeGoogleServicesSkipsInjectedRuntime(t *testing.T) {
+	t.Parallel()
+
+	runtime := &app.Runtime{}
+	composeRuntimeGoogleServices(runtime, googleapi.NewFactory(googleapi.AuthDependencies{}, googleapi.FactoryOptions{}))
+	if runtime.Services.Drive != nil {
+		t.Fatal("injected runtime received a production Drive service")
+	}
+}
+
+func TestDriveServiceMissingRuntimeServiceFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	ctx := app.WithRuntime(context.Background(), &app.Runtime{})
+	_, err := driveService(ctx, "user@example.com")
+	if !errors.Is(err, errRuntimeServiceRequired) {
+		t.Fatalf("driveService() error = %v, want %v", err, errRuntimeServiceRequired)
+	}
+	if !strings.Contains(err.Error(), "drive") {
+		t.Fatalf("driveService() error = %v, want service name", err)
+	}
+}
+
+func TestCommandDependenciesMissingRuntimeFailClosed(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "layout",
+			run: func() error {
+				_, err := commandLayout(ctx, config.PathKindConfig)
+				return err
+			},
+		},
+		{
+			name: "config",
+			run: func() error {
+				_, err := commandConfigStore(ctx)
+				return err
+			},
+		},
+		{
+			name: "service accounts",
+			run: func() error {
+				_, err := commandServiceAccountStore(ctx)
+				return err
+			},
+		},
+		{
+			name: "secrets",
+			run: func() error {
+				_, err := openAuthSecretsStore(ctx)
+				return err
+			},
+		},
+		{
+			name: "authorize",
+			run: func() error {
+				_, err := authorizeGoogleAccount(ctx, googleauth.AuthorizeOptions{})
+				return err
+			},
+		},
+		{
+			name: "identity",
+			run: func() error {
+				_, err := fetchAuthIdentity(ctx, "", "", nil, time.Second)
+				return err
+			},
+		},
+		{name: "keychain", run: func() error { return ensureKeychainAccessIfNeeded(ctx) }},
+		{
+			name: "refresh check",
+			run: func() error {
+				return checkAuthRefreshToken(ctx, "", "", nil, time.Second)
+			},
+		},
+		{
+			name: "manual URL",
+			run: func() error {
+				_, err := buildManualAuthURL(ctx, googleauth.AuthorizeOptions{})
+				return err
+			},
+		},
+		{
+			name: "zoom",
+			run: func() error {
+				_, err := commandZoomStore(ctx)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := test.run()
+			if !errors.Is(err, errRuntimeRequired) && !errors.Is(err, errRuntimeServiceRequired) {
+				t.Fatalf("error = %v, want runtime dependency error", err)
+			}
+		})
+	}
+}
+
+func TestResolveKeyringBackendInfoUsesRuntimeOptions(t *testing.T) {
+	t.Setenv("GOG_KEYRING_BACKEND", "keychain")
+
+	layout := config.Layout{ConfigDir: t.TempDir()}
+	store := config.NewConfigStore(layout)
+	if err := store.Write(config.File{KeyringBackend: "auto"}); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	options := secrets.OpenOptions{Backend: "file", GOOS: goruntime.GOOS}
+	ctx := app.WithRuntime(context.Background(), &app.Runtime{
+		Layout:         layout,
+		Config:         store,
+		KeyringOptions: &options,
+	})
+
+	info, err := resolveKeyringBackendInfo(ctx)
+	if err != nil {
+		t.Fatalf("resolveKeyringBackendInfo: %v", err)
+	}
+	if info.Value != "file" || info.Source != "env" {
+		t.Fatalf("backend info = %#v", info)
+	}
+}
 
 func TestConfigureRuntimeConfigUsesInjectedLayout(t *testing.T) {
 	t.Parallel()
 
 	layout := config.Layout{ConfigDir: t.TempDir()}
 	runtime := &app.Runtime{Layout: layout}
-	if err := configureRuntimeConfig(runtime, ""); err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		t.Fatalf("configureRuntimeConfig: %v", err)
 	}
 	if runtime.Config == nil {
@@ -57,7 +274,7 @@ func TestConfigureRuntimeConfigPreservesInjectedStore(t *testing.T) {
 
 	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
 	runtime := &app.Runtime{Config: store}
-	if err := configureRuntimeConfig(runtime, ""); err != nil {
+	if err := configureRuntimeConfig(runtime); err != nil {
 		t.Fatalf("configureRuntimeConfig: %v", err)
 	}
 	if runtime.Config != store {
@@ -77,8 +294,9 @@ func TestConfigureRuntimeLayoutPreservesInjectedExplicitKinds(t *testing.T) {
 		DataDir:      dataDir,
 		ExplicitData: true,
 	}}
+	runtime.LayoutResolver = config.NewSystemResolver(filepath.Join(root, "home"))
 
-	if err := configureRuntimeLayout(runtime, filepath.Join(root, "home"), config.PathKindConfig); err != nil {
+	if err := configureRuntimeLayout(runtime, config.PathKindConfig); err != nil {
 		t.Fatalf("configureRuntimeLayout: %v", err)
 	}
 	if runtime.Layout.DataDir != dataDir {
@@ -95,7 +313,7 @@ func TestConfigureRuntimeLayoutRejectsAmbientFallbackForInjectedConfig(t *testin
 	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
 	runtime := &app.Runtime{Config: store}
 
-	err := configureRuntimeLayout(runtime, "", config.PathKindConfig, config.PathKindData)
+	err := configureRuntimeLayout(runtime, config.PathKindConfig, config.PathKindData)
 	if !errors.Is(err, errIncompleteRuntimeLayout) {
 		t.Fatalf("configureRuntimeLayout() error = %v, want incomplete runtime layout", err)
 	}
@@ -105,15 +323,15 @@ func TestManagedRuntimeConfigCanResolveAdditionalKinds(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	runtime := &app.Runtime{}
-	if err := configureRuntimeConfig(runtime, root); err != nil {
+	runtime := &app.Runtime{LayoutResolver: config.NewSystemResolver(root)}
+	if err := configureRuntimeConfig(runtime); err != nil {
 		t.Fatalf("configureRuntimeConfig: %v", err)
 	}
 	if !runtime.ConfigManaged {
 		t.Fatal("runtime-created config store was not marked managed")
 	}
 
-	if err := configureRuntimeLayout(runtime, root, config.PathKindData); err != nil {
+	if err := configureRuntimeLayout(runtime, config.PathKindData); err != nil {
 		t.Fatalf("configureRuntimeLayout: %v", err)
 	}
 	if runtime.Layout.DataDir != filepath.Join(root, "data") {
@@ -137,7 +355,7 @@ func TestResolveRuntimeClientUsesInjectedCredentialStore(t *testing.T) {
 	}
 
 	runtime := &app.Runtime{Config: config.NewConfigStore(layout)}
-	client, err := resolveRuntimeClient(runtime, "", "user@example.com", "")
+	client, err := resolveRuntimeClient(runtime, "user@example.com", "")
 	if err != nil {
 		t.Fatalf("resolveRuntimeClient: %v", err)
 	}
@@ -159,13 +377,27 @@ func TestNormalizedRuntimeOpensSecretsWithInjectedConfig(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	runtime := normalizedRuntime(&app.Runtime{Layout: layout, Config: store})
+	options := testKeyringOptions()
+	options.Backend = ""
+	runtime := normalizedRuntime(&app.Runtime{
+		Layout:         layout,
+		Config:         store,
+		KeyringOptions: options,
+	})
 	_, err := runtime.Auth.OpenSecretsStore()
 	if err == nil || !strings.Contains(err.Error(), "invalid keyring backend") {
 		t.Fatalf("OpenSecretsStore() error = %v, want injected backend validation", err)
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("OpenSecretsStore() read ambient config instead of injected store: %v", err)
+	}
+
+	_, err = runtime.Auth.OpenSecretStore()
+	if err == nil || !strings.Contains(err.Error(), "invalid keyring backend") {
+		t.Fatalf("OpenSecretStore() error = %v, want injected backend validation", err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("OpenSecretStore() read ambient config instead of injected store: %v", err)
 	}
 }
 
@@ -191,6 +423,40 @@ func TestExecuteRuntimeRoutesMigratedCommandOutput(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestExecuteRuntimeCapturesADCModeForAccountSelection(t *testing.T) {
+	t.Setenv("GOG_AUTH_MODE", "adc")
+	t.Setenv("GOG_ACCOUNT", "")
+
+	wantErr := errors.New("stop after account selection")
+	var gotAccount string
+	runtime := &app.Runtime{
+		IO: app.IO{
+			In:  strings.NewReader(""),
+			Out: io.Discard,
+			Err: io.Discard,
+		},
+		Services: app.Services{
+			Drive: func(_ context.Context, account string) (*drive.Service, error) {
+				gotAccount = account
+				return nil, wantErr
+			},
+		},
+		Auth: app.AuthOperations{
+			OpenSecretsStore: func() (secrets.Store, error) {
+				return &fakeSecretsStore{}, nil
+			},
+		},
+	}
+
+	err := executeWithRuntime([]string{"drive", "ls"}, runtime)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("executeWithRuntime() error = %v, want %v", err, wantErr)
+	}
+	if gotAccount != adcPlaceholderAccount {
+		t.Fatalf("factory account = %q, want %q", gotAccount, adcPlaceholderAccount)
 	}
 }
 

@@ -111,7 +111,7 @@ func Init(ctx context.Context, opts Options) (Config, string, error) {
 	if len(cfg.Recipients) == 0 {
 		cfg.Recipients = []string{recipient}
 	}
-	if err := SaveConfig(opts.ConfigPath, cfg); err != nil {
+	if err := opts.ConfigStore.Save(opts.ConfigPath, cfg); err != nil {
 		return Config{}, "", err
 	}
 	if err := ensureRepo(ctx, cfg); err != nil {
@@ -229,7 +229,7 @@ func Verify(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := ensureRepo(ctx, cfg); err != nil {
+	if err := prepareReadRepo(ctx, cfg, opts.SkipPull); err != nil {
 		return Result{}, err
 	}
 	manifest, err := readManifest(cfg.Repo)
@@ -272,7 +272,7 @@ func Status(ctx context.Context, opts Options) (Manifest, string, error) {
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	if err := ensureRepo(ctx, cfg); err != nil {
+	if err := prepareReadRepo(ctx, cfg, opts.SkipPull); err != nil {
 		return Manifest{}, "", err
 	}
 	manifest, err := readManifest(cfg.Repo)

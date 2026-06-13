@@ -5,7 +5,7 @@ import "testing"
 func TestWrapUntrustedFlag(t *testing.T) {
 	t.Parallel()
 
-	parser, cli, err := newParser(helpDescription())
+	parser, cli, err := newParser(baseDescription())
 	if err != nil {
 		t.Fatalf("newParser: %v", err)
 	}
@@ -20,7 +20,7 @@ func TestWrapUntrustedFlag(t *testing.T) {
 func TestWrapUntrustedEnvDefault(t *testing.T) {
 	t.Setenv("GOG_WRAP_UNTRUSTED", "1")
 
-	parser, cli, err := newParser(helpDescription())
+	parser, cli, err := newParser(baseDescription())
 	if err != nil {
 		t.Fatalf("newParser: %v", err)
 	}

@@ -40,9 +40,16 @@ Classroom). Workspace-only APIs (Admin Directory, Cloud Identity Groups, Chat,
 Keep with domain-wide delegation) require a managed domain — see
 [Auth Clients](auth-clients.md).
 
-> External + Testing OAuth apps issue refresh tokens that expire after seven
-> days. Publish the OAuth app for long-lived tokens, or be ready to re-run
-> `gog auth add` weekly.
+> **Avoid weekly reauthorization:** External + Testing OAuth apps issue refresh
+> tokens for user-data scopes that expire after seven days. In the same Cloud
+> project, open [Audience](https://console.cloud.google.com/auth/audience), click
+> **Publish app**, then **Confirm**. This changes the app to In production; it
+> does not submit the app for verification. If you already authorized in
+> Testing, re-run `gog auth add` once with the same services and
+> `--force-consent`. Personal unverified apps can run In production, but
+> sensitive scopes show a warning and remain subject to the lifetime 100-user
+> cap. See Google's [expiration rules](https://developers.google.com/identity/protocols/oauth2#expiration)
+> and [unverified-app limits](https://support.google.com/cloud/answer/7454865).
 
 ## 3. Store the OAuth client
 
@@ -128,6 +135,20 @@ gog --account admin@example.com admin users create ada@example.com \
 
 gog --account admin@example.com admin orgunits list --type all
 ```
+
+Cloud Identity Groups also require the Workspace service account and the
+`https://www.googleapis.com/auth/cloud-identity.groups.readonly` delegated
+scope:
+
+```bash
+gog --account admin@example.com groups list
+```
+
+With an explicit access token or `GOG_AUTH_MODE=adc`, `groups list` and Groups
+backups also need `--account <workspace-email>` for their transitive membership
+search. `groups members` can use the active principal without that flag.
+`calendar team` uses the same Groups auth boundary. These Cloud Identity
+lookups do not fall back to stored user OAuth.
 
 See [Workspace Admin](workspace-admin.md) for service-account setup, generated
 passwords, recovery fields, organizational units, and cleanup commands.

@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 var (
 	errPathMustBeAbsolute   = errors.New("path must be absolute")
 	errUnknownPathKind      = errors.New("unknown path kind")
+	errNilLayoutResolver    = errors.New("layout resolver is nil")
 	errNilHomeDirResolver   = errors.New("home directory resolver is nil")
 	errNilConfigDirResolver = errors.New("config directory resolver is nil")
 	errNilCacheDirResolver  = errors.New("cache directory resolver is nil")
@@ -38,6 +40,7 @@ type Layout struct {
 	ExplicitState  bool
 	ExplicitCache  bool
 	UsesXDG        bool
+	UsesXDGState   bool
 }
 
 type Env struct {
@@ -60,14 +63,70 @@ type UserDirs struct {
 	CacheDir  func() (string, error)
 }
 
+// Resolver captures path-related environment and platform directory lookups
+// for one application runtime. Resolution stays lazy and is safe for
+// concurrent use.
+type Resolver struct {
+	mu       sync.Mutex
+	resolver *layoutResolver
+}
+
+func NewResolver(env Env, dirs UserDirs) *Resolver {
+	return &Resolver{resolver: newLayoutResolver(env, dirs)}
+}
+
+func NewSystemResolver(homeOverride string) *Resolver {
+	env := systemLayoutEnv()
+	if strings.TrimSpace(homeOverride) != "" {
+		env.HomeOverride = homeOverride
+	}
+	return NewResolver(env, systemUserDirs())
+}
+
+func (r *Resolver) Resolve(kinds ...PathKind) (Layout, error) {
+	if r == nil || r.resolver == nil {
+		return Layout{}, errNilLayoutResolver
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.resolver.resolveLayoutFor(kinds...)
+}
+
+func (r *Resolver) ValidateHomeOverride() error {
+	if r == nil || r.resolver == nil {
+		return errNilLayoutResolver
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	_, _, err := r.resolver.homeOverride()
+	return err
+}
+
+func (r *Resolver) UserConfigBase() (string, error) {
+	if r == nil || r.resolver == nil {
+		return "", errNilLayoutResolver
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.resolver.userConfigBase()
+}
+
 func ResolveLayout(env Env, dirs UserDirs) (Layout, error) {
-	resolver := newLayoutResolver(env, dirs)
-	layout, err := resolver.resolveLayoutFor(PathKindConfig, PathKindData, PathKindState, PathKindCache)
+	resolver := NewResolver(env, dirs)
+	layout, err := resolver.Resolve(PathKindConfig, PathKindData, PathKindState, PathKindCache)
 	if err != nil {
 		return Layout{}, err
 	}
 
-	home, _, err := resolver.homeOverride()
+	resolver.mu.Lock()
+	home, _, err := resolver.resolver.homeOverride()
+	resolver.mu.Unlock()
 	if err != nil {
 		return Layout{}, err
 	}
@@ -162,8 +221,10 @@ func (r *layoutResolver) kindOverride(kind PathKind) (string, bool, error) {
 
 func (r *layoutResolver) homeOverride() (string, bool, error) {
 	raw := strings.TrimSpace(r.env.HomeOverride)
+	source := "GOG_HOME/--home"
 	if raw == "" {
 		raw = strings.TrimSpace(r.env.GOGHome)
+		source = "GOG_HOME"
 	}
 	if raw == "" {
 		return "", false, nil
@@ -175,7 +236,7 @@ func (r *layoutResolver) homeOverride() (string, bool, error) {
 	}
 
 	if !filepath.IsAbs(expanded) {
-		return "", true, fmt.Errorf("%w: GOG_HOME=%s", errPathMustBeAbsolute, raw)
+		return "", true, fmt.Errorf("%w: %s=%s", errPathMustBeAbsolute, source, raw)
 	}
 
 	return expanded, true, nil
@@ -377,9 +438,8 @@ func usesXDGDefaultsFor(goos string) bool {
 	}
 }
 
-func currentLayoutEnv() Env {
+func systemLayoutEnv() Env {
 	return Env{
-		HomeOverride:  homeOverride,
 		GOGHome:       os.Getenv("GOG_HOME"),
 		GOGConfigDir:  os.Getenv("GOG_CONFIG_DIR"),
 		GOGDataDir:    os.Getenv("GOG_DATA_DIR"),
@@ -401,25 +461,56 @@ func systemUserDirs() UserDirs {
 	}
 }
 
-func currentLayoutDir(kind PathKind) (string, error) {
-	return newLayoutResolver(currentLayoutEnv(), systemUserDirs()).resolveKind(kind)
-}
-
-func currentLayoutFor(kinds ...PathKind) (Layout, error) {
-	return resolveLayoutFor(currentLayoutEnv(), systemUserDirs(), kinds...)
-}
-
-func ResolveSystemLayoutFor(homeOverride string, kinds ...PathKind) (Layout, error) {
-	env := currentLayoutEnv()
-	if strings.TrimSpace(homeOverride) != "" {
-		env.HomeOverride = homeOverride
+func resolveUserConfigBase(env Env, dirs UserDirs) (string, error) {
+	if xdg := strings.TrimSpace(env.XDGConfigHome); filepath.IsAbs(xdg) {
+		return xdg, nil
 	}
-	return resolveLayoutFor(env, systemUserDirs(), kinds...)
+	if usesXDGDefaultsFor(dirs.GOOS) {
+		home, err := dirs.HomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home config dir: %w", err)
+		}
+		return filepath.Join(home, ".config"), nil
+	}
+
+	configDir, err := dirs.ConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user config dir: %w", err)
+	}
+	if filepath.IsAbs(configDir) {
+		return configDir, nil
+	}
+	home, err := dirs.HomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home config dir: %w", err)
+	}
+	return filepath.Join(home, ".config"), nil
 }
 
-func resolveLayoutFor(env Env, dirs UserDirs, kinds ...PathKind) (Layout, error) {
-	resolver := newLayoutResolver(env, dirs)
-	return resolver.resolveLayoutFor(kinds...)
+func (r *layoutResolver) userConfigBase() (string, error) {
+	if xdg := strings.TrimSpace(r.env.XDGConfigHome); filepath.IsAbs(xdg) {
+		return xdg, nil
+	}
+	if usesXDGDefaultsFor(r.dirs.GOOS) {
+		home, err := r.userHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home config dir: %w", err)
+		}
+		return filepath.Join(home, ".config"), nil
+	}
+
+	configDir, err := r.userConfigDir()
+	if err != nil {
+		return "", err
+	}
+	if filepath.IsAbs(configDir) {
+		return configDir, nil
+	}
+	home, err := r.userHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home config dir: %w", err)
+	}
+	return filepath.Join(home, ".config"), nil
 }
 
 func (r *layoutResolver) resolveLayoutFor(kinds ...PathKind) (Layout, error) {
@@ -429,6 +520,7 @@ func (r *layoutResolver) resolveLayoutFor(kinds ...PathKind) (Layout, error) {
 		ExplicitState:  r.env.hasExplicit(PathKindState),
 		ExplicitCache:  r.env.hasExplicit(PathKindCache),
 		UsesXDG:        r.usesXDG,
+		UsesXDGState:   filepath.IsAbs(strings.TrimSpace(r.env.XDGStateHome)),
 	}
 
 	for _, kind := range kinds {
@@ -453,12 +545,4 @@ func (l *Layout) setDir(kind PathKind, dir string) {
 	case PathKindCache:
 		l.CacheDir = dir
 	}
-}
-
-func usesXDGDefaults() bool {
-	return usesXDGDefaultsFor(runtime.GOOS)
-}
-
-func hasAbsoluteEnv(name string) bool {
-	return filepath.IsAbs(strings.TrimSpace(os.Getenv(name)))
 }

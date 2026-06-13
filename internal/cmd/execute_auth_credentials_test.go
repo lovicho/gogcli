@@ -51,7 +51,8 @@ func TestExecute_AuthCredentials_JSON(t *testing.T) {
 	if !parsed.Saved || parsed.Path == "" {
 		t.Fatalf("unexpected: %#v", parsed)
 	}
-	outPath, err := config.ClientCredentialsPath()
+	credentialsStore := defaultCredentialsStoreForTest(t)
+	outPath, err := credentialsStore.PathFor(config.DefaultClientName)
 	if err != nil {
 		t.Fatalf("ClientCredentialsPath: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestExecute_AuthCredentials_JSON(t *testing.T) {
 	if strings.Contains(string(data), "sec") {
 		t.Fatalf("client secret leaked to metadata file: %s", data)
 	}
-	creds, err := config.ReadClientCredentialsMetadataFor(config.DefaultClientName)
+	creds, err := credentialsStore.ReadMetadata(config.DefaultClientName)
 	if err != nil {
 		t.Fatalf("ReadClientCredentialsMetadataFor: %v", err)
 	}
@@ -99,6 +100,7 @@ func TestExecute_AuthCredentials_UsesInjectedStores(t *testing.T) {
 		ExplicitData:   true,
 	}
 	configStore := config.NewConfigStore(layout)
+	secretStore := newMemSecretsStore()
 
 	in := filepath.Join(t.TempDir(), "creds.json")
 	if err := os.WriteFile(in, []byte(`{"installed":{"client_id":"id","client_secret":"sec"}}`), 0o600); err != nil {
@@ -113,6 +115,11 @@ func TestExecute_AuthCredentials_UsesInjectedStores(t *testing.T) {
 			Err: &stderr,
 		},
 		Config: configStore,
+		Auth: app.AuthOperations{
+			OpenSecretStore: func() (secrets.SecretStore, error) {
+				return secretStore, nil
+			},
+		},
 	}
 	if err := executeWithRuntime([]string{"--client", "work", "auth", "credentials", in, "--domain", "example.com"}, runtime); err != nil {
 		t.Fatalf("executeWithRuntime: %v\nstderr=%s", err, stderr.String())
@@ -135,15 +142,11 @@ func TestExecute_AuthCredentials_UsesInjectedStores(t *testing.T) {
 		t.Fatalf("client domains = %#v", cfg.ClientDomains)
 	}
 
-	repository, err := secrets.OpenWithConfig(layout, configStore)
-	if err != nil {
-		t.Fatalf("open injected secrets: %v", err)
-	}
 	key, err := oauthclient.ClientSecretKey("work")
 	if err != nil {
 		t.Fatalf("client secret key: %v", err)
 	}
-	secret, err := repository.GetSecret(key)
+	secret, err := secretStore.GetSecret(key)
 	if err != nil {
 		t.Fatalf("read injected client secret: %v", err)
 	}
@@ -151,12 +154,125 @@ func TestExecute_AuthCredentials_UsesInjectedStores(t *testing.T) {
 		t.Fatalf("client secret = %q, want sec", secret)
 	}
 
-	ambientPath, err := config.ClientCredentialsPathFor("work")
+	ambientPath, err := defaultCredentialsStoreForTest(t).PathFor("work")
 	if err != nil {
 		t.Fatalf("ambient credentials path: %v", err)
 	}
 	if _, err := os.Stat(ambientPath); !os.IsNotExist(err) {
 		t.Fatalf("ambient credentials unexpectedly written at %s: %v", ambientPath, err)
+	}
+}
+
+func TestExecute_AuthCredentials_DryRunDoesNotWriteOrOpenSecretStore(t *testing.T) {
+	root := t.TempDir()
+	layout := config.Layout{
+		ConfigDir:      filepath.Join(root, "config"),
+		DataDir:        filepath.Join(root, "data"),
+		ExplicitConfig: true,
+		ExplicitData:   true,
+	}
+	configStore := config.NewConfigStore(layout)
+	in := filepath.Join(t.TempDir(), "creds.json")
+	if err := os.WriteFile(in, []byte(`{"installed":{"client_id":"id","client_secret":"super-secret-value"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	secretStoreOpened := false
+	runtime := &app.Runtime{
+		IO: app.IO{
+			In:  strings.NewReader(""),
+			Out: &stdout,
+			Err: &stderr,
+		},
+		Config: configStore,
+		Auth: app.AuthOperations{
+			OpenSecretStore: func() (secrets.SecretStore, error) {
+				secretStoreOpened = true
+				return nil, errors.New("unexpected secret store open")
+			},
+		},
+	}
+	if err := executeWithRuntime([]string{"--json", "--dry-run", "--client", "work", "auth", "credentials", in, "--domain", "example.com"}, runtime); err != nil {
+		t.Fatalf("executeWithRuntime: %v\nstderr=%s", err, stderr.String())
+	}
+	if secretStoreOpened {
+		t.Fatal("dry-run opened the secret store")
+	}
+
+	var result struct {
+		DryRun  bool   `json:"dry_run"`
+		Op      string `json:"op"`
+		Request struct {
+			Client                string   `json:"client"`
+			Domains               []string `json:"domains"`
+			ClientSecretInKeyring bool     `json:"client_secret_in_keyring"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, stdout.String())
+	}
+	if !result.DryRun || result.Op != "auth.credentials.set" || result.Request.Client != "work" {
+		t.Fatalf("unexpected dry-run result: %#v", result)
+	}
+	if len(result.Request.Domains) != 1 || result.Request.Domains[0] != "example.com" || !result.Request.ClientSecretInKeyring {
+		t.Fatalf("unexpected dry-run request: %#v", result.Request)
+	}
+	if strings.Contains(stdout.String(), "super-secret-value") {
+		t.Fatalf("dry-run output leaked client secret: %s", stdout.String())
+	}
+	if _, err := os.Stat(configStore.Path()); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote config: %v", err)
+	}
+	metadataPath, err := config.NewClientCredentialsStore(layout).PathFor("work")
+	if err != nil {
+		t.Fatalf("credential metadata path: %v", err)
+	}
+	if _, err := os.Stat(metadataPath); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote credential metadata: %v", err)
+	}
+}
+
+func TestExecute_AuthCredentials_InvalidDomainDoesNotWrite(t *testing.T) {
+	root := t.TempDir()
+	layout := config.Layout{
+		ConfigDir:      filepath.Join(root, "config"),
+		DataDir:        filepath.Join(root, "data"),
+		ExplicitConfig: true,
+		ExplicitData:   true,
+	}
+	configStore := config.NewConfigStore(layout)
+	in := filepath.Join(t.TempDir(), "creds.json")
+	if err := os.WriteFile(in, []byte(`{"installed":{"client_id":"id","client_secret":"sec"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	secretStoreOpened := false
+	runtime := &app.Runtime{
+		Config: configStore,
+		Auth: app.AuthOperations{
+			OpenSecretStore: func() (secrets.SecretStore, error) {
+				secretStoreOpened = true
+				return nil, errors.New("unexpected secret store open")
+			},
+		},
+	}
+	err := executeWithRuntime([]string{"--client", "work", "auth", "credentials", in, "--domain", "bad domain"}, runtime)
+	if err == nil {
+		t.Fatal("expected invalid domain error")
+	}
+	if secretStoreOpened {
+		t.Fatal("invalid domain opened the secret store")
+	}
+	if _, err := os.Stat(configStore.Path()); !os.IsNotExist(err) {
+		t.Fatalf("invalid domain wrote config: %v", err)
+	}
+	metadataPath, pathErr := config.NewClientCredentialsStore(layout).PathFor("work")
+	if pathErr != nil {
+		t.Fatalf("credential metadata path: %v", pathErr)
+	}
+	if _, err := os.Stat(metadataPath); !os.IsNotExist(err) {
+		t.Fatalf("invalid domain wrote credential metadata: %v", err)
 	}
 }
 
@@ -233,7 +349,7 @@ func TestExecute_AuthCredentials_InsecureStoresPlaintext(t *testing.T) {
 		})
 	})
 
-	outPath, err := config.ClientCredentialsPath()
+	outPath, err := defaultCredentialsStoreForTest(t).PathFor(config.DefaultClientName)
 	if err != nil {
 		t.Fatalf("ClientCredentialsPath: %v", err)
 	}
@@ -252,10 +368,7 @@ func TestExecute_AuthCredentialsList_JSON(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 	useFileKeyringForAuthCredentials(t)
 
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatalf("Dir: %v", err)
-	}
+	dir := defaultLayoutForTest(t, config.PathKindConfig).ConfigDir
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -273,7 +386,7 @@ func TestExecute_AuthCredentialsList_JSON(t *testing.T) {
 			"missing.com": "missing",
 		},
 	}
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := defaultConfigStoreForTest(t).Write(cfg); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
 
@@ -332,9 +445,11 @@ func TestExecute_AuthCredentialsRemove_RemovesCredentialTokenAndDomain(t *testin
 
 	store := newMemSecretsStore()
 	runtime := runtimeWithAuthStore(store)
+	credentialsStore := defaultCredentialsStoreForTest(t)
+	configStore := defaultConfigStoreForTest(t)
 
-	if err := config.WriteClientCredentialsFor("work", config.ClientCredentials{ClientID: "id", ClientSecret: "sec"}); err != nil {
-		t.Fatalf("WriteClientCredentialsFor: %v", err)
+	if err := credentialsStore.Write("work", config.ClientCredentials{ClientID: "id", ClientSecret: "sec"}); err != nil {
+		t.Fatalf("write credentials: %v", err)
 	}
 	if err := store.SetToken("work", "A@B.COM", secrets.Token{RefreshToken: "rt"}); err != nil {
 		t.Fatalf("SetToken work: %v", err)
@@ -342,7 +457,7 @@ func TestExecute_AuthCredentialsRemove_RemovesCredentialTokenAndDomain(t *testin
 	if err := store.SetToken(config.DefaultClientName, "default@example.com", secrets.Token{RefreshToken: "rt"}); err != nil {
 		t.Fatalf("SetToken default: %v", err)
 	}
-	if err := config.WriteConfig(config.File{ClientDomains: map[string]string{
+	if err := configStore.Write(config.File{ClientDomains: map[string]string{
 		"example.com": "work",
 		"other.com":   config.DefaultClientName,
 	}}); err != nil {
@@ -375,7 +490,7 @@ func TestExecute_AuthCredentialsRemove_RemovesCredentialTokenAndDomain(t *testin
 	if len(parsed.DomainsRemoved) != 1 || parsed.DomainsRemoved[0] != "example.com" {
 		t.Fatalf("unexpected removed domains: %#v", parsed.DomainsRemoved)
 	}
-	path, err := config.ClientCredentialsPathFor("work")
+	path, err := credentialsStore.PathFor("work")
 	if err != nil {
 		t.Fatalf("ClientCredentialsPathFor: %v", err)
 	}
@@ -388,7 +503,7 @@ func TestExecute_AuthCredentialsRemove_RemovesCredentialTokenAndDomain(t *testin
 	if _, defaultTokenErr := store.GetToken(config.DefaultClientName, "default@example.com"); defaultTokenErr != nil {
 		t.Fatalf("expected default token retained: %v", defaultTokenErr)
 	}
-	cfg, err := config.ReadConfig()
+	cfg, err := configStore.Read()
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}
@@ -408,16 +523,18 @@ func TestExecute_AuthCredentialsRemoveAll(t *testing.T) {
 
 	store := newMemSecretsStore()
 	runtime := runtimeWithAuthStore(store)
+	credentialsStore := defaultCredentialsStoreForTest(t)
+	configStore := defaultConfigStoreForTest(t)
 
 	for _, client := range []string{config.DefaultClientName, "work"} {
-		if err := config.WriteClientCredentialsFor(client, config.ClientCredentials{ClientID: "id-" + client, ClientSecret: "sec"}); err != nil {
-			t.Fatalf("WriteClientCredentialsFor(%s): %v", client, err)
+		if err := credentialsStore.Write(client, config.ClientCredentials{ClientID: "id-" + client, ClientSecret: "sec"}); err != nil {
+			t.Fatalf("write credentials %s: %v", client, err)
 		}
 		if err := store.SetToken(client, client+"@example.com", secrets.Token{RefreshToken: "rt"}); err != nil {
 			t.Fatalf("SetToken(%s): %v", client, err)
 		}
 	}
-	if err := config.WriteConfig(config.File{ClientDomains: map[string]string{
+	if err := configStore.Write(config.File{ClientDomains: map[string]string{
 		"default.example": config.DefaultClientName,
 		"work.example":    "work",
 	}}); err != nil {
@@ -445,7 +562,7 @@ func TestExecute_AuthCredentialsRemoveAll(t *testing.T) {
 		t.Fatalf("unexpected remove-all output: %#v", parsed)
 	}
 	for _, client := range []string{config.DefaultClientName, "work"} {
-		path, err := config.ClientCredentialsPathFor(client)
+		path, err := credentialsStore.PathFor(client)
 		if err != nil {
 			t.Fatalf("ClientCredentialsPathFor(%s): %v", client, err)
 		}
@@ -456,7 +573,7 @@ func TestExecute_AuthCredentialsRemoveAll(t *testing.T) {
 			t.Fatalf("expected %s token removed, err=%v", client, err)
 		}
 	}
-	cfg, err := config.ReadConfig()
+	cfg, err := configStore.Read()
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}

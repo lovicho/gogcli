@@ -16,14 +16,14 @@ gog classroom (class) courses (course) <command>
 
 ## Subcommands
 
-- [gog classroom courses archive](gog-classroom-courses-archive.md) - Archive a course
+- [gog classroom courses archive](gog-classroom-courses-archive.md) - Archive a course and wait until the state is visible
 - [gog classroom courses create](gog-classroom-courses-create.md) - Create a course
 - [gog classroom courses delete](gog-classroom-courses-delete.md) - Delete an archived course
 - [gog classroom courses get](gog-classroom-courses-get.md) - Get a course
 - [gog classroom courses join](gog-classroom-courses-join.md) - Join a course
 - [gog classroom courses leave](gog-classroom-courses-leave.md) - Leave a course
 - [gog classroom courses list](gog-classroom-courses-list.md) - List courses
-- [gog classroom courses unarchive](gog-classroom-courses-unarchive.md) - Unarchive a course
+- [gog classroom courses unarchive](gog-classroom-courses-unarchive.md) - Unarchive a course and wait until the state is visible
 - [gog classroom courses update](gog-classroom-courses-update.md) - Update a course
 - [gog classroom courses url](gog-classroom-courses-url.md) - Print Classroom web URLs for courses
 
@@ -32,7 +32,7 @@ gog classroom (class) courses (course) <command>
 | Flag | Type | Default | Help |
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
-| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email for API commands (gmail/calendar/chat/classroom/drive/drivelabels/docs/slides/contacts/tasks/people/sheets/forms/sites/appscript/analytics/searchconsole/youtube/photos) |
+| `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |

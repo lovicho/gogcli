@@ -3,11 +3,12 @@ package cmd
 type CalendarCmd struct {
 	Calendars       CalendarCalendarsCmd       `cmd:"" name:"calendars" help:"List calendars"`
 	Subscribe       CalendarSubscribeCmd       `cmd:"" name:"subscribe" aliases:"sub,add-calendar" help:"Add a calendar to your calendar list"`
+	Unsubscribe     CalendarUnsubscribeCmd     `cmd:"" name:"unsubscribe" aliases:"unsub" help:"Remove a calendar from your calendar list"`
 	CreateCalendar  CalendarCreateCalendarCmd  `cmd:"" name:"create-calendar" aliases:"new-calendar" help:"Create a new secondary calendar"`
+	DeleteCalendar  CalendarDeleteCalendarCmd  `cmd:"" name:"delete-calendar" help:"Delete an owned secondary calendar"`
 	ACL             CalendarAclCmd             `cmd:"" name:"acl" aliases:"permissions,perms" help:"List calendar ACL"`
 	Alias           CalendarAliasCmd           `cmd:"" name:"alias" help:"Manage calendar aliases"`
 	Events          CalendarEventsCmd          `cmd:"" name:"events" aliases:"list,ls" help:"List events from a calendar or all calendars"`
-	Appointments    CalendarAppointmentsCmd    `cmd:"" name:"appointments" aliases:"appointment-schedules,appt" help:"Report Calendar appointment schedule API limitation"`
 	Event           CalendarEventCmd           `cmd:"" name:"event" aliases:"get,info,show" help:"Get event"`
 	Raw             CalendarRawCmd             `cmd:"" name:"raw" help:"Dump raw Google Calendar API response as JSON (Events.Get; lossless; for scripting and LLM consumption)"`
 	Create          CalendarCreateCmd          `cmd:"" name:"create" aliases:"add,new" help:"Create an event"`
@@ -22,7 +23,7 @@ type CalendarCmd struct {
 	Search          CalendarSearchCmd          `cmd:"" name:"search" aliases:"find,query" help:"Search events"`
 	Time            CalendarTimeCmd            `cmd:"" name:"time" help:"Show server time"`
 	Users           CalendarUsersCmd           `cmd:"" name:"users" help:"List workspace users (use their email as calendar ID)"`
-	Team            CalendarTeamCmd            `cmd:"" name:"team" help:"Show events for all members of a Google Group"`
+	Team            CalendarTeamCmd            `cmd:"" name:"team" help:"Show events for Workspace group members (service account, direct token, or ADC)"`
 	FocusTime       CalendarFocusTimeCmd       `cmd:"" name:"focus-time" aliases:"focus" help:"Create a Focus Time block"`
 	OOO             CalendarOOOCmd             `cmd:"" name:"out-of-office" aliases:"ooo" help:"Create an Out of Office event"`
 	WorkingLocation CalendarWorkingLocationCmd `cmd:"" name:"working-location" aliases:"wl" help:"Set working location (home/office/custom)"`

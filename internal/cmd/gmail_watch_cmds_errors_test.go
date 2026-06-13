@@ -191,10 +191,7 @@ func TestGmailWatchStatusCmd_LoadError(t *testing.T) {
 func TestGmailWatchRenewCmd_MissingTopic(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error { s.Account = "a@b.com"; return nil })
 
 	u, uiErr := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
@@ -237,10 +234,7 @@ func TestGmailWatchRenewCmd_LoadError(t *testing.T) {
 func TestGmailWatchRenewCmd_InvalidTTL(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.Topic = "projects/p/topics/t"
@@ -261,10 +255,7 @@ func TestGmailWatchRenewCmd_InvalidTTL(t *testing.T) {
 func TestGmailWatchRenewCmd_NewServiceError(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.Topic = "projects/p/topics/t"
@@ -362,10 +353,7 @@ func TestGmailWatchServeCmd_HookFlagsError(t *testing.T) {
 
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error { s.Account = "a@b.com"; return nil })
 
 	listenAndServe = func(*http.Server) error { return nil }
@@ -391,10 +379,7 @@ func TestGmailWatchServeCmd_OIDCValidatorError(t *testing.T) {
 
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error { s.Account = "a@b.com"; return nil })
 
 	listenAndServe = func(*http.Server) error { return nil }

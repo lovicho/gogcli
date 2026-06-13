@@ -5,11 +5,45 @@
 ### Added
 
 - YouTube: add subscription listing and management plus playlist create, add, remove, and delete commands with least-privilege OAuth, dry-run support, structured output, and destructive-operation confirmation. (#767) — thanks @beezly.
+- Calendar: add `unsubscribe` for removing calendar-list entries and `delete-calendar` for deleting owned secondary calendars, with dry-run, confirmation, and structured output.
 
 ### Fixed
 
+- Gmail: make `watch serve --dry-run` return a secret-free daemon plan without creating/locking/updating watch state, saving hook settings, creating clients, or opening a socket.
+- Backup: make status, verify, cat, and export use read-only repository setup and file-free dry-run plans, support pre-created empty repository directories, keep failed clones clean, disable Git credential prompts under `--no-input`, redact credentials from Git errors, preserve clone failures instead of initializing a new repository, and give status/verify the existing `--no-pull` flags while retaining hidden compatibility for legacy write-only options.
+- Auth: make `auth manage --dry-run` preview the browser flow without touching the keyring or server, and fail fast when real execution uses `--no-input`.
+- Docs: make `docs cell-style` table, row, and column coordinates one-based like adjacent table commands, with negative table indexes counting from the end.
+- Docs: make positional `docs sed` image selectors deterministic by ordering anchored positioned images with document content and unanchored positioned images by object ID.
+- Docs: make addressed `docs sed` substitutions honor nth-match flags, use UTF-16 document indices, and ignore table or table-of-contents preview text instead of producing invalid mutation ranges.
+- Docs: keep `docs sed` formatting, footnote, break, and structural targets aligned when earlier image or text replacements change document length.
+- Auth: clarify that `auth import` always requires a refresh-token source and only optionally accepts a current access token plus expiry.
+- Calendar: make alias set/unset dry-runs preview config changes without writing `config.json`.
+- Dry-run safety: keep Drive, Contacts, Slides thumbnail, backup plaintext, OAuth token, Gmail filter, Photos, and Photos Picker downloads/exports offline and prevent local file or secret output.
+- Auth: make `auth credentials set --dry-run` preview credential and domain writes without opening the keyring or changing files, and validate every domain before storing credentials.
+- CLI: replace the stale hard-coded `--account` service list with concise email, alias, and auto-selection guidance that applies across authenticated Google API commands.
+- Calendar: remove the dead `calendar appointments` command, which could only report an API limitation; existing invocations now return unknown-command usage, while the limitation remains documented.
 - Drive: preserve repeated folder placements in tree, inventory, and size summaries; reject cyclic folder graphs instead of collapsing paths or scanning indefinitely.
+- Backup: bind configuration, legacy fallback, and home expansion to the selected runtime layout instead of process-global path state.
+- Backup: require the exact Gmail message selection and run identity before reusing or promoting encrypted checkpoints, preventing stale same-count mailbox checkpoints from becoming the completed snapshot.
 - Classroom: require an archived course before deletion with actionable lifecycle guidance, and prevent live tests from leaving consumer-account courses behind.
+- Classroom: wait for course state changes to become readable before reporting success, so immediate archive-then-delete workflows do not fail on stale state.
+- Forms: validate scale question bounds locally and document the Forms API's accepted minimum and maximum values.
+- Groups and Calendar team: reject consumer accounts and stored user OAuth before Cloud Identity API calls, require an explicit account for identity-based direct-token/ADC searches, keep ADC precedence consistent across services, and provide recovery guidance for service-account, direct-token, and ADC auth.
+- Gmail: bind watch state to the selected runtime state directory and serialize atomic updates across concurrent watch processes.
+- Gmail: bind tracking configuration to the selected runtime state directory and preserve concurrent account updates with shared atomic locking.
+- Gmail: bind tracking encryption and admin keys to the active runtime secret store instead of reopening the ambient keyring.
+- Auth: avoid repeated macOS Keychain prompts during token export and auth listing by keeping exports read-only and stopping fallback reads after keyring timeouts. (#772) — thanks @lox.
+- Gmail: add `--body-html-file` to draft create and update, including stdin support, for parity with send. (#774, #776) — thanks @TurboTheTurtle.
+- Zoom: bind credential metadata and encrypted secret/token storage to the selected runtime layout, with consistent alias canonicalization.
+- Auth: bind temporary manual OAuth state to the selected runtime config directory and reject unsafe redirect state values before filesystem access.
+- Auth: bind renamed-account alias, client, and default-account migration to the active runtime config store.
+- Auth: bind OAuth client credential commands to the active runtime secret store instead of reopening the ambient keyring.
+- Auth: bind Google API and OAuth flows to the active runtime credential and token repositories instead of reopening ambient config and keyring state.
+- Auth: capture keyring backend, password, service, platform, D-Bus, terminal, and lock policy once per runtime instead of rereading ambient process state.
+- Auth: bind service-account lookup, storage, listing, and legacy Keep fallback to the active runtime repository; bound raw legacy paths and treat case-insensitive same-principal Keep credentials as pure service-account auth.
+- Time: honor the runtime-selected `default_timezone` in `time now`, Gmail timestamps, watch output, Calendar time, and generated email Date headers instead of reading ambient config.
+- Config: bind account and calendar alias management and resolution to the active runtime config store.
+- Docs: document publishing personal External OAuth apps before authorization to avoid Google's seven-day Testing refresh-token expiry.
 
 ## 0.25.0 - 2026-06-12
 

@@ -2,61 +2,153 @@ package config
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
-func (l Layout) EnsureDataDir() (string, error) {
-	if err := os.MkdirAll(l.DataDir, 0o700); err != nil {
-		return "", fmt.Errorf("ensure data dir: %w", err)
-	}
+var errIncompleteServiceAccountLayout = errors.New("incomplete service account layout")
 
-	return l.DataDir, nil
+type ServiceAccountFile struct {
+	Path         string
+	Data         []byte
+	ModifiedAt   time.Time
+	KeepSpecific bool
 }
 
-func (l Layout) ExistingServiceAccountPath(email string) (string, error) {
-	paths := []string{l.ServiceAccountPath(email)}
-	if !l.ExplicitData {
-		paths = append(paths, l.ServiceAccountLegacyPath(email))
-	}
-
-	return firstExistingServiceAccountPath(paths...)
+type ServiceAccountStore struct {
+	layout Layout
 }
 
-func (l Layout) ExistingKeepServiceAccountPath(email string) (string, error) {
-	paths := []string{l.KeepServiceAccountPath(email)}
-	if !l.ExplicitData {
-		paths = append(paths,
-			l.KeepServiceAccountLegacySafePath(email),
-			l.KeepServiceAccountLegacyPath(email),
-		)
-	}
-
-	return firstExistingServiceAccountPath(paths...)
+func NewServiceAccountStore(layout Layout) *ServiceAccountStore {
+	return &ServiceAccountStore{layout: layout}
 }
 
-func (l Layout) RemoveServiceAccountFiles(email string) (bool, error) {
-	paths := []string{
-		l.ServiceAccountPath(email),
-		l.KeepServiceAccountPath(email),
+func (s *ServiceAccountStore) Layout() Layout {
+	if s == nil {
+		return Layout{}
 	}
-	if !l.ExplicitData {
-		paths = append(paths,
-			l.ServiceAccountLegacyPath(email),
-			l.KeepServiceAccountLegacySafePath(email),
-		)
-		if path, ok := l.keepServiceAccountLegacyDeletePath(email); ok {
-			paths = append(paths, path)
+
+	return s.layout
+}
+
+func (s *ServiceAccountStore) Path(email string) string {
+	return s.layout.ServiceAccountPath(email)
+}
+
+func (s *ServiceAccountStore) KeepPath(email string) string {
+	return s.layout.KeepServiceAccountPath(email)
+}
+
+func (s *ServiceAccountStore) Write(email string, data []byte) (string, error) {
+	if err := s.validateLayout(false); err != nil {
+		return "", err
+	}
+
+	if err := s.ensureDataDir(); err != nil {
+		return "", err
+	}
+
+	path := s.Path(email)
+	if err := WriteFileAtomic(path, data, 0o600); err != nil {
+		return "", fmt.Errorf("write service account: %w", err)
+	}
+
+	return path, nil
+}
+
+func (s *ServiceAccountStore) WriteKeep(email string, data []byte) (string, error) {
+	if err := s.validateLayout(false); err != nil {
+		return "", err
+	}
+
+	if err := s.ensureDataDir(); err != nil {
+		return "", err
+	}
+
+	path := s.KeepPath(email)
+	if err := WriteFileAtomic(path, data, 0o600); err != nil {
+		return "", fmt.Errorf("write Keep service account: %w", err)
+	}
+
+	return path, nil
+}
+
+func (s *ServiceAccountStore) WriteKeepCompatibility(email string, data []byte) ([]string, error) {
+	keepPath, err := s.WriteKeep(email, data)
+	if err != nil {
+		return nil, err
+	}
+
+	genericPath, err := s.Write(email, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{keepPath, genericPath}, nil
+}
+
+func (s *ServiceAccountStore) Existing(email string, includeKeepFallback bool) (ServiceAccountFile, bool, error) {
+	if err := s.validateLayout(true); err != nil {
+		return ServiceAccountFile{}, false, err
+	}
+
+	candidates := s.candidates(email, includeKeepFallback)
+	if len(candidates) == 0 {
+		return ServiceAccountFile{}, false, nil
+	}
+
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate.Path)
+		if err == nil {
+			candidate.ModifiedAt = info.ModTime()
+			return candidate, true, nil
+		}
+
+		if !os.IsNotExist(err) {
+			return ServiceAccountFile{}, false, fmt.Errorf("stat service account path: %w", err)
 		}
 	}
 
+	return candidates[0], false, nil
+}
+
+func (s *ServiceAccountStore) Read(email string, includeKeepFallback bool) (ServiceAccountFile, bool, error) {
+	file, exists, err := s.Existing(email, includeKeepFallback)
+	if err != nil || !exists {
+		return file, exists, err
+	}
+
+	data, err := os.ReadFile(file.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ServiceAccountFile{
+				Path:         file.Path,
+				KeepSpecific: file.KeepSpecific,
+			}, false, nil
+		}
+
+		return ServiceAccountFile{}, false, fmt.Errorf("read service account key: %w", err)
+	}
+	file.Data = data
+
+	return file, true, nil
+}
+
+func (s *ServiceAccountStore) Remove(email string) (bool, error) {
+	if err := s.validateLayout(true); err != nil {
+		return false, err
+	}
+
+	candidates := s.candidates(email, true)
 	removed := false
 
-	for _, path := range uniquePaths(paths...) {
-		if err := os.Remove(path); err != nil {
+	for _, candidate := range candidates {
+		if err := os.Remove(candidate.Path); err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
@@ -69,13 +161,17 @@ func (l Layout) RemoveServiceAccountFiles(email string) (bool, error) {
 	return removed, nil
 }
 
-func (l Layout) ListServiceAccountEmails() ([]string, error) {
+func (s *ServiceAccountStore) ListEmails() ([]string, error) {
+	if err := s.validateLayout(true); err != nil {
+		return nil, err
+	}
+
 	out := make([]string, 0)
 	seen := make(map[string]struct{})
 
-	dirs := []string{l.DataDir}
-	if !l.ExplicitData {
-		dirs = append(dirs, l.ConfigDir)
+	dirs := []string{s.layout.DataDir}
+	if !s.layout.ExplicitData {
+		dirs = append(dirs, s.layout.ConfigDir)
 	}
 
 	for _, dir := range uniquePaths(dirs...) {
@@ -107,15 +203,65 @@ func (l Layout) ListServiceAccountEmails() ([]string, error) {
 	return out, nil
 }
 
-func (l Layout) keepServiceAccountLegacyDeletePath(email string) (string, bool) {
+func (s *ServiceAccountStore) ensureDataDir() error {
+	if err := os.MkdirAll(s.layout.DataDir, 0o700); err != nil {
+		return fmt.Errorf("ensure data dir: %w", err)
+	}
+
+	return nil
+}
+
+func (s *ServiceAccountStore) validateLayout(includeLegacy bool) error {
+	if s == nil || strings.TrimSpace(s.layout.DataDir) == "" {
+		return fmt.Errorf("%w: data directory is required", errIncompleteServiceAccountLayout)
+	}
+
+	if includeLegacy && !s.layout.ExplicitData && strings.TrimSpace(s.layout.ConfigDir) == "" {
+		return fmt.Errorf("%w: config directory is required when legacy lookup is enabled", errIncompleteServiceAccountLayout)
+	}
+
+	return nil
+}
+
+func (s *ServiceAccountStore) candidates(email string, includeKeepFallback bool) []ServiceAccountFile {
+	candidates := []ServiceAccountFile{{Path: s.layout.ServiceAccountPath(email)}}
+	if !s.layout.ExplicitData {
+		candidates = append(candidates, ServiceAccountFile{Path: s.layout.ServiceAccountLegacyPath(email)})
+	}
+
+	if !includeKeepFallback {
+		return uniqueServiceAccountFiles(candidates)
+	}
+
+	candidates = append(candidates, ServiceAccountFile{
+		Path:         s.layout.KeepServiceAccountPath(email),
+		KeepSpecific: true,
+	})
+	if !s.layout.ExplicitData {
+		candidates = append(candidates, ServiceAccountFile{
+			Path:         s.layout.KeepServiceAccountLegacySafePath(email),
+			KeepSpecific: true,
+		})
+		if path, ok := s.rawKeepLegacyPath(email); ok {
+			candidates = append(candidates, ServiceAccountFile{
+				Path:         path,
+				KeepSpecific: true,
+			})
+		}
+	}
+
+	return uniqueServiceAccountFiles(candidates)
+}
+
+func (s *ServiceAccountStore) rawKeepLegacyPath(email string) (string, bool) {
 	if strings.ContainsAny(email, `/\`) {
 		return "", false
 	}
 
-	path := filepath.Clean(l.KeepServiceAccountLegacyPath(email))
+	path := filepath.Clean(s.layout.KeepServiceAccountLegacyPath(email))
 
 	base := filepath.Base(path)
-	if filepath.Dir(path) != filepath.Clean(l.ConfigDir) ||
+	if filepath.Dir(path) != filepath.Clean(s.layout.ConfigDir) ||
 		!strings.HasPrefix(base, "keep-sa-") ||
 		!strings.HasSuffix(base, ".json") {
 		return "", false
@@ -124,21 +270,33 @@ func (l Layout) keepServiceAccountLegacyDeletePath(email string) (string, bool) 
 	return path, true
 }
 
-func firstExistingServiceAccountPath(paths ...string) (string, error) {
-	var first string
-	for _, path := range paths {
-		if first == "" {
-			first = path
+func uniqueServiceAccountFiles(files []ServiceAccountFile) []ServiceAccountFile {
+	out := make([]ServiceAccountFile, 0, len(files))
+	seen := make(map[string]struct{}, len(files))
+
+	for _, file := range files {
+		if file.Path == "" {
+			continue
 		}
 
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("stat service account path: %w", err)
+		clean := filepath.Clean(file.Path)
+		if _, ok := seen[clean]; ok {
+			continue
 		}
+		seen[clean] = struct{}{}
+		file.Path = clean
+		out = append(out, file)
 	}
 
-	return first, nil
+	return out
+}
+
+func (l Layout) EnsureDataDir() (string, error) {
+	if err := os.MkdirAll(l.DataDir, 0o700); err != nil {
+		return "", fmt.Errorf("ensure data dir: %w", err)
+	}
+
+	return l.DataDir, nil
 }
 
 func serviceAccountEmailFromEntry(entry os.DirEntry) string {

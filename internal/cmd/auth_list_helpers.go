@@ -47,6 +47,9 @@ func listAuthTokensWithFallback(store secrets.Store) ([]secrets.Token, []authTok
 	if err == nil {
 		return tokens, nil, nil
 	}
+	if secrets.IsKeyringTimeout(err) {
+		return nil, nil, err
+	}
 
 	return readableTokens(store)
 }
@@ -189,13 +192,13 @@ func (e authListEntry) details() (client string, created string, services []stri
 	return client, created, nil, nil
 }
 
-func annotateServiceAccountEntries(entries []authListEntry, layout config.Layout) {
+func annotateServiceAccountEntries(entries []authListEntry, store *config.ServiceAccountStore) {
 	for i := range entries {
 		if !entries[i].SA {
 			continue
 		}
-		if _, created, ok := bestServiceAccountPathAndMtime(layout, entries[i].Email); ok {
-			entries[i].SACreated = created
+		if file, ok, err := store.Existing(entries[i].Email, true); err == nil && ok {
+			entries[i].SACreated = file.ModifiedAt
 		}
 	}
 }
@@ -314,10 +317,14 @@ func readableTokens(store secrets.Store) ([]secrets.Token, []authTokenReadError,
 
 		tok, err := store.GetToken(client, email)
 		if err != nil {
+			readErr := fmt.Errorf("read token for %s: %w", email, err)
+			if secrets.IsKeyringTimeout(err) {
+				return nil, nil, readErr
+			}
 			readErrors = append(readErrors, authTokenReadError{
 				Client: client,
 				Email:  email,
-				Err:    fmt.Errorf("read token for %s: %w", email, err),
+				Err:    readErr,
 			})
 			continue
 		}

@@ -24,10 +24,7 @@ import (
 func TestGmailWatchServer_ServeHTTP_AllowNoHook(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	// Seed state so StartHistoryID returns non-zero.
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
@@ -143,10 +140,7 @@ func TestGmailWatchServer_ServeHTTP_AllowNoHook(t *testing.T) {
 func TestGmailWatchServer_ServeHTTP_HistoryTypes_NoMatch(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	// Seed state so StartHistoryID returns non-zero.
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
@@ -229,10 +223,7 @@ func TestGmailWatchServer_ServeHTTP_HistoryTypes_NoMatch(t *testing.T) {
 func TestGmailWatchServer_ServeHTTP_HistoryTypes_DeletedOnly(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"
@@ -362,10 +353,7 @@ func TestGmailWatchHelpers(t *testing.T) {
 func TestGmailWatchServer_HandlePush_AppliesFetchDelay(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"
@@ -490,10 +478,7 @@ func TestGmailWatchServer_OIDCAudience(t *testing.T) {
 func TestGmailWatchServer_ResyncHistory_OnStaleError(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"
@@ -574,10 +559,7 @@ func TestGmailWatchServer_ResyncHistory_OnStaleError(t *testing.T) {
 func TestGmailWatchServer_HandlePush_DuplicateMessageID(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"
@@ -598,7 +580,7 @@ func TestGmailWatchServer_HandlePush_DuplicateMessageID(t *testing.T) {
 		warnf: func(string, ...any) {},
 	}
 
-	_, err = server.handlePush(context.Background(), gmailPushPayload{
+	_, err := server.handlePush(context.Background(), gmailPushPayload{
 		EmailAddress: "a@b.com",
 		HistoryID:    "200",
 		MessageID:    "dup",
@@ -614,10 +596,7 @@ func TestGmailWatchServer_HandlePush_DuplicateMessageID(t *testing.T) {
 func TestGmailWatchServer_HandlePush_SkipsMissingMessages(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"
@@ -702,10 +681,7 @@ func TestGmailWatchServer_HandlePush_SkipsMissingMessages(t *testing.T) {
 func TestGmailWatchServer_SendHook_UpdatesState(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error { s.Account = "a@b.com"; return nil })
 
 	var calls int
@@ -731,7 +707,7 @@ func TestGmailWatchServer_SendHook_UpdatesState(t *testing.T) {
 		warnf:      func(string, ...any) {},
 	}
 
-	err = server.sendHook(context.Background(), &gmailHookPayload{Source: "gmail", Account: "a@b.com", HistoryID: "1"})
+	err := server.sendHook(context.Background(), &gmailHookPayload{Source: "gmail", Account: "a@b.com", HistoryID: "1"})
 	if err == nil || !strings.Contains(err.Error(), "hook status") {
 		t.Fatalf("expected http error, got: %v", err)
 	}
@@ -750,10 +726,7 @@ func TestGmailWatchServer_SendHook_UpdatesState(t *testing.T) {
 func TestGmailWatchServer_ServeHTTP_HookError(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	if updateErr := store.Update(func(s *gmailWatchState) error {
 		s.Account = "a@b.com"
 		s.HistoryID = "100"

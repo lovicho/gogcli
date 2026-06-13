@@ -21,6 +21,13 @@ func isStdoutPath(path string) bool {
 	return strings.TrimSpace(path) == stdoutPath
 }
 
+func outputPathOrStdout(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return stdoutPath
+	}
+	return path
+}
+
 func openUserOutputFile(path string, opts outputFileOptions) (*os.File, string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -65,20 +72,4 @@ func createUserOutputFile(path string) (*os.File, string, error) {
 		FileMode:  0o600,
 		DirMode:   0o700,
 	})
-}
-
-func writePrivateFile(path string, data []byte, mode os.FileMode) error {
-	if mode == 0 {
-		mode = 0o600
-	}
-	// Path is resolved by the caller. This helper is for app-owned/private outputs.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode) //nolint:gosec // caller controls target path semantics
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
 }

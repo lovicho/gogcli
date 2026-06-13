@@ -36,10 +36,7 @@ func TestGmailWatchRenewAndStop_JSON(t *testing.T) {
 
 	svc := newGmailServiceFromServer(t, srv)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{
 			Account:      "a@b.com",
@@ -69,10 +66,7 @@ func TestGmailWatchRenewAndStop_JSON(t *testing.T) {
 func TestGmailWatchStatusAndStop_Text(t *testing.T) {
 	setWatchTestConfigHome(t)
 
-	store, err := newGmailWatchStore("a@b.com")
-	if err != nil {
-		t.Fatalf("store: %v", err)
-	}
+	store := newGmailWatchTestStore(t, "a@b.com")
 	_ = store.Update(func(s *gmailWatchState) error {
 		*s = gmailWatchState{
 			Account:   "a@b.com",

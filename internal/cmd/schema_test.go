@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/steipete/gogcli/internal/config"
 )
 
 func TestSplitCommandPath_SplitsWhitespaceWithinArgs(t *testing.T) {
@@ -102,6 +100,19 @@ func TestExecute_SchemaIncludesAutomationContract(t *testing.T) {
 	if got := strings.Join(doc.Automation.Safety.CommandRules.Disabled, ","); got != "gmail.send" {
 		t.Fatalf("disabled = %q", got)
 	}
+	var accountFlag *schemaFlag
+	for i := range doc.Command.Flags {
+		if doc.Command.Flags[i].Name == "account" {
+			accountFlag = &doc.Command.Flags[i]
+			break
+		}
+	}
+	if accountFlag == nil {
+		t.Fatal("root schema is missing --account")
+	}
+	if accountFlag.Help != "Account email, alias, or auto for authenticated Google API commands" {
+		t.Fatalf("account help = %q", accountFlag.Help)
+	}
 }
 
 func TestExecute_SchemaRejectsPlainMode(t *testing.T) {
@@ -139,12 +150,9 @@ func assertSchemaAliases(t *testing.T, node *schemaNode) {
 func TestExecute_SchemaResolvesAccountNoSendAliasFromEnvironment(t *testing.T) {
 	setTestConfigHome(t)
 	t.Setenv("GOG_ACCOUNT", "work")
-	if err := config.SetAccountAlias("work", "user@example.com"); err != nil {
+	store := defaultConfigStoreForTest(t)
+	if err := store.SetAccountAlias("work", "user@example.com"); err != nil {
 		t.Fatalf("SetAccountAlias: %v", err)
-	}
-	store, err := config.DefaultConfigStore()
-	if err != nil {
-		t.Fatalf("DefaultConfigStore: %v", err)
 	}
 	if err := store.SetNoSendAccount("user@example.com", true); err != nil {
 		t.Fatalf("SetNoSendAccount: %v", err)

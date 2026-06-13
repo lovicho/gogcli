@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -95,7 +94,7 @@ func (c *GmailWatchStartCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		return err
 	}
 
-	store, err := newGmailWatchStore(account)
+	store, err := newGmailWatchStore(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -118,7 +117,7 @@ func (c *GmailWatchStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	store, err := loadGmailWatchStore(account)
+	store, err := loadGmailWatchStore(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -146,7 +145,7 @@ func (c *GmailWatchRenewCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	store, err := loadGmailWatchStore(account)
+	store, err := loadGmailWatchStore(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -204,9 +203,12 @@ func (c *GmailWatchStopCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if stopErr := svc.Users.Stop("me").Do(); stopErr != nil {
 		return stopErr
 	}
-	store, err := newGmailWatchStore(account)
-	if err == nil && store.path != "" {
-		_ = os.Remove(store.path)
+	store, err := newGmailWatchStore(ctx, account)
+	if err != nil {
+		return err
+	}
+	if err := store.Remove(); err != nil {
+		return err
 	}
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{"stopped": true})
@@ -220,7 +222,7 @@ type GmailWatchServeCmd struct {
 	Port          int      `name:"port" help:"Listen port" default:"8788"`
 	Path          string   `name:"path" help:"Push handler path" default:"/gmail-pubsub"`
 	FetchDelay    string   `name:"fetch-delay" help:"Delay before fetching Gmail history (seconds or duration)" default:"3s"`
-	Timezone      string   `name:"timezone" short:"z" help:"Output timezone (IANA name, e.g. America/New_York, UTC). Default: local"`
+	Timezone      string   `name:"timezone" short:"z" help:"Output timezone (IANA name, e.g. America/New_York, UTC). Default: GOG_TIMEZONE, config, then local"`
 	Local         bool     `name:"local" help:"Use local timezone (default behavior, useful to override --timezone)"`
 	VerifyOIDC    bool     `name:"verify-oidc" help:"Verify Pub/Sub OIDC tokens"`
 	OIDCEmail     string   `name:"oidc-email" help:"Expected service account email"`
@@ -257,7 +259,7 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		return usage("--oidc-audience requires --verify-oidc")
 	}
 
-	loc, err := resolveOutputLocation(c.Timezone, c.Local, stderrWriter(ctx))
+	loc, err := resolveOutputLocation(ctx, c.Timezone, c.Local, stderrWriter(ctx))
 	if err != nil {
 		return err
 	}
@@ -274,7 +276,65 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		return usage("--fetch-delay must be >= 0")
 	}
 
-	store, err := loadGmailWatchStore(account)
+	if flags != nil && flags.DryRun {
+		dryRunState, stateFound, stateErr := readGmailWatchStateOptional(ctx, account)
+		if stateErr != nil {
+			return stateErr
+		}
+		dryRunHook, hookErr := resolveWatchHookFromFlags(kctx, dryRunState, watchHookFlagValues{
+			URL:         c.HookURL,
+			Token:       c.HookToken,
+			IncludeBody: c.IncludeBody,
+			MaxBytes:    c.MaxBytes,
+		}, true)
+		if hookErr != nil {
+			if !errors.Is(hookErr, errNoHookConfigured) {
+				return hookErr
+			}
+			dryRunHook = nil
+		}
+		hookSource := "none"
+		if strings.TrimSpace(c.HookURL) != "" {
+			hookSource = "flags"
+		} else if stateFound && dryRunState.Hook != nil {
+			hookSource = "stored"
+		}
+		maxBodyBytes := defaultHookMaxBytes
+		includeBody := c.IncludeBody
+		hookTokenSet := c.HookToken != ""
+		if dryRunHook != nil {
+			includeBody = dryRunHook.IncludeBody
+			hookTokenSet = dryRunHook.Token != ""
+			if dryRunHook.MaxBytes > 0 {
+				maxBodyBytes = dryRunHook.MaxBytes
+			}
+		}
+		return dryRunExit(ctx, flags, "gmail.watch.serve", map[string]any{
+			"account": account,
+			"listen":  net.JoinHostPort(c.Bind, strconv.Itoa(c.Port)),
+			"path":    c.Path,
+			"auth": map[string]any{
+				"verify_oidc":       c.VerifyOIDC,
+				"oidc_email_set":    strings.TrimSpace(c.OIDCEmail) != "",
+				"oidc_audience_set": strings.TrimSpace(c.OIDCAudience) != "",
+				"shared_token_set":  c.SharedToken != "",
+			},
+			"hook": map[string]any{
+				"source":       hookSource,
+				"url_set":      dryRunHook != nil,
+				"token_set":    hookTokenSet,
+				"include_body": includeBody,
+				"max_bytes":    maxBodyBytes,
+				"save":         c.SaveHook,
+			},
+			"fetch_delay_seconds": fetchDelay.Seconds(),
+			"timezone":            loc.String(),
+			"history_types":       historyTypes,
+			"exclude_labels":      splitCommaList(c.ExcludeLabels),
+		})
+	}
+
+	store, err := loadGmailWatchStore(ctx, account)
 	if err != nil {
 		return err
 	}
@@ -343,7 +403,10 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 	}
 
 	selectedClient := strings.TrimSpace(flags.Client)
-	gmailFactory := gmailServiceFactory(ctx)
+	gmailFactory, err := gmailServiceFactory(ctx)
+	if err != nil {
+		return err
+	}
 	serviceFactory := func(ctx context.Context, account string) (*gmail.Service, error) {
 		if selectedClient != "" {
 			ctx = authclient.WithClient(ctx, selectedClient)

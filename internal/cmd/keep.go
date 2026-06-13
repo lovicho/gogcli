@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	keepapi "google.golang.org/api/keep/v1"
@@ -430,21 +429,16 @@ func getKeepService(ctx context.Context, flags *RootFlags, keepCmd *KeepCmd) (*k
 		return nil, err
 	}
 
-	genericSAPath, err := config.ExistingServiceAccountPath(account)
+	serviceAccounts, err := commandServiceAccountStore(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if _, statErr := os.Stat(genericSAPath); statErr == nil {
-		return keepServiceWithServiceAccount(ctx, genericSAPath, account)
-	}
-
-	saPath, err := config.ExistingKeepServiceAccountPath(account)
+	file, exists, err := serviceAccounts.Existing(account, true)
 	if err != nil {
 		return nil, err
 	}
-
-	if _, statErr := os.Stat(saPath); statErr == nil {
-		return keepServiceWithServiceAccount(ctx, saPath, account)
+	if exists {
+		return keepServiceWithServiceAccount(ctx, file.Path, account)
 	}
 
 	return nil, usage("Keep is Workspace-only and requires a service account. Configure it with: gog auth service-account set <email> --key <service-account.json> (or legacy: gog auth keep <email> --key <service-account.json>)")

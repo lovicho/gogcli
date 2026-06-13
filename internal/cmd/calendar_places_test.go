@@ -32,7 +32,8 @@ func TestResolveCalendarPlaceTextSearch(t *testing.T) {
 	defer srv.Close()
 	t.Setenv("GOG_PLACES_BASE_URL", srv.URL)
 
-	place, err := resolveCalendarPlace(context.Background(), calendarPlaceLookup{LocationSearch: "cafe"})
+	ctx := withDefaultTestRuntime(context.Background())
+	place, err := resolveCalendarPlace(ctx, calendarPlaceLookup{LocationSearch: "cafe"})
 	if err != nil {
 		t.Fatalf("resolveCalendarPlace: %v", err)
 	}
@@ -154,7 +155,7 @@ func TestCalendarUpdateDryRunPlaceIDSkipsPlacesAPI(t *testing.T) {
 }
 
 func TestBuildCalendarCreatePlanAppliesResolvedPlace(t *testing.T) {
-	plan, err := buildCalendarCreatePlan(calendarCreateInput{
+	plan, err := buildCalendarCreatePlan(defaultConfigStoreForTest(t), calendarCreateInput{
 		CalendarID:  "primary",
 		Summary:     "Coffee",
 		From:        "2026-05-10T10:00:00Z",

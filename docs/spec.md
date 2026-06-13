@@ -196,7 +196,7 @@ Flag aliases:
 - `gog --client <name> auth credentials <credentials.json|->`
 - `gog auth add <email> [--services user|all-user|all|gmail,calendar,chat,classroom,drive,driveactivity,drivelabels,docs,slides,contacts,tasks,sheets,people,forms,sites,meet,photos,photospicker,appscript,analytics,searchconsole,ads,youtube] [--readonly] [--drive-scope full|readonly|file] [--gmail-scope full|readonly] [--extra-scopes CSV] [--manual] [--remote] [--step 1|2] [--auth-url URL] [--listen-addr HOST[:PORT]] [--redirect-host HOST] [--timeout DURATION] [--force-consent]`
 - `gog auth services [--markdown]`
-- `gog auth manage [--services ...] [--listen-addr HOST[:PORT]] [--redirect-host HOST]`
+- `gog auth manage [--services ...] [--listen-addr HOST[:PORT]] [--redirect-host HOST] [--dry-run]` (interactive browser flow; real execution fails with usage exit code 2 under `--no-input`)
 - `gog auth keep <email> --key <service-account.json>` (Google Keep; Workspace only)
 - `gog auth list`
 - `gog auth doctor [--check]` (diagnose keyring/password drift and refresh-token failures)
@@ -266,10 +266,12 @@ Drive hierarchy semantics:
 
 - `gog slides thumbnail <presentationId> <slideId> [--size small|medium|large] [--format png|jpeg] [--out PATH]`
 - `gog calendar calendars`
+- `gog calendar subscribe <calendarId>`
+- `gog calendar unsubscribe <calendarId>`
 - `gog calendar create-calendar <summary> [--description D] [--timezone TZ] [--location L]`
+- `gog calendar delete-calendar <ownedSecondaryCalendarId>`
 - `gog calendar acl <calendarId>`
 - `gog calendar events <calendarId> [--cal ID_OR_NAME] [--calendars CSV] [--all] [--from RFC3339] [--to RFC3339] [--max N] [--page TOKEN] [--query Q] [--weekday]`
-- `gog calendar appointments` (reports that Google Calendar appointment schedules are not currently exposed by the Calendar API)
 - `gog calendar event|get <calendarId> <eventId>`
 - `GOG_CALENDAR_WEEKDAY=1` defaults `--weekday` for `gog calendar events`
 - `gog calendar create <calendarId> --summary S --from DT --to DT [--start-timezone TZ] [--end-timezone TZ] [--description D] [--location L|--location-search Q|--place-id ID] [--place-language LANG] [--place-region REGION] [--attendees a@b.com,c@d.com] [--all-day] [--event-type TYPE]`
@@ -278,6 +280,15 @@ Drive hierarchy semantics:
 - `gog calendar freebusy [calendarIds] [--cal ID_OR_NAME] [--calendars CSV] [--all] --from RFC3339 --to RFC3339`
 - `gog calendar conflicts [--cal ID_OR_NAME] [--calendars CSV] [--all] [--from RFC3339|date|relative] [--to RFC3339|date|relative] [--today|--week|--days N]`
 - `gog calendar respond <calendarId> <eventId> --status accepted|declined|tentative [--send-updates all|none|externalOnly]`
+
+`calendar unsubscribe` removes only the selected entry from the caller's
+calendar list. `calendar delete-calendar` permanently deletes an owned
+secondary calendar; Google may briefly retain a stale calendar-list row after
+the authoritative calendar resource is gone.
+
+Google Calendar appointment schedules are not exposed by the Calendar API, so
+the CLI cannot list or manage them.
+
 - `gog maps places search <query> [--language LANG] [--region REGION] [--fields FIELD_MASK] [--max N]`
 - `gog maps places details <placeId> [--language LANG] [--region REGION] [--fields FIELD_MASK]`
 - `gog maps directions --origin ORIGIN --destination DESTINATION [--mode driving|walking|bicycling|transit] [--language LANG] [--region REGION]`
@@ -305,6 +316,11 @@ Drive hierarchy semantics:
 - `gog classroom courses join <courseId> [--role student|teacher] [--user me]`
 - `gog classroom courses leave <courseId> [--role student|teacher] [--user me]`
 - `gog classroom courses url <courseId...>`
+
+Course state mutations wait for the requested state to become visible through
+the Classroom API before returning success. If Google still serves stale state
+after the bounded retry window, the command exits with retryable code `8`.
+
 - `gog classroom students <courseId> [--max N] [--page TOKEN]`
 - `gog classroom students get <courseId> <userId>`
 - `gog classroom students add <courseId> <userId> [--enrollment-code CODE]`
