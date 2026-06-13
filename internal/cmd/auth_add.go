@@ -278,7 +278,9 @@ func (c *AuthAddCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return wrapAuthAddStoreError(err)
 	}
 	if migratedEmail != "" {
-		if err := googleauth.MigrateStoredEmailReferences(store, client, migratedEmail, authorizedEmail); err != nil {
+		if err := googleauth.MigrateStoredEmailReferences(store, func(oldEmail, newEmail string) error {
+			return authclient.UpdateEmailReferences(ctx, oldEmail, newEmail)
+		}, client, migratedEmail, authorizedEmail); err != nil {
 			return wrapAuthAddStoreError(err)
 		}
 		if err := googleauth.DeleteStoredEmailAlias(store, client, migratedEmail); err != nil {

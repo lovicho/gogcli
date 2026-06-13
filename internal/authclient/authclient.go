@@ -8,14 +8,21 @@ import (
 )
 
 type (
-	contextKey     struct{}
-	accessTokenKey struct{}
-	resolverKey    struct{}
+	contextKey               struct{}
+	accessTokenKey           struct{}
+	resolverKey              struct{}
+	emailReferenceUpdaterKey struct{}
 )
 
-type ClientResolver func(email string, override string) (string, error)
+type (
+	ClientResolver        func(email string, override string) (string, error)
+	EmailReferenceUpdater func(oldEmail, newEmail string) error
+)
 
-var errClientResolverRequired = errors.New("client resolver is required")
+var (
+	errClientResolverRequired        = errors.New("client resolver is required")
+	errEmailReferenceUpdaterRequired = errors.New("email reference updater is required")
+)
 
 func WithClient(ctx context.Context, client string) context.Context {
 	client = strings.TrimSpace(client)
@@ -71,6 +78,27 @@ func WithClientResolver(ctx context.Context, resolver ClientResolver) context.Co
 	return context.WithValue(ctx, resolverKey{}, resolver)
 }
 
+func WithEmailReferenceUpdater(ctx context.Context, updater EmailReferenceUpdater) context.Context {
+	if updater == nil {
+		return ctx
+	}
+
+	return context.WithValue(ctx, emailReferenceUpdaterKey{}, updater)
+}
+
+func UpdateEmailReferences(ctx context.Context, oldEmail, newEmail string) error {
+	updater := emailReferenceUpdaterFromContext(ctx)
+	if updater == nil {
+		return errEmailReferenceUpdaterRequired
+	}
+
+	if err := updater(oldEmail, newEmail); err != nil {
+		return fmt.Errorf("update email references: %w", err)
+	}
+
+	return nil
+}
+
 func ResolveClient(ctx context.Context, email string) (string, error) {
 	return ResolveClientWithOverride(ctx, email, ClientOverrideFromContext(ctx))
 }
@@ -97,4 +125,14 @@ func clientResolverFromContext(ctx context.Context) ClientResolver {
 	resolver, _ := ctx.Value(resolverKey{}).(ClientResolver)
 
 	return resolver
+}
+
+func emailReferenceUpdaterFromContext(ctx context.Context) EmailReferenceUpdater {
+	if ctx == nil {
+		return nil
+	}
+
+	updater, _ := ctx.Value(emailReferenceUpdaterKey{}).(EmailReferenceUpdater)
+
+	return updater
 }

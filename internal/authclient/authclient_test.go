@@ -95,3 +95,31 @@ func TestResolveClientRequiresResolver(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateEmailReferencesUsesContextUpdater(t *testing.T) {
+	t.Parallel()
+
+	var gotOld, gotNew string
+	ctx := WithEmailReferenceUpdater(context.Background(), func(oldEmail, newEmail string) error {
+		gotOld = oldEmail
+		gotNew = newEmail
+
+		return nil
+	})
+
+	if err := UpdateEmailReferences(ctx, "old@example.com", "new@example.com"); err != nil {
+		t.Fatalf("UpdateEmailReferences: %v", err)
+	}
+
+	if gotOld != "old@example.com" || gotNew != "new@example.com" {
+		t.Fatalf("updater args = %q, %q", gotOld, gotNew)
+	}
+}
+
+func TestUpdateEmailReferencesRequiresUpdater(t *testing.T) {
+	t.Parallel()
+
+	if err := UpdateEmailReferences(context.Background(), "old@example.com", "new@example.com"); !errors.Is(err, errEmailReferenceUpdaterRequired) {
+		t.Fatalf("error = %v, want updater-required", err)
+	}
+}

@@ -71,12 +71,19 @@ func withTestRuntime(ctx context.Context, configure func(*app.Runtime)) context.
 }
 
 func withTestClientResolver(ctx context.Context) context.Context {
-	return authclient.WithClientResolver(ctx, func(email string, override string) (string, error) {
+	ctx = authclient.WithClientResolver(ctx, func(email string, override string) (string, error) {
 		cfg, err := config.ReadConfig()
 		if err != nil {
 			return "", err
 		}
 		return config.ResolveClientForAccount(cfg, email, override)
+	})
+	return authclient.WithEmailReferenceUpdater(ctx, func(oldEmail, newEmail string) error {
+		store, err := config.DefaultConfigStore()
+		if err != nil {
+			return err
+		}
+		return store.MigrateAccountEmailReferences(oldEmail, newEmail)
 	})
 }
 
