@@ -180,7 +180,10 @@ func (c *DriveDuCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fmt.Errorf("drive du truncated unexpectedly")
 	}
 
-	summaries := summarizeDriveDu(items, rootID, depth)
+	summaries, err := summarizeDriveDu(items, rootID, depth)
+	if err != nil {
+		return err
+	}
 	sortDriveDu(summaries, c.Sort, c.Order)
 
 	if maxItems > 0 && len(summaries) > maxItems {
@@ -202,18 +205,20 @@ func (c *DriveDuCmd) Run(ctx context.Context, flags *RootFlags) error {
 }
 
 type driveTreeItem struct {
-	ID              string                     `json:"id"`
-	Name            string                     `json:"name"`
-	Path            string                     `json:"path"`
-	ParentID        string                     `json:"parentId,omitempty"`
-	MimeType        string                     `json:"mimeType"`
-	Size            int64                      `json:"size,omitempty"`
-	ModifiedTime    string                     `json:"modifiedTime,omitempty"`
-	WebViewLink     string                     `json:"webViewLink,omitempty"`
-	Owners          []string                   `json:"owners,omitempty"`
-	MD5             string                     `json:"md5,omitempty"`
-	ShortcutDetails *drive.FileShortcutDetails `json:"shortcutDetails,omitempty"`
-	Depth           int                        `json:"depth"`
+	ID                string                     `json:"id"`
+	Name              string                     `json:"name"`
+	Path              string                     `json:"path"`
+	ParentID          string                     `json:"parentId,omitempty"`
+	MimeType          string                     `json:"mimeType"`
+	Size              int64                      `json:"size,omitempty"`
+	ModifiedTime      string                     `json:"modifiedTime,omitempty"`
+	WebViewLink       string                     `json:"webViewLink,omitempty"`
+	Owners            []string                   `json:"owners,omitempty"`
+	MD5               string                     `json:"md5,omitempty"`
+	ShortcutDetails   *drive.FileShortcutDetails `json:"shortcutDetails,omitempty"`
+	Depth             int                        `json:"depth"`
+	placementID       drivePlacementID
+	parentPlacementID drivePlacementID
 }
 
 func (d driveTreeItem) IsFolder() bool {
@@ -241,14 +246,33 @@ type driveTreeOptions struct {
 }
 
 type driveFolderQueueItem struct {
-	ID    string
-	Path  string
-	Depth int
+	ID          string
+	Path        string
+	Depth       int
+	PlacementID drivePlacementID
+	Ancestry    *driveFolderAncestry
+}
+
+type drivePlacementID uint64
+
+type driveFolderAncestry struct {
+	ID     string
+	Parent *driveFolderAncestry
+}
+
+func (a *driveFolderAncestry) contains(id string) bool {
+	for current := a; current != nil; current = current.Parent {
+		if current.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 const (
-	driveTreeFields      = "id,name,mimeType,size,modifiedTime,shortcutDetails(targetId,targetMimeType,targetResourceKey)"
-	driveInventoryFields = "id,name,mimeType,size,modifiedTime,owners(emailAddress,displayName),shortcutDetails(targetId,targetMimeType,targetResourceKey)"
+	driveRootPlacementID drivePlacementID = 1
+	driveTreeFields                       = "id,name,mimeType,size,modifiedTime,shortcutDetails(targetId,targetMimeType,targetResourceKey)"
+	driveInventoryFields                  = "id,name,mimeType,size,modifiedTime,owners(emailAddress,displayName),shortcutDetails(targetId,targetMimeType,targetResourceKey)"
 )
 
 func listDriveTree(ctx context.Context, svc *drive.Service, opts driveTreeOptions) ([]driveTreeItem, bool, error) {
@@ -261,9 +285,16 @@ func listDriveTree(ctx context.Context, svc *drive.Service, opts driveTreeOption
 		fields = driveTreeFields
 	}
 
-	queue := []driveFolderQueueItem{{ID: rootID, Path: "", Depth: 0}}
+	queue := []driveFolderQueueItem{{
+		ID:          rootID,
+		Path:        "",
+		Depth:       0,
+		PlacementID: driveRootPlacementID,
+		Ancestry:    &driveFolderAncestry{ID: rootID},
+	}}
 	out := make([]driveTreeItem, 0, 128)
 	truncated := false
+	nextPlacementID := driveRootPlacementID
 
 	for len(queue) > 0 {
 		folder := queue[0]
@@ -277,30 +308,49 @@ func listDriveTree(ctx context.Context, svc *drive.Service, opts driveTreeOption
 			if child == nil {
 				continue
 			}
+			nextPlacementID++
 			depth := folder.Depth + 1
+			size := child.Size
+			if child.MimeType == driveMimeShortcut {
+				size = 0
+			}
 			item := driveTreeItem{
-				ID:              child.Id,
-				Name:            child.Name,
-				Path:            joinDrivePath(folder.Path, child.Name),
-				ParentID:        folder.ID,
-				MimeType:        child.MimeType,
-				Size:            child.Size,
-				ModifiedTime:    child.ModifiedTime,
-				WebViewLink:     child.WebViewLink,
-				Owners:          driveOwners(child),
-				MD5:             child.Md5Checksum,
-				ShortcutDetails: child.ShortcutDetails,
-				Depth:           depth,
+				ID:                child.Id,
+				Name:              child.Name,
+				Path:              joinDrivePath(folder.Path, child.Name),
+				ParentID:          folder.ID,
+				MimeType:          child.MimeType,
+				Size:              size,
+				ModifiedTime:      child.ModifiedTime,
+				WebViewLink:       child.WebViewLink,
+				Owners:            driveOwners(child),
+				MD5:               child.Md5Checksum,
+				ShortcutDetails:   child.ShortcutDetails,
+				Depth:             depth,
+				placementID:       nextPlacementID,
+				parentPlacementID: folder.PlacementID,
 			}
 
 			// Shortcuts are leaves even when their target is a folder. Following
 			// targets would duplicate paths and can introduce traversal cycles.
 			if item.IsFolder() {
+				if folder.Ancestry.contains(item.ID) {
+					return nil, false, fmt.Errorf("drive folder cycle detected at %q (id %s)", item.Path, item.ID)
+				}
 				if opts.IncludeFolder {
 					out = append(out, item)
 				}
 				if opts.MaxDepth <= 0 || depth < opts.MaxDepth {
-					queue = append(queue, driveFolderQueueItem{ID: child.Id, Path: item.Path, Depth: depth})
+					queue = append(queue, driveFolderQueueItem{
+						ID:          child.Id,
+						Path:        item.Path,
+						Depth:       depth,
+						PlacementID: item.placementID,
+						Ancestry: &driveFolderAncestry{
+							ID:     child.Id,
+							Parent: folder.Ancestry,
+						},
+					})
 				}
 			} else if opts.IncludeFiles {
 				out = append(out, item)

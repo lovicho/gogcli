@@ -42,7 +42,11 @@ gog drive du --parent <folderId> --max 20
 gog drive du --parent <folderId> --depth 2 --sort size --json
 ```
 
-`drive du` counts files under folders and sorts by `size`, `path`, or `files`.
+`drive tree` and `drive inventory` emit one row per discovered placement, so
+legacy items reachable through multiple parents retain each path. `drive du`
+aggregates those placements independently and sorts by `size`, `path`, or
+`files`. Shortcuts count as file placements with zero content bytes; scans do
+not follow shortcut targets.
 
 ## Inventory Export
 

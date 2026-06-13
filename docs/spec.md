@@ -259,6 +259,10 @@ Drive hierarchy semantics:
   shortcut IDs to their targets.
 - `drive tree`, `drive inventory`, and `drive du` treat shortcuts as leaves,
   including shortcuts whose targets are folders.
+- Tree and inventory output one row per discovered placement. Size summaries
+  aggregate each placement independently, even when legacy parent links expose
+  the same folder ID through multiple paths.
+- Folder scans reject an ancestor cycle instead of following it indefinitely.
 
 - `gog slides thumbnail <presentationId> <slideId> [--size small|medium|large] [--format png|jpeg] [--out PATH]`
 - `gog calendar calendars`
