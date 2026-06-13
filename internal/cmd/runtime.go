@@ -30,6 +30,7 @@ import (
 	"google.golang.org/api/tasks/v1"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/secrets"
@@ -236,6 +237,28 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 		normalized.Auth.ManualAuthURL = defaults.Auth.ManualAuthURL
 	}
 	return &normalized
+}
+
+func configureRuntimeConfig(runtime *app.Runtime, homeOverride string) error {
+	if runtime.Config != nil {
+		return nil
+	}
+
+	if runtime.Layout.ConfigDir == "" {
+		layout, err := config.ResolveSystemLayoutFor(homeOverride, config.PathKindConfig)
+		if err != nil {
+			return err
+		}
+		runtime.Layout.ConfigDir = layout.ConfigDir
+		runtime.Layout.ExplicitConfig = layout.ExplicitConfig
+		runtime.Layout.ExplicitData = layout.ExplicitData
+		runtime.Layout.ExplicitState = layout.ExplicitState
+		runtime.Layout.ExplicitCache = layout.ExplicitCache
+		runtime.Layout.UsesXDG = layout.UsesXDG
+	}
+
+	runtime.Config = config.NewConfigStore(runtime.Layout)
+	return nil
 }
 
 func commandIO(ctx context.Context) app.IO {

@@ -28,7 +28,11 @@ func (c *ConfigNoSendSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err := dryRunExit(ctx, flags, "config.no-send.set", map[string]any{"account": account}); err != nil {
 		return err
 	}
-	if err := config.SetNoSendAccount(account, true); err != nil {
+	store, err := commandConfigStore(ctx)
+	if err != nil {
+		return err
+	}
+	if err := store.SetNoSendAccount(account, true); err != nil {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
@@ -54,7 +58,11 @@ func (c *ConfigNoSendRemoveCmd) Run(ctx context.Context, flags *RootFlags) error
 	if err := dryRunExit(ctx, flags, "config.no-send.remove", map[string]any{"account": account}); err != nil {
 		return err
 	}
-	if err := config.SetNoSendAccount(account, false); err != nil {
+	store, err := commandConfigStore(ctx)
+	if err != nil {
+		return err
+	}
+	if err := store.SetNoSendAccount(account, false); err != nil {
 		return err
 	}
 	if outfmt.IsJSON(ctx) {
@@ -72,7 +80,7 @@ type ConfigNoSendListCmd struct{}
 
 func (c *ConfigNoSendListCmd) Run(ctx context.Context) error {
 	u := ui.FromContext(ctx)
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(ctx)
 	if err != nil {
 		return err
 	}

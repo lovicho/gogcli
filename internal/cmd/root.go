@@ -176,7 +176,7 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	if err = enforceDisabledCommands(kctx, cli.DisableCommands); err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
 	}
-	if err = enforceGmailNoSend(kctx, &cli.RootFlags); err != nil {
+	if err = enforceGmailNoSend(kctx, &cli.RootFlags, runtime); err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
 	}
 

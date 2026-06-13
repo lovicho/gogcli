@@ -29,8 +29,38 @@ import (
 	youtubeapi "google.golang.org/api/youtube/v3"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 )
+
+func TestConfigureRuntimeConfigUsesInjectedLayout(t *testing.T) {
+	t.Parallel()
+
+	layout := config.Layout{ConfigDir: t.TempDir()}
+	runtime := &app.Runtime{Layout: layout}
+	if err := configureRuntimeConfig(runtime, ""); err != nil {
+		t.Fatalf("configureRuntimeConfig: %v", err)
+	}
+	if runtime.Config == nil {
+		t.Fatal("expected config store")
+	}
+	if runtime.Config.Path() != layout.ConfigPath() {
+		t.Fatalf("config path = %q, want %q", runtime.Config.Path(), layout.ConfigPath())
+	}
+}
+
+func TestConfigureRuntimeConfigPreservesInjectedStore(t *testing.T) {
+	t.Parallel()
+
+	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
+	runtime := &app.Runtime{Config: store}
+	if err := configureRuntimeConfig(runtime, ""); err != nil {
+		t.Fatalf("configureRuntimeConfig: %v", err)
+	}
+	if runtime.Config != store {
+		t.Fatal("injected config store was replaced")
+	}
+}
 
 func TestExecuteRuntimeRoutesMigratedCommandOutput(t *testing.T) {
 	var stdout bytes.Buffer

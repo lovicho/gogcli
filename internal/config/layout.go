@@ -62,23 +62,7 @@ type UserDirs struct {
 
 func ResolveLayout(env Env, dirs UserDirs) (Layout, error) {
 	resolver := newLayoutResolver(env, dirs)
-
-	configDir, err := resolver.resolveKind(PathKindConfig)
-	if err != nil {
-		return Layout{}, err
-	}
-
-	dataDir, err := resolver.resolveKind(PathKindData)
-	if err != nil {
-		return Layout{}, err
-	}
-
-	stateDir, err := resolver.resolveKind(PathKindState)
-	if err != nil {
-		return Layout{}, err
-	}
-
-	cacheDir, err := resolver.resolveKind(PathKindCache)
+	layout, err := resolver.resolveLayoutFor(PathKindConfig, PathKindData, PathKindState, PathKindCache)
 	if err != nil {
 		return Layout{}, err
 	}
@@ -88,18 +72,8 @@ func ResolveLayout(env Env, dirs UserDirs) (Layout, error) {
 		return Layout{}, err
 	}
 
-	return Layout{
-		Home:           home,
-		ConfigDir:      configDir,
-		DataDir:        dataDir,
-		StateDir:       stateDir,
-		CacheDir:       cacheDir,
-		ExplicitConfig: env.hasExplicit(PathKindConfig),
-		ExplicitData:   env.hasExplicit(PathKindData),
-		ExplicitState:  env.hasExplicit(PathKindState),
-		ExplicitCache:  env.hasExplicit(PathKindCache),
-		UsesXDG:        resolver.usesXDG,
-	}, nil
+	layout.Home = home
+	return layout, nil
 }
 
 func (l Layout) Dir(kind PathKind) (string, error) {
@@ -432,18 +406,33 @@ func currentLayoutDir(kind PathKind) (string, error) {
 }
 
 func currentLayoutFor(kinds ...PathKind) (Layout, error) {
+	return resolveLayoutFor(currentLayoutEnv(), systemUserDirs(), kinds...)
+}
+
+func ResolveSystemLayoutFor(homeOverride string, kinds ...PathKind) (Layout, error) {
 	env := currentLayoutEnv()
-	resolver := newLayoutResolver(env, systemUserDirs())
+	if strings.TrimSpace(homeOverride) != "" {
+		env.HomeOverride = homeOverride
+	}
+	return resolveLayoutFor(env, systemUserDirs(), kinds...)
+}
+
+func resolveLayoutFor(env Env, dirs UserDirs, kinds ...PathKind) (Layout, error) {
+	resolver := newLayoutResolver(env, dirs)
+	return resolver.resolveLayoutFor(kinds...)
+}
+
+func (r *layoutResolver) resolveLayoutFor(kinds ...PathKind) (Layout, error) {
 	layout := Layout{
-		ExplicitConfig: env.hasExplicit(PathKindConfig),
-		ExplicitData:   env.hasExplicit(PathKindData),
-		ExplicitState:  env.hasExplicit(PathKindState),
-		ExplicitCache:  env.hasExplicit(PathKindCache),
-		UsesXDG:        resolver.usesXDG,
+		ExplicitConfig: r.env.hasExplicit(PathKindConfig),
+		ExplicitData:   r.env.hasExplicit(PathKindData),
+		ExplicitState:  r.env.hasExplicit(PathKindState),
+		ExplicitCache:  r.env.hasExplicit(PathKindCache),
+		UsesXDG:        r.usesXDG,
 	}
 
 	for _, kind := range kinds {
-		dir, err := resolver.resolveKind(kind)
+		dir, err := r.resolveKind(kind)
 		if err != nil {
 			return Layout{}, err
 		}

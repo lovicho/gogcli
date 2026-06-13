@@ -10,6 +10,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 )
 
@@ -250,10 +251,13 @@ func TestGmailNoSendBlocksBeforeAuth(t *testing.T) {
 }
 
 func TestConfigGmailNoSendBlocksBeforeAuth(t *testing.T) {
-	setTestConfigHome(t)
-	if err := config.WriteConfig(config.File{GmailNoSend: true}); err != nil {
+	t.Parallel()
+
+	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
+	if err := store.Write(config.File{GmailNoSend: true}); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
+	runtime := &app.Runtime{Config: store}
 	tests := [][]string{
 		{"gmail", "send", "--to", "a@example.com", "--subject", "S", "--body", "B"},
 		{"gmail", "autoreply", "from:a@example.com", "--subject", "S", "--body", "B"},
@@ -261,12 +265,29 @@ func TestConfigGmailNoSendBlocksBeforeAuth(t *testing.T) {
 		{"gmail", "drafts", "send", "draft-1"},
 	}
 	for _, args := range tests {
-		err := Execute(args)
+		result := executeWithTestRuntime(t, args, runtime)
+		err := result.err
 		if err == nil {
 			t.Fatalf("expected error for %v", args)
 		}
 		if !strings.Contains(err.Error(), "gmail_no_send") {
 			t.Fatalf("unexpected error for %v: %v", args, err)
+		}
+	}
+}
+
+func TestConfigIndependentCommandsDoNotRequireHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	for _, args := range [][]string{
+		{"version"},
+		{"config", "keys"},
+	} {
+		result := executeWithTestRuntime(t, args, &app.Runtime{})
+		if result.err != nil {
+			t.Fatalf("%v: %v\nstderr=%q", args, result.err, result.stderr)
 		}
 	}
 }

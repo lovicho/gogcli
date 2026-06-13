@@ -161,6 +161,32 @@ func TestLayoutResolverIsLazy(t *testing.T) {
 	}
 }
 
+func TestResolveLayoutMemoizesUserHome(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	calls := 0
+	layout, err := ResolveLayout(
+		Env{GOGHome: "~/gog"},
+		UserDirs{
+			GOOS: "linux",
+			HomeDir: func() (string, error) {
+				calls++
+				return home, nil
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("ResolveLayout: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("home resolver calls = %d, want 1", calls)
+	}
+	if layout.Home != filepath.Join(home, "gog") {
+		t.Fatalf("home = %q", layout.Home)
+	}
+}
+
 func TestLayoutResolverRejectsUnknownKindBeforeOverrides(t *testing.T) {
 	t.Parallel()
 

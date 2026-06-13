@@ -263,3 +263,7 @@ func defaultConfigStore() (*ConfigStore, error) {
 
 	return NewConfigStore(layout), nil
 }
+
+func DefaultConfigStore() (*ConfigStore, error) {
+	return defaultConfigStore()
+}

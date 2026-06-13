@@ -29,6 +29,7 @@ import (
 	"google.golang.org/api/tasks/v1"
 	"google.golang.org/api/youtube/v3"
 
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/secrets"
@@ -138,6 +139,8 @@ type Runtime struct {
 	IO       IO
 	Services Services
 	Auth     AuthOperations
+	Layout   config.Layout
+	Config   *config.ConfigStore
 }
 
 type runtimeContextKey struct{}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 )
@@ -23,7 +24,7 @@ type ConfigGetCmd struct {
 }
 
 func (c *ConfigGetCmd) Run(ctx context.Context) error {
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(ctx)
 	if err != nil {
 		return err
 	}
@@ -64,7 +65,12 @@ type ConfigSetCmd struct {
 }
 
 func (c *ConfigSetCmd) Run(ctx context.Context, flags *RootFlags) error {
-	cfg, err := loadConfig()
+	store, err := commandConfigStore(ctx)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := store.Read()
 	if err != nil {
 		return err
 	}
@@ -85,7 +91,7 @@ func (c *ConfigSetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := store.Write(cfg); err != nil {
 		return err
 	}
 
@@ -103,7 +109,12 @@ type ConfigUnsetCmd struct {
 }
 
 func (c *ConfigUnsetCmd) Run(ctx context.Context, flags *RootFlags) error {
-	cfg, err := loadConfig()
+	store, err := commandConfigStore(ctx)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := store.Read()
 	if err != nil {
 		return err
 	}
@@ -123,7 +134,7 @@ func (c *ConfigUnsetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := store.Write(cfg); err != nil {
 		return err
 	}
 
@@ -139,12 +150,17 @@ func (c *ConfigUnsetCmd) Run(ctx context.Context, flags *RootFlags) error {
 type ConfigListCmd struct{}
 
 func (c *ConfigListCmd) Run(ctx context.Context) error {
-	cfg, err := loadConfig()
+	store, err := commandConfigStore(ctx)
 	if err != nil {
 		return err
 	}
 
-	path, _ := config.ConfigPath()
+	cfg, err := store.Read()
+	if err != nil {
+		return err
+	}
+
+	path := store.Path()
 	keys := config.KeyList()
 
 	if outfmt.IsJSON(ctx) {
@@ -166,10 +182,11 @@ func (c *ConfigListCmd) Run(ctx context.Context) error {
 type ConfigPathCmd struct{}
 
 func (c *ConfigPathCmd) Run(ctx context.Context) error {
-	path, err := config.ConfigPath()
+	store, err := commandConfigStore(ctx)
 	if err != nil {
 		return err
 	}
+	path := store.Path()
 
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), outfmt.PathPayload(path))
@@ -188,10 +205,20 @@ func formatConfigValue(value string, emptyHint func() string) string {
 	return "(not set)"
 }
 
-func loadConfig() (config.File, error) {
-	cfg, err := config.ReadConfig()
+func loadConfig(ctx context.Context) (config.File, error) {
+	store, err := commandConfigStore(ctx)
 	if err != nil {
 		return config.File{}, err
 	}
-	return cfg, nil
+	return store.Read()
+}
+
+func commandConfigStore(ctx context.Context) (*config.ConfigStore, error) {
+	if runtime, ok := app.FromContext(ctx); ok {
+		if err := configureRuntimeConfig(runtime, ""); err != nil {
+			return nil, err
+		}
+		return runtime.Config, nil
+	}
+	return config.DefaultConfigStore()
 }
