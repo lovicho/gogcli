@@ -172,6 +172,7 @@ func TestResolveKeyringBackendInfo_Default(t *testing.T) {
 
 	layout := testSystemLayout(t, config.PathKindConfig)
 	store := config.NewConfigStore(layout)
+
 	info, err := ResolveKeyringBackendInfoWithOptions(systemTestOpenOptions(layout, store))
 	if err != nil {
 		t.Fatalf("ResolveKeyringBackendInfo: %v", err)

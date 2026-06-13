@@ -513,10 +513,6 @@ func (r *layoutResolver) userConfigBase() (string, error) {
 	return filepath.Join(home, ".config"), nil
 }
 
-func resolveLayoutFor(env Env, dirs UserDirs, kinds ...PathKind) (Layout, error) {
-	return NewResolver(env, dirs).Resolve(kinds...)
-}
-
 func (r *layoutResolver) resolveLayoutFor(kinds ...PathKind) (Layout, error) {
 	layout := Layout{
 		ExplicitConfig: r.env.hasExplicit(PathKindConfig),

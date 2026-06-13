@@ -237,7 +237,9 @@ func TestSetSecretFileBackendUsesSharedLock(t *testing.T) {
 				errs <- err
 				return
 			}
-			errs <- store.SetSecret("shared/secret", []byte(fmt.Sprintf("value-%d", i)))
+
+			setErr := store.SetSecret("shared/secret", []byte(fmt.Sprintf("value-%d", i)))
+			errs <- setErr
 		}(i)
 	}
 
@@ -254,6 +256,7 @@ func TestSetSecretFileBackendUsesSharedLock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
+
 	got, err := store.GetSecret("shared/secret")
 	if err != nil {
 		t.Fatalf("GetSecret: %v", err)

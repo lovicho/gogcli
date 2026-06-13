@@ -12,10 +12,12 @@ const AppName = "gogcli"
 func uniquePaths(paths ...string) []string {
 	out := make([]string, 0, len(paths))
 	seen := make(map[string]struct{})
+
 	for _, path := range paths {
 		if path == "" {
 			continue
 		}
+
 		clean := filepath.Clean(path)
 		if _, ok := seen[clean]; ok {
 			continue
@@ -23,6 +25,7 @@ func uniquePaths(paths ...string) []string {
 		seen[clean] = struct{}{}
 		out = append(out, clean)
 	}
+
 	return out
 }
 

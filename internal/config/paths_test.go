@@ -15,6 +15,7 @@ func TestPaths_CreateDirs(t *testing.T) {
 
 	layout := testSystemLayout(t, PathKindConfig, PathKindData)
 	dir := layout.ConfigDir
+
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("ensure config dir: %v", err)
 	}

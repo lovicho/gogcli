@@ -48,6 +48,7 @@ func TestTokenSourceForServiceAccountScopesUsesInjectedStore(t *testing.T) {
 		t.Fatalf("resolve ambient layout: %v", err)
 	}
 	ambientPath := ambientLayout.ServiceAccountPath("a@b.com")
+
 	if ensureErr := os.MkdirAll(ambientLayout.DataDir, 0o700); ensureErr != nil {
 		t.Fatalf("ensure data dir: %v", ensureErr)
 	}

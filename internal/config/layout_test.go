@@ -12,6 +12,7 @@ import (
 
 var (
 	errUnexpectedDirectoryLookup = errors.New("unexpected directory lookup")
+	errUnexpectedConfigDirectory = errors.New("unexpected config directory")
 	errHomeUnavailable           = errors.New("home unavailable")
 )
 
@@ -223,7 +224,7 @@ func TestResolverConcurrentUse(t *testing.T) {
 				return
 			}
 			if layout.ConfigDir != filepath.Join(home, "gog", "config") {
-				errs <- errors.New("unexpected config directory")
+				errs <- errUnexpectedConfigDirectory
 			}
 		}()
 	}

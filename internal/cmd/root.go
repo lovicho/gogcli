@@ -127,12 +127,12 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	args = rewriteDocsCellUpdateContentArgs(args)
 
 	home, homeProvided := preScanHomeArg(args)
-	if err := bindRuntimeLayoutResolver(runtime, home); err != nil {
-		return reportEarlyError(runtimeIO.Err, newUsageError(err))
+	if bindErr := bindRuntimeLayoutResolver(runtime, home); bindErr != nil {
+		return reportEarlyError(runtimeIO.Err, newUsageError(bindErr))
 	}
 	if homeProvided {
-		if err := runtime.LayoutResolver.ValidateHomeOverride(); err != nil {
-			return reportEarlyError(runtimeIO.Err, newUsageError(err))
+		if validateErr := runtime.LayoutResolver.ValidateHomeOverride(); validateErr != nil {
+			return reportEarlyError(runtimeIO.Err, newUsageError(validateErr))
 		}
 	}
 
