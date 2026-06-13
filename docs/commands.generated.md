@@ -132,7 +132,7 @@ Generated from `gog schema --json`.
     - [`gog classroom (class) courses (course) <command>`](commands/gog-classroom-courses.md) - Courses
       - [`gog classroom (class) courses (course) archive (arch) <courseId>`](commands/gog-classroom-courses-archive.md) - Archive a course
       - [`gog classroom (class) courses (course) create (add,new) --name=STRING [flags]`](commands/gog-classroom-courses-create.md) - Create a course
-      - [`gog classroom (class) courses (course) delete (rm,del,remove) <courseId>`](commands/gog-classroom-courses-delete.md) - Delete a course
+      - [`gog classroom (class) courses (course) delete (rm,del,remove) <courseId>`](commands/gog-classroom-courses-delete.md) - Delete an archived course
       - [`gog classroom (class) courses (course) get (info,show) <courseId>`](commands/gog-classroom-courses-get.md) - Get a course
       - [`gog classroom (class) courses (course) join (enroll) <courseId> [flags]`](commands/gog-classroom-courses-join.md) - Join a course
       - [`gog classroom (class) courses (course) leave (unenroll) <courseId> [flags]`](commands/gog-classroom-courses-leave.md) - Leave a course
@@ -373,7 +373,7 @@ Generated from `gog schema --json`.
     - [`gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]`](commands/gog-gmail-attachment.md) - Download a single attachment
     - [`gog gmail (mail,email) autoreply <query> ... [flags]`](commands/gog-gmail-autoreply.md) - Reply once to matching messages
     - [`gog gmail (mail,email) batch <command>`](commands/gog-gmail-batch.md) - Batch operations (permanent delete requires broader Gmail scope; use gmail trash for normal trashing)
-      - [`gog gmail (mail,email) batch delete (rm,del,remove) <messageId> ...`](commands/gog-gmail-batch-delete.md) - Permanently delete multiple messages; use 'gmail trash' to move messages to trash with the default gmail.modify scope
+      - [`gog gmail (mail,email) batch delete (rm,del,remove) <messageId> ...`](commands/gog-gmail-batch-delete.md) - Permanently delete messages; requires https://mail.google.com/ OAuth scope (use 'gmail trash' with the default scope)
       - [`gog gmail (mail,email) batch modify (update,edit,set) <messageId> ... [flags]`](commands/gog-gmail-batch-modify.md) - Modify labels on multiple messages
     - [`gog gmail (mail,email) drafts (draft) <command>`](commands/gog-gmail-drafts.md) - Draft operations
       - [`gog gmail (mail,email) drafts (draft) create (add,new) [flags]`](commands/gog-gmail-drafts-create.md) - Create a draft
@@ -626,10 +626,18 @@ Generated from `gog schema --json`.
       - [`gog youtube (yt) channels (channel) list (ls) [flags]`](commands/gog-youtube-channels-list.md) - List channels by ID or authenticated user
     - [`gog youtube (yt) comments (comment) <command>`](commands/gog-youtube-comments.md) - List comment threads
       - [`gog youtube (yt) comments (comment) list (ls) [flags]`](commands/gog-youtube-comments-list.md) - List comment threads for a video or channel
-    - [`gog youtube (yt) playlists (playlist) <command>`](commands/gog-youtube-playlists.md) - List playlists
+    - [`gog youtube (yt) playlists (playlist) <command>`](commands/gog-youtube-playlists.md) - Manage playlists
+      - [`gog youtube (yt) playlists (playlist) add --playlist-id=STRING --video-id=STRING [flags]`](commands/gog-youtube-playlists-add.md) - Add a video to a playlist
+      - [`gog youtube (yt) playlists (playlist) create --title=STRING [flags]`](commands/gog-youtube-playlists-create.md) - Create a new playlist
+      - [`gog youtube (yt) playlists (playlist) delete (del) <playlist-id>`](commands/gog-youtube-playlists-delete.md) - Delete a playlist
       - [`gog youtube (yt) playlists (playlist) list (ls) [flags]`](commands/gog-youtube-playlists-list.md) - List playlists by channel or authenticated user
+      - [`gog youtube (yt) playlists (playlist) remove (rm) [flags]`](commands/gog-youtube-playlists-remove.md) - Remove a video from a playlist
     - [`gog youtube (yt) search (find) <command>`](commands/gog-youtube-search.md) - Search YouTube for videos, channels, or playlists
       - [`gog youtube (yt) search (find) list (ls) <query> [flags]`](commands/gog-youtube-search-list.md) - Search for videos, channels, or playlists
+    - [`gog youtube (yt) subscriptions (subscription) <command>`](commands/gog-youtube-subscriptions.md) - Manage channel subscriptions
+      - [`gog youtube (yt) subscriptions (subscription) list (ls) [flags]`](commands/gog-youtube-subscriptions-list.md) - List subscriptions for authenticated user
+      - [`gog youtube (yt) subscriptions (subscription) subscribe [flags]`](commands/gog-youtube-subscriptions-subscribe.md) - Subscribe to a channel
+      - [`gog youtube (yt) subscriptions (subscription) unsubscribe [flags]`](commands/gog-youtube-subscriptions-unsubscribe.md) - Unsubscribe from a channel
     - [`gog youtube (yt) videos (video) <command>`](commands/gog-youtube-videos.md) - List or get videos
       - [`gog youtube (yt) videos (video) list (ls) [flags]`](commands/gog-youtube-videos-list.md) - List videos by ID or chart
   - [`gog zoom <command> [flags]`](commands/gog-zoom.md) - Zoom

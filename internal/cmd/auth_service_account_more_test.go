@@ -7,15 +7,11 @@ import (
 	"testing"
 
 	"github.com/steipete/gogcli/internal/config"
-	"github.com/steipete/gogcli/internal/secrets"
 )
 
 func TestAuthServiceAccountSet_AndList_Text(t *testing.T) {
-	origOpen := openSecretsStore
-	t.Cleanup(func() { openSecretsStore = origOpen })
-
 	store := newMemSecretsStore()
-	openSecretsStore = func() (secrets.Store, error) { return store, nil }
+	runtime := runtimeWithAuthStore(store)
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -28,7 +24,7 @@ func TestAuthServiceAccountSet_AndList_Text(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"auth", "service-account", "set", "user@example.com", "--key", keyPath}); err != nil {
+			if err := executeWithRuntime([]string{"auth", "service-account", "set", "user@example.com", "--key", keyPath}, runtime); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
 		})
@@ -47,13 +43,82 @@ func TestAuthServiceAccountSet_AndList_Text(t *testing.T) {
 
 	listOut := captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"auth", "list"}); err != nil {
+			if err := executeWithRuntime([]string{"auth", "list"}, runtime); err != nil {
 				t.Fatalf("list: %v", err)
 			}
 		})
 	})
 	if !strings.Contains(listOut, "user@example.com") || !strings.Contains(listOut, "service_account") {
 		t.Fatalf("unexpected list output: %q", listOut)
+	}
+}
+
+func TestAuthServiceAccountCommandsUseInjectedLayout(t *testing.T) {
+	ambientHome := t.TempDir()
+	t.Setenv("HOME", ambientHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(ambientHome, "xdg-config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(ambientHome, "xdg-data"))
+
+	root := t.TempDir()
+	layout := config.Layout{
+		ConfigDir:      filepath.Join(root, "config"),
+		DataDir:        filepath.Join(root, "data"),
+		ExplicitConfig: true,
+		ExplicitData:   true,
+	}
+	runtime := runtimeWithAuthStore(newMemSecretsStore())
+	runtime.Layout = layout
+
+	keyPath := filepath.Join(t.TempDir(), "sa.json")
+	if err := os.WriteFile(keyPath, []byte(`{"type":"service_account","client_email":"svc@example.com"}`), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+
+	_ = captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := executeWithRuntime([]string{"auth", "service-account", "set", "user@example.com", "--key", keyPath}, runtime); err != nil {
+				t.Fatalf("set: %v", err)
+			}
+		})
+	})
+
+	storedPath := layout.ServiceAccountPath("user@example.com")
+	if _, err := os.Stat(storedPath); err != nil {
+		t.Fatalf("expected injected service account path %q: %v", storedPath, err)
+	}
+	ambientLayout, err := config.ResolveSystemLayoutFor("", config.PathKindData)
+	if err != nil {
+		t.Fatalf("resolve ambient layout: %v", err)
+	}
+	if _, err := os.Stat(ambientLayout.ServiceAccountPath("user@example.com")); !os.IsNotExist(err) {
+		t.Fatalf("ambient service account path was touched: %v", err)
+	}
+
+	for _, args := range [][]string{
+		{"auth", "service-account", "status", "user@example.com"},
+		{"auth", "list"},
+	} {
+		out := captureStdout(t, func() {
+			_ = captureStderr(t, func() {
+				if err := executeWithRuntime(args, runtime); err != nil {
+					t.Fatalf("%v: %v", args, err)
+				}
+			})
+		})
+		if !strings.Contains(out, "user@example.com") {
+			t.Fatalf("%v output does not use injected service account: %q", args, out)
+		}
+	}
+
+	_ = captureStdout(t, func() {
+		_ = captureStderr(t, func() {
+			if err := executeWithRuntime([]string{"auth", "service-account", "unset", "user@example.com", "--force"}, runtime); err != nil {
+				t.Fatalf("unset: %v", err)
+			}
+		})
+	})
+	if _, err := os.Stat(storedPath); !os.IsNotExist(err) {
+		t.Fatalf("injected service account path still exists: %v", err)
 	}
 }
 
@@ -228,11 +293,8 @@ func TestAuthServiceAccountStatus_ConfiguredTextShowsStored(t *testing.T) {
 }
 
 func TestAuthStatus_ShowsServiceAccountPreferred(t *testing.T) {
-	origOpen := openSecretsStore
-	t.Cleanup(func() { openSecretsStore = origOpen })
-
 	store := newMemSecretsStore()
-	openSecretsStore = func() (secrets.Store, error) { return store, nil }
+	runtime := runtimeWithAuthStore(store)
 
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -245,7 +307,7 @@ func TestAuthStatus_ShowsServiceAccountPreferred(t *testing.T) {
 
 	_ = captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"auth", "service-account", "set", "user@example.com", "--key", keyPath}); err != nil {
+			if err := executeWithRuntime([]string{"auth", "service-account", "set", "user@example.com", "--key", keyPath}, runtime); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
 		})
@@ -253,7 +315,7 @@ func TestAuthStatus_ShowsServiceAccountPreferred(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--account", "user@example.com", "auth", "status"}); err != nil {
+			if err := executeWithRuntime([]string{"--account", "user@example.com", "auth", "status"}, runtime); err != nil {
 				t.Fatalf("status: %v", err)
 			}
 		})

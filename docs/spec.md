@@ -259,6 +259,10 @@ Drive hierarchy semantics:
   shortcut IDs to their targets.
 - `drive tree`, `drive inventory`, and `drive du` treat shortcuts as leaves,
   including shortcuts whose targets are folders.
+- Tree and inventory output one row per discovered placement. Size summaries
+  aggregate each placement independently, even when legacy parent links expose
+  the same folder ID through multiple paths.
+- Folder scans reject an ancestor cycle instead of following it indefinitely.
 
 - `gog slides thumbnail <presentationId> <slideId> [--size small|medium|large] [--format png|jpeg] [--out PATH]`
 - `gog calendar calendars`
@@ -295,7 +299,7 @@ Drive hierarchy semantics:
 - `gog classroom courses get <courseId>`
 - `gog classroom courses create --name NAME [--owner me] [--state ACTIVE|...]`
 - `gog classroom courses update <courseId> [--name ...] [--state ...]`
-- `gog classroom courses delete <courseId>`
+- `gog classroom courses delete <archivedCourseId>`
 - `gog classroom courses archive <courseId>`
 - `gog classroom courses unarchive <courseId>`
 - `gog classroom courses join <courseId> [--role student|teacher] [--user me]`
@@ -477,6 +481,9 @@ We store a single refresh token per Google account email.
   - `https://www.googleapis.com/auth/directory.readonly`
 - People:
   - `profile` (OIDC)
+- YouTube:
+  - `https://www.googleapis.com/auth/youtube.readonly` for normal account reads
+  - `https://www.googleapis.com/auth/youtube.force-ssl` as an explicit extra scope for comments and mutations
 - Photos: `https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata`
 - Photos Picker: `https://www.googleapis.com/auth/photospicker.mediaitems.readonly` (explicit opt-in)
 

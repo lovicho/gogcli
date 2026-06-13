@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"strings"
 
 	"github.com/alecthomas/kong"
 
-	"github.com/steipete/gogcli/internal/config"
+	"github.com/steipete/gogcli/internal/app"
 )
 
 var gmailSendCommandPaths = map[string]struct{}{
@@ -17,14 +18,21 @@ var gmailSendCommandPaths = map[string]struct{}{
 	"gmail.drafts.send": {},
 }
 
-func enforceGmailNoSend(kctx *kong.Context, flags *RootFlags) error {
+func enforceGmailNoSend(kctx *kong.Context, flags *RootFlags, runtime *app.Runtime) error {
 	if !isGmailSendPath(commandPath(kctx.Command())) {
 		return nil
 	}
-	if flags != nil && flags.GmailNoSend {
-		return usage("Gmail sending is blocked by --gmail-no-send")
+	homeOverride := ""
+	if flags != nil {
+		if flags.GmailNoSend {
+			return usage("Gmail sending is blocked by --gmail-no-send")
+		}
+		homeOverride = flags.Home
 	}
-	cfg, err := config.ReadConfig()
+	if err := configureRuntimeConfig(runtime, homeOverride); err != nil {
+		return err
+	}
+	cfg, err := runtime.Config.Read()
 	if err != nil {
 		return err
 	}
@@ -34,8 +42,12 @@ func enforceGmailNoSend(kctx *kong.Context, flags *RootFlags) error {
 	return nil
 }
 
-func checkAccountNoSend(account string) error {
-	disabled, err := config.IsNoSendAccount(account)
+func checkAccountNoSend(ctx context.Context, account string) error {
+	store, err := commandConfigStore(ctx)
+	if err != nil {
+		return err
+	}
+	disabled, err := store.IsNoSendAccount(account)
 	if err != nil {
 		return err
 	}

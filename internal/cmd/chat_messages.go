@@ -134,19 +134,13 @@ func (c *ChatMessagesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return failEmptyExit(c.FailEmpty)
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "RESOURCE\tSENDER\tTIME\tTEXT")
-	for _, msg := range messages {
-		if msg == nil {
-			continue
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			msg.Name,
-			sanitizeTab(chatMessageSender(msg)),
-			sanitizeTab(msg.CreateTime),
-			sanitizeChatText(chatMessageText(msg)),
-		)
+	if err := outfmt.WriteTable(
+		ctx,
+		stdoutWriter(ctx),
+		compactChatRows(messages),
+		chatMessageColumns(),
+	); err != nil {
+		return err
 	}
 	printNextPageHint(u, nextPageToken)
 	return nil

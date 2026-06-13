@@ -133,7 +133,7 @@ func TestDocsWrite_MarkdownReplaceTableBreaksUsesLocalRenderer(t *testing.T) {
 					}}},
 				})
 			} else {
-				_ = json.NewEncoder(w).Encode(docsTableOpsTestDocument(docsTableOpsTestElement(1, "", 2, 2)))
+				_ = json.NewEncoder(w).Encode(docsTableOpsTestDocument(docsTableOpsTestElement(1, "", 2)))
 			}
 		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
 			var req docs.BatchUpdateDocumentRequest

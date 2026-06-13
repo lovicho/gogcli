@@ -29,6 +29,7 @@ import (
 	"google.golang.org/api/tasks/v1"
 	"google.golang.org/api/youtube/v3"
 
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/secrets"
@@ -75,7 +76,7 @@ type (
 	AuthorizeGoogleFunc          func(context.Context, googleauth.AuthorizeOptions) (string, error)
 	StartManageServerFunc        func(context.Context, googleauth.ManageServerOptions) error
 	CheckRefreshTokenFunc        func(context.Context, string, string, []string, time.Duration) error
-	EnsureKeychainAccessFunc     func() error
+	EnsureKeychainAccessFunc     func(context.Context) error
 	FetchAuthorizedIdentityFunc  func(context.Context, string, string, []string, time.Duration) (googleauth.Identity, error)
 	ManualAuthURLFunc            func(context.Context, googleauth.AuthorizeOptions) (googleauth.ManualAuthURLResult, error)
 )
@@ -102,6 +103,7 @@ type Services struct {
 	DriveLabels     DriveLabelsServiceFactory
 	Forms           FormsServiceFactory
 	Gmail           GmailServiceFactory
+	GmailDelete     GmailServiceFactory
 	Keep            KeepServiceAccountFactory
 	Meet            MeetServiceFactory
 	PeopleContacts  PeopleServiceFactory
@@ -117,6 +119,7 @@ type Services struct {
 	YouTubeAPIKey   YouTubeServiceFactory
 	YouTubeAccount  YouTubeServiceFactory
 	YouTubeComments YouTubeServiceFactory
+	YouTubeWrite    YouTubeServiceFactory
 	Zoom            ZoomMeetingClientFactory
 	DriveDownload   DriveDownloadFunc
 	DriveExport     DriveExportFunc
@@ -134,9 +137,12 @@ type AuthOperations struct {
 }
 
 type Runtime struct {
-	IO       IO
-	Services Services
-	Auth     AuthOperations
+	IO            IO
+	Services      Services
+	Auth          AuthOperations
+	Layout        config.Layout
+	Config        *config.ConfigStore
+	ConfigManaged bool
 }
 
 type runtimeContextKey struct{}

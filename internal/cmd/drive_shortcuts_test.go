@@ -221,12 +221,14 @@ func TestDriveMoveCmd_ReplacesAllLegacyParents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
+			requireSupportsAllDrives(t, r)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":      "file1",
 				"name":    "Legacy file",
 				"parents": []string{"old-a", "old-b"},
 			})
 		case http.MethodPatch:
+			requireSupportsAllDrives(t, r)
 			requireQuery(t, r, "addParents", "new-parent")
 			requireQuery(t, r, "removeParents", "old-a,old-b")
 			_ = json.NewEncoder(w).Encode(map[string]any{

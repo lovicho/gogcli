@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"google.golang.org/api/chat/v1"
@@ -113,20 +112,13 @@ func (c *ChatThreadsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return failEmptyExit(c.FailEmpty)
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "THREAD\tMESSAGE\tSENDER\tTIME\tTEXT")
-	for _, item := range threads {
-		if item == nil || item.message == nil {
-			continue
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-			item.thread,
-			item.message.Name,
-			sanitizeTab(chatMessageSender(item.message)),
-			sanitizeTab(item.message.CreateTime),
-			sanitizeChatText(chatMessageText(item.message)),
-		)
+	if err := outfmt.WriteTable(
+		ctx,
+		stdoutWriter(ctx),
+		compactChatThreadRows(threads),
+		chatThreadColumns(),
+	); err != nil {
+		return err
 	}
 	printNextPageHint(u, nextPageToken)
 	return nil

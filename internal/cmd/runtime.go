@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -30,10 +32,16 @@ import (
 	"google.golang.org/api/tasks/v1"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/secrets"
 	"github.com/steipete/gogcli/internal/termutil"
+)
+
+var (
+	errIncompleteRuntimeLayout = errors.New("injected config store has incomplete runtime layout")
+	errRuntimeLayoutMismatch   = errors.New("runtime layout does not match injected config store")
 )
 
 func newDefaultRuntime() *app.Runtime {
@@ -62,6 +70,7 @@ func newDefaultRuntime() *app.Runtime {
 			DriveLabels:     googleapi.NewDriveLabels,
 			Forms:           googleapi.NewForms,
 			Gmail:           googleapi.NewGmail,
+			GmailDelete:     googleapi.NewGmailBatchDelete,
 			Keep:            googleapi.NewKeepWithServiceAccount,
 			Meet:            googleapi.NewMeet,
 			PeopleContacts:  googleapi.NewPeopleContacts,
@@ -83,11 +92,10 @@ func newDefaultRuntime() *app.Runtime {
 			OpenURL:         openPhotosPickerBrowser,
 		},
 		Auth: app.AuthOperations{
-			OpenSecretsStore:        secrets.OpenDefault,
 			AuthorizeGoogle:         googleauth.Authorize,
 			StartManageServer:       googleauth.StartManageServer,
 			CheckRefreshToken:       googleauth.CheckRefreshToken,
-			EnsureKeychainAccess:    secrets.EnsureKeychainAccess,
+			EnsureKeychainAccess:    secrets.EnsureKeychainAccessContext,
 			FetchAuthorizedIdentity: googleauth.IdentityForRefreshToken,
 			ManualAuthURL:           googleauth.ManualAuthURL,
 		},
@@ -154,6 +162,13 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 	if normalized.Services.Forms == nil {
 		normalized.Services.Forms = defaults.Services.Forms
 	}
+	if normalized.Services.GmailDelete == nil {
+		if normalized.Services.Gmail != nil {
+			normalized.Services.GmailDelete = normalized.Services.Gmail
+		} else {
+			normalized.Services.GmailDelete = defaults.Services.GmailDelete
+		}
+	}
 	if normalized.Services.Gmail == nil {
 		normalized.Services.Gmail = defaults.Services.Gmail
 	}
@@ -215,7 +230,12 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 		normalized.Services.OpenURL = defaults.Services.OpenURL
 	}
 	if normalized.Auth.OpenSecretsStore == nil {
-		normalized.Auth.OpenSecretsStore = defaults.Auth.OpenSecretsStore
+		normalized.Auth.OpenSecretsStore = func() (secrets.Store, error) {
+			if err := configureRuntimeSecrets(&normalized, ""); err != nil {
+				return nil, err
+			}
+			return secrets.OpenWithConfig(normalized.Layout, normalized.Config)
+		}
 	}
 	if normalized.Auth.AuthorizeGoogle == nil {
 		normalized.Auth.AuthorizeGoogle = defaults.Auth.AuthorizeGoogle
@@ -236,6 +256,157 @@ func normalizedRuntime(runtime *app.Runtime) *app.Runtime {
 		normalized.Auth.ManualAuthURL = defaults.Auth.ManualAuthURL
 	}
 	return &normalized
+}
+
+func configureRuntimeConfig(runtime *app.Runtime, homeOverride string) error {
+	if runtime.Config != nil {
+		return hydrateRuntimeLayoutFromConfig(runtime)
+	}
+
+	if err := configureRuntimeLayout(runtime, homeOverride, config.PathKindConfig); err != nil {
+		return err
+	}
+
+	runtime.Config = config.NewConfigStore(runtime.Layout)
+	runtime.ConfigManaged = true
+	return nil
+}
+
+func configureRuntimeSecrets(runtime *app.Runtime, homeOverride string) error {
+	if err := configureRuntimeLayout(runtime, homeOverride, config.PathKindConfig, config.PathKindData); err != nil {
+		return err
+	}
+	if runtime.Config == nil {
+		runtime.Config = config.NewConfigStore(runtime.Layout)
+		runtime.ConfigManaged = true
+	}
+	return nil
+}
+
+func configureRuntimeLayout(runtime *app.Runtime, homeOverride string, kinds ...config.PathKind) error {
+	if err := hydrateRuntimeLayoutFromConfig(runtime); err != nil {
+		return err
+	}
+
+	missing := make([]config.PathKind, 0, len(kinds))
+	for _, kind := range kinds {
+		dir, err := runtime.Layout.Dir(kind)
+		if err != nil {
+			return err
+		}
+		if dir == "" {
+			missing = append(missing, kind)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	if runtime.Config != nil && !runtime.ConfigManaged {
+		return fmt.Errorf("%w: missing %v", errIncompleteRuntimeLayout, missing)
+	}
+
+	layout, err := config.ResolveSystemLayoutFor(homeOverride, missing...)
+	if err != nil {
+		return err
+	}
+	for _, kind := range missing {
+		dir, dirErr := layout.Dir(kind)
+		if dirErr != nil {
+			return dirErr
+		}
+		switch kind {
+		case config.PathKindConfig:
+			runtime.Layout.ConfigDir = dir
+			runtime.Layout.ExplicitConfig = layout.ExplicitConfig
+		case config.PathKindData:
+			runtime.Layout.DataDir = dir
+			runtime.Layout.ExplicitData = layout.ExplicitData
+		case config.PathKindState:
+			runtime.Layout.StateDir = dir
+			runtime.Layout.ExplicitState = layout.ExplicitState
+		case config.PathKindCache:
+			runtime.Layout.CacheDir = dir
+			runtime.Layout.ExplicitCache = layout.ExplicitCache
+		}
+	}
+	runtime.Layout.UsesXDG = runtime.Layout.UsesXDG || layout.UsesXDG
+	return nil
+}
+
+func hydrateRuntimeLayoutFromConfig(runtime *app.Runtime) error {
+	if runtime.Config == nil {
+		return nil
+	}
+
+	storeLayout := runtime.Config.Layout()
+	if runtime.Layout.ConfigDir != "" &&
+		storeLayout.ConfigDir != "" &&
+		runtime.Layout.ConfigDir != storeLayout.ConfigDir {
+		return fmt.Errorf("%w: runtime=%s config_store=%s",
+			errRuntimeLayoutMismatch, runtime.Layout.ConfigDir, storeLayout.ConfigDir)
+	}
+
+	mergeLayoutKind(&runtime.Layout, storeLayout, config.PathKindConfig)
+	mergeLayoutKind(&runtime.Layout, storeLayout, config.PathKindData)
+	mergeLayoutKind(&runtime.Layout, storeLayout, config.PathKindState)
+	mergeLayoutKind(&runtime.Layout, storeLayout, config.PathKindCache)
+	runtime.Layout.UsesXDG = runtime.Layout.UsesXDG || storeLayout.UsesXDG
+	return nil
+}
+
+func mergeLayoutKind(target *config.Layout, source config.Layout, kind config.PathKind) {
+	targetDir, _ := target.Dir(kind)
+	if targetDir != "" {
+		return
+	}
+	sourceDir, _ := source.Dir(kind)
+	if sourceDir == "" {
+		return
+	}
+
+	switch kind {
+	case config.PathKindConfig:
+		target.ConfigDir = sourceDir
+		target.ExplicitConfig = source.ExplicitConfig
+	case config.PathKindData:
+		target.DataDir = sourceDir
+		target.ExplicitData = source.ExplicitData
+	case config.PathKindState:
+		target.StateDir = sourceDir
+		target.ExplicitState = source.ExplicitState
+	case config.PathKindCache:
+		target.CacheDir = sourceDir
+		target.ExplicitCache = source.ExplicitCache
+	}
+}
+
+func commandLayout(ctx context.Context, kinds ...config.PathKind) (config.Layout, error) {
+	if runtime, ok := app.FromContext(ctx); ok {
+		if err := configureRuntimeLayout(runtime, "", kinds...); err != nil {
+			return config.Layout{}, err
+		}
+		return runtime.Layout, nil
+	}
+	return config.ResolveSystemLayoutFor("", kinds...)
+}
+
+func resolveRuntimeClient(runtime *app.Runtime, homeOverride string, email string, override string) (string, error) {
+	if err := configureRuntimeConfig(runtime, homeOverride); err != nil {
+		return "", err
+	}
+	cfg, err := runtime.Config.Read()
+	if err != nil {
+		return "", err
+	}
+
+	return config.ResolveClientForAccountWithCredentials(cfg, email, override, func(client string) (bool, error) {
+		if err := configureRuntimeLayout(runtime, homeOverride, config.PathKindConfig, config.PathKindData); err != nil {
+			return false, err
+		}
+		files := config.NewClientCredentialsStore(runtime.Layout)
+		_, exists, err := files.ExistingPath(client)
+		return exists, err
+	})
 }
 
 func commandIO(ctx context.Context) app.IO {
@@ -448,6 +619,13 @@ func gmailServiceFactory(ctx context.Context) app.GmailServiceFactory {
 		return runtime.Services.Gmail
 	}
 	return googleapi.NewGmail
+}
+
+func gmailBatchDeleteService(ctx context.Context, account string) (*gmail.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.GmailDelete != nil {
+		return runtime.Services.GmailDelete(ctx, account)
+	}
+	return googleapi.NewGmailBatchDelete(ctx, account)
 }
 
 func peopleContactsService(ctx context.Context, account string) (*people.Service, error) {

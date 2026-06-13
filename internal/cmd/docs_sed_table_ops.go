@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/docstable"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -23,14 +24,14 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 	if err != nil {
 		return err
 	}
-	var dimension docsTableDimension
+	var dimension docstable.Dimension
 	var action string
 	switch {
 	case ref.rowOp != "":
-		dimension = docsTableDimensionRow
+		dimension = docstable.Row
 		action = ref.rowOp
 	case ref.colOp != "":
-		dimension = docsTableDimensionColumn
+		dimension = docstable.Column
 		action = ref.colOp
 	default:
 		return usage("no row/column operation to perform")
@@ -40,11 +41,11 @@ func (c *DocsSedCmd) runTableRowColOp(ctx context.Context, u *ui.UI, account, id
 	if builderAction == opAppend {
 		builderAction = opInsert
 	}
-	req, resolved, err := buildDocsTableDimensionRequest(
-		target, dimension, builderAction, ref.opTarget, action == opAppend, "",
+	req, resolved, err := docstable.BuildDimensionRequest(
+		docsTablePlanTarget(target), dimension, docstable.Action(builderAction), ref.opTarget, action == opAppend, "",
 	)
 	if err != nil {
-		return err
+		return usage(err.Error())
 	}
 	if _, err := batchUpdate(ctx, docsSvc, id, []*docs.Request{req}); err != nil {
 		return fmt.Errorf("batch update (row/col op): %w", err)
@@ -96,9 +97,11 @@ func (c *DocsSedCmd) runTableMerge(ctx context.Context, u *ui.UI, account, id st
 	if repl == unmergeOp || repl == splitOp {
 		endRow, endCol = ref.row, ref.col
 	}
-	req, err := buildDocsTableMergeRequest(target, repl, ref.row, ref.col, endRow, endCol, "")
+	req, err := docstable.BuildMergeRequest(
+		docsTablePlanTarget(target), docstable.Action(repl), ref.row, ref.col, endRow, endCol, "",
+	)
 	if err != nil {
-		return err
+		return usage(err.Error())
 	}
 	if _, err := batchUpdate(ctx, docsSvc, id, []*docs.Request{req}); err != nil {
 		return fmt.Errorf("batch update (%s): %w", opDesc, err)

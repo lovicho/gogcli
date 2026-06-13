@@ -19,8 +19,8 @@ func newDocsTableOpsTestContext(t *testing.T, svc *docs.Service) context.Context
 
 func TestResolveDocsTableSelector(t *testing.T) {
 	doc := docsTableOpsTestDocument(
-		docsTableOpsTestElement(5, "First", 2, 2),
-		docsTableOpsTestElement(40, "Second", 3, 2),
+		docsTableOpsTestElement(5, "First", 2),
+		docsTableOpsTestElement(40, "Second", 3),
 	)
 
 	tests := []struct {
@@ -53,8 +53,8 @@ func TestResolveDocsTableSelector(t *testing.T) {
 
 func TestResolveDocsTableSelectorRejectsAmbiguousHeader(t *testing.T) {
 	doc := docsTableOpsTestDocument(
-		docsTableOpsTestElement(5, "Same", 2, 2),
-		docsTableOpsTestElement(40, "Same", 2, 2),
+		docsTableOpsTestElement(5, "Same", 2),
+		docsTableOpsTestElement(40, "Same", 2),
 	)
 	_, err := resolveDocsTableSelector(doc, "Same")
 	if err == nil || !strings.Contains(err.Error(), "matches 2 tables") {
@@ -63,7 +63,7 @@ func TestResolveDocsTableSelectorRejectsAmbiguousHeader(t *testing.T) {
 }
 
 func TestResolveDocsTableSelectorPreservesHeaderWhitespace(t *testing.T) {
-	doc := docsTableOpsTestDocument(docsTableOpsTestElement(5, " Status ", 2, 2))
+	doc := docsTableOpsTestDocument(docsTableOpsTestElement(5, " Status ", 2))
 	selected, err := resolveDocsTableSelector(doc, " Status ")
 	if err != nil {
 		t.Fatalf("resolve exact whitespace: %v", err)
@@ -78,8 +78,8 @@ func TestResolveDocsTableSelectorPreservesHeaderWhitespace(t *testing.T) {
 
 func TestResolveDocsTableSelectorSupportsNumericHeaderText(t *testing.T) {
 	doc := docsTableOpsTestDocument(
-		docsTableOpsTestElement(5, "First", 2, 2),
-		docsTableOpsTestElement(40, "2026", 2, 2),
+		docsTableOpsTestElement(5, "First", 2),
+		docsTableOpsTestElement(40, "2026", 2),
 	)
 	selected, err := resolveDocsTableSelector(doc, "text:2026")
 	if err != nil {
@@ -92,172 +92,17 @@ func TestResolveDocsTableSelectorSupportsNumericHeaderText(t *testing.T) {
 
 func TestResolveDocsTableSelectorRejectsNumericOverflow(t *testing.T) {
 	const overflow = "999999999999999999999999999999"
-	doc := docsTableOpsTestDocument(docsTableOpsTestElement(5, overflow, 2, 2))
+	doc := docsTableOpsTestDocument(docsTableOpsTestElement(5, overflow, 2))
 	_, err := resolveDocsTableSelector(doc, overflow)
 	if err == nil || !strings.Contains(err.Error(), "invalid table index") {
 		t.Fatalf("expected numeric overflow error, got %v", err)
 	}
 }
 
-func TestBuildDocsTableDimensionRequest(t *testing.T) {
-	target := tableWithIndex{
-		table:    docsTableOpsTestElement(5, "Header", 3, 2).Table,
-		startIdx: 5,
-	}
-
-	rowReq, rowIndex, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionRow, opInsert, 0, true, "tab-1",
-	)
-	if err != nil {
-		t.Fatalf("append row: %v", err)
-	}
-	if rowIndex != 4 {
-		t.Fatalf("row index = %d, want 4", rowIndex)
-	}
-	row := rowReq.InsertTableRow
-	if row == nil || !row.InsertBelow {
-		t.Fatalf("unexpected row request: %#v", rowReq)
-	}
-	if got := row.TableCellLocation; got.RowIndex != 2 || got.ColumnIndex != 0 ||
-		got.TableStartLocation.Index != 5 || got.TableStartLocation.TabId != "tab-1" {
-		t.Fatalf("row location = %#v", got)
-	}
-
-	colReq, colIndex, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionColumn, opDelete, -1, false, "",
-	)
-	if err != nil {
-		t.Fatalf("delete column: %v", err)
-	}
-	if colIndex != 2 {
-		t.Fatalf("column index = %d, want 2", colIndex)
-	}
-	col := colReq.DeleteTableColumn
-	if col == nil || col.TableCellLocation.ColumnIndex != 1 {
-		t.Fatalf("unexpected column request: %#v", colReq)
-	}
-}
-
-func TestBuildDocsTableDimensionRequestAvoidsMergedDeleteAnchor(t *testing.T) {
-	table := docsTableOpsTestElement(5, "Header", 2, 3).Table
-	table.TableRows[0].TableCells[0].TableCellStyle = &docs.TableCellStyle{ColumnSpan: 2}
-	target := tableWithIndex{table: table, startIdx: 5}
-
-	req, _, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionColumn, opDelete, 1, false, "",
-	)
-	if err != nil {
-		t.Fatalf("delete with safe lower-row anchor: %v", err)
-	}
-	if got := req.DeleteTableColumn.TableCellLocation.RowIndex; got != 1 {
-		t.Fatalf("row index = %d, want safe unmerged row 1", got)
-	}
-}
-
-func TestBuildDocsTableDimensionRequestRejectsMergedDeleteAndInsertBoundary(t *testing.T) {
-	table := docsTableOpsTestElement(5, "Header", 2, 3).Table
-	for _, row := range table.TableRows {
-		row.TableCells[0].TableCellStyle = &docs.TableCellStyle{ColumnSpan: 2}
-	}
-	target := tableWithIndex{table: table, startIdx: 5}
-
-	if _, _, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionColumn, opDelete, 1, false, "",
-	); err == nil || !strings.Contains(err.Error(), "every reference cell") {
-		t.Fatalf("expected merged delete rejection, got %v", err)
-	}
-	if _, _, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionColumn, opInsert, 2, false, "",
-	); err == nil || !strings.Contains(err.Error(), "inside merged cells") {
-		t.Fatalf("expected merged insert-boundary rejection, got %v", err)
-	}
-}
-
-func TestBuildDocsTableDimensionRequestRejectsVerticallyMergedRow(t *testing.T) {
-	table := docsTableOpsTestElement(5, "Header", 3, 2).Table
-	for _, cell := range table.TableRows[0].TableCells {
-		cell.TableCellStyle = &docs.TableCellStyle{RowSpan: 2}
-	}
-	target := tableWithIndex{table: table, startIdx: 5}
-
-	if _, _, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionRow, opDelete, 2, false, "",
-	); err == nil || !strings.Contains(err.Error(), "every reference cell") {
-		t.Fatalf("expected merged row delete rejection, got %v", err)
-	}
-	if _, _, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionRow, opInsert, 2, false, "",
-	); err == nil || !strings.Contains(err.Error(), "inside merged cells") {
-		t.Fatalf("expected merged row insert rejection, got %v", err)
-	}
-}
-
-func TestDocsTableCellPlacementsSupportRetainedCoveredCells(t *testing.T) {
-	retained := docsTableOpsTestElement(5, "Header", 1, 3).Table
-	retained.TableRows[0].TableCells[0].TableCellStyle = &docs.TableCellStyle{ColumnSpan: 2}
-	retainedPlacements := docsTableCellPlacements(retained)
-	if len(retainedPlacements) != 2 ||
-		retainedPlacements[0].columnStart != 1 ||
-		retainedPlacements[1].columnStart != 3 {
-		t.Fatalf("retained placements = %#v", retainedPlacements)
-	}
-}
-
-func TestBuildDocsTableDimensionRequestRejectsNonRectangularRows(t *testing.T) {
-	omitted := docsTableOpsTestElement(5, "Header", 1, 3).Table
-	omitted.TableRows[0].TableCells[0].TableCellStyle = &docs.TableCellStyle{ColumnSpan: 2}
-	omitted.TableRows[0].TableCells = []*docs.TableCell{
-		omitted.TableRows[0].TableCells[0],
-		omitted.TableRows[0].TableCells[2],
-	}
-	target := tableWithIndex{table: omitted, startIdx: 5}
-	if _, _, err := buildDocsTableDimensionRequest(
-		target, docsTableDimensionColumn, opDelete, 3, false, "",
-	); err == nil || !strings.Contains(err.Error(), "non-rectangular") {
-		t.Fatalf("expected non-rectangular rejection, got %v", err)
-	}
-}
-
-func TestBuildDocsTableDimensionRequestPreflightsOnlyDimension(t *testing.T) {
-	rowTarget := tableWithIndex{table: docsTableOpsTestElement(5, "Header", 1, 2).Table, startIdx: 5}
-	if _, _, err := buildDocsTableDimensionRequest(
-		rowTarget, docsTableDimensionRow, opDelete, 1, false, "",
-	); err == nil || !strings.Contains(err.Error(), "only row") {
-		t.Fatalf("expected only-row error, got %v", err)
-	}
-
-	colTarget := tableWithIndex{table: docsTableOpsTestElement(5, "Header", 2, 1).Table, startIdx: 5}
-	if _, _, err := buildDocsTableDimensionRequest(
-		colTarget, docsTableDimensionColumn, opDelete, 1, false, "",
-	); err == nil || !strings.Contains(err.Error(), "only column") {
-		t.Fatalf("expected only-column error, got %v", err)
-	}
-}
-
-func TestBuildDocsTableMergeRequestValidatesLogicalColumnCount(t *testing.T) {
-	element := docsTableOpsTestElement(5, "Header", 2, 2)
-	element.Table.Columns = 1
-	target := tableWithIndex{table: element.Table, startIdx: 5}
-
-	_, err := buildDocsTableMergeRequest(target, mergeOp, 1, 1, 2, 2, "")
-	if err == nil || !strings.Contains(err.Error(), "table has 1 columns") {
-		t.Fatalf("expected logical-column validation error, got %v", err)
-	}
-}
-
-func TestValidateDocsTableRangeCountsMergedCellSpans(t *testing.T) {
-	table := docsTableOpsTestElement(5, "Header", 2, 3).Table
-	table.TableRows[1].TableCells[0].TableCellStyle = &docs.TableCellStyle{ColumnSpan: 2}
-
-	if err := validateDocsTableRange(table, 2, 3, 2, 3); err != nil {
-		t.Fatalf("validate logical third column: %v", err)
-	}
-}
-
 func TestDocsTableColumnDeleteAllUsesDescendingDocumentOrder(t *testing.T) {
 	doc := docsTableOpsTestDocument(
-		docsTableOpsTestElement(5, "First", 2, 2),
-		docsTableOpsTestElement(40, "Second", 2, 2),
+		docsTableOpsTestElement(5, "First", 2),
+		docsTableOpsTestElement(40, "Second", 2),
 	)
 	var got docs.BatchUpdateDocumentRequest
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -296,8 +141,8 @@ func TestDocsTableColumnDeleteAllUsesDescendingDocumentOrder(t *testing.T) {
 }
 
 func TestDocsTableRowInsertPopulatesValues(t *testing.T) {
-	before := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 2, 2))
-	after := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 3, 2))
+	before := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 2))
+	after := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 3))
 	after.RevisionId = "rev-2"
 	var batches []docs.BatchUpdateDocumentRequest
 	gets := 0
@@ -357,8 +202,8 @@ func TestDocsTableRowInsertPopulatesValues(t *testing.T) {
 
 func TestDocsTableRowInsertValuesRejectsMultipleSelectedTables(t *testing.T) {
 	doc := docsTableOpsTestDocument(
-		docsTableOpsTestElement(5, "First", 2, 2),
-		docsTableOpsTestElement(40, "Second", 2, 2),
+		docsTableOpsTestElement(5, "First", 2),
+		docsTableOpsTestElement(40, "Second", 2),
 	)
 	postCount := 0
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +232,7 @@ func TestDocsTableRowInsertValuesRejectsMultipleSelectedTables(t *testing.T) {
 }
 
 func TestDocsTableRowInsertValuesRejectsVerticalMergeBoundary(t *testing.T) {
-	doc := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 3, 2))
+	doc := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 3))
 	doc.Body.Content[0].Table.TableRows[0].TableCells[0].TableCellStyle = &docs.TableCellStyle{RowSpan: 2}
 	postCount := 0
 	docSvc, cleanup := newDocsServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
@@ -416,8 +261,8 @@ func TestDocsTableRowInsertValuesRejectsVerticalMergeBoundary(t *testing.T) {
 }
 
 func TestDocsTableRowInsertValuesRejectsConcurrentRevision(t *testing.T) {
-	before := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 2, 2))
-	after := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 3, 2))
+	before := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 2))
+	after := docsTableOpsTestDocument(docsTableOpsTestElement(5, "Header", 3))
 	after.RevisionId = "rev-collaborator"
 	batchCount := 0
 	gets := 0
@@ -518,7 +363,9 @@ func docsTableOpsTestDocument(elements ...*docs.StructuralElement) *docs.Documen
 	}
 }
 
-func docsTableOpsTestElement(start int64, header string, rows, cols int) *docs.StructuralElement {
+func docsTableOpsTestElement(start int64, header string, rows int) *docs.StructuralElement {
+	const cols = 2
+
 	next := start + 1
 	tableRows := make([]*docs.TableRow, rows)
 	for row := 0; row < rows; row++ {

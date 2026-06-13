@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,9 @@ import (
 	"testing"
 
 	"google.golang.org/api/gmail/v1"
+
+	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/config"
 )
 
 func executeGmailAttachmentJSON(t *testing.T, svc *gmail.Service, args ...string) map[string]any {
@@ -116,6 +120,11 @@ func TestExecute_GmailAttachment_OutPath_JSON(t *testing.T) {
 }
 
 func TestExecute_GmailAttachment_NameOverride_ConfigDir_JSON(t *testing.T) {
+	ambientHome := t.TempDir()
+	t.Setenv("HOME", ambientHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(ambientHome, "ambient-config"))
+	runtimeRoot := t.TempDir()
+
 	// Keep this unpadded base64url variant working too.
 	attachmentData := []byte("ab")
 	attachmentEncoded := base64.RawURLEncoding.EncodeToString(attachmentData)
@@ -149,16 +158,38 @@ func TestExecute_GmailAttachment_NameOverride_ConfigDir_JSON(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
+	svc := newGmailServiceFromServer(t, srv)
 
-	parsed := executeGmailAttachmentJSON(t, newGmailServiceFromServer(t, srv),
+	result := executeWithTestRuntime(t, []string{
 		"--json",
 		"--account", "a@b.com",
 		"gmail", "attachment", "m1", "a1",
 		"--name", "override.bin",
-	)
+	}, &app.Runtime{
+		Layout: config.Layout{
+			ConfigDir:      filepath.Join(runtimeRoot, "config"),
+			ExplicitConfig: true,
+		},
+		Services: app.Services{
+			Gmail: func(context.Context, string) (*gmail.Service, error) {
+				return svc, nil
+			},
+		},
+	})
+	if result.err != nil {
+		t.Fatalf("Execute: %v\nstderr=%q", result.err, result.stderr)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(result.stdout), &parsed); err != nil {
+		t.Fatalf("json parse: %v\nout=%q", err, result.stdout)
+	}
 	path, _ := parsed["path"].(string)
 	if !strings.Contains(path, "override.bin") || !strings.Contains(path, "m1_a1_") {
 		t.Fatalf("unexpected path=%q", path)
+	}
+	wantDir := filepath.Join(runtimeRoot, "config", "gmail-attachments")
+	if filepath.Dir(path) != wantDir {
+		t.Fatalf("path dir=%q want=%q", filepath.Dir(path), wantDir)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -166,6 +197,9 @@ func TestExecute_GmailAttachment_NameOverride_ConfigDir_JSON(t *testing.T) {
 	}
 	if string(b) != string(attachmentData) {
 		t.Fatalf("content=%q", string(b))
+	}
+	if _, err := os.Stat(filepath.Join(ambientHome, "ambient-config")); !os.IsNotExist(err) {
+		t.Fatalf("ambient config touched: %v", err)
 	}
 }
 

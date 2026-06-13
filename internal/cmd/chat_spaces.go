@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"google.golang.org/api/chat/v1"
@@ -97,18 +96,13 @@ func (c *ChatSpacesListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return failEmptyExit(c.FailEmpty)
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "RESOURCE\tNAME\tTYPE")
-	for _, space := range spaces {
-		if space == nil {
-			continue
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n",
-			space.Name,
-			sanitizeTab(space.DisplayName),
-			sanitizeTab(chatSpaceType(space)),
-		)
+	if err := outfmt.WriteTable(
+		ctx,
+		stdoutWriter(ctx),
+		compactChatRows(spaces),
+		chatSpaceColumns(),
+	); err != nil {
+		return err
 	}
 	printNextPageHint(u, nextPageToken)
 	return nil
@@ -196,20 +190,7 @@ func (c *ChatSpacesFindCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "RESOURCE\tNAME\tTYPE")
-	for _, space := range matches {
-		if space == nil {
-			continue
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n",
-			space.Name,
-			sanitizeTab(space.DisplayName),
-			sanitizeTab(chatSpaceType(space)),
-		)
-	}
-	return nil
+	return outfmt.WriteTable(ctx, stdoutWriter(ctx), compactChatRows(matches), chatSpaceColumns())
 }
 
 func chatSpaceDisplayNameMatches(displayName, query string, exact bool) bool {

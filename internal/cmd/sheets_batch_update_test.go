@@ -159,11 +159,6 @@ func TestParseSheetsBatchUpdateDataRejectsInvalidPayloads(t *testing.T) {
 	}{
 		{name: "bad file reference", in: `@`, want: "empty @file reference"},
 		{name: "invalid json", in: `nope`, want: "invalid JSON data"},
-		{name: "empty array", in: `[]`, want: "at least one value range"},
-		{name: "null range", in: `[null]`, want: "range 0 is null"},
-		{name: "empty range", in: `[{"range":"","values":[["a"]]}]`, want: "empty range"},
-		{name: "missing values", in: `[{"range":"Sheet1!A1"}]`, want: "empty values"},
-		{name: "empty values", in: `[{"range":"Sheet1!A1","values":[]}]`, want: "empty values"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := parseSheetsBatchUpdateData(tc.in, strings.NewReader(""))

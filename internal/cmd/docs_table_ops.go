@@ -10,6 +10,7 @@ import (
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/docstable"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -112,20 +113,20 @@ func (c *DocsTableRowInsertCmd) Run(ctx context.Context, flags *RootFlags) error
 	requests := make([]*docs.Request, 0, len(selected))
 	results := make([]docsTableMutationResult, 0, len(selected))
 	for _, target := range selected {
-		req, resolved, buildErr := buildDocsTableDimensionRequest(
-			target.tableWithIndex, docsTableDimensionRow, opInsert, at, appendAtEnd, loaded.tabID,
+		req, resolved, buildErr := docstable.BuildDimensionRequest(
+			docsTablePlanTarget(target.tableWithIndex), docstable.Row, docstable.Insert, at, appendAtEnd, loaded.tabID,
 		)
 		if buildErr != nil {
-			return buildErr
+			return usage(buildErr.Error())
 		}
-		if hasValues && docsTableRowBoundaryCrossesMerge(target.table, resolved) {
+		if hasValues && docstable.RowBoundaryCrossesMerge(target.table, resolved) {
 			return usagef(
 				"cannot insert row %d with --values-json because a vertically merged cell crosses that boundary",
 				resolved,
 			)
 		}
-		if hasValues && len(values) != docsTableColumnCount(target.table) {
-			return usagef("--values-json has %d values, table has %d columns", len(values), docsTableColumnCount(target.table))
+		if hasValues && len(values) != docstable.ColumnCount(target.table) {
+			return usagef("--values-json has %d values, table has %d columns", len(values), docstable.ColumnCount(target.table))
 		}
 		requests = append(requests, req)
 		results = append(results, docsTableMutationResult{TableIndex: target.index, Index: resolved})
@@ -150,7 +151,7 @@ func (c *DocsTableRowInsertCmd) Run(ctx context.Context, flags *RootFlags) error
 
 func (c *DocsTableRowDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return runDocsTableDimensionCommand(ctx, flags, docsTableDimensionCommand{
-		docID: c.DocID, table: c.Table, tab: c.Tab, dimension: docsTableDimensionRow,
+		docID: c.DocID, table: c.Table, tab: c.Tab, dimension: docstable.Row,
 		action: opDelete, target: c.Row, dryRunOp: "docs.table-row.delete",
 	})
 }
@@ -161,30 +162,23 @@ func (c *DocsTableColumnInsertCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 	return runDocsTableDimensionCommand(ctx, flags, docsTableDimensionCommand{
-		docID: c.DocID, table: c.Table, tab: c.Tab, dimension: docsTableDimensionColumn,
+		docID: c.DocID, table: c.Table, tab: c.Tab, dimension: docstable.Column,
 		action: opInsert, target: at, appendAtEnd: appendAtEnd, dryRunOp: "docs.table-column.insert",
 	})
 }
 
 func (c *DocsTableColumnDeleteCmd) Run(ctx context.Context, flags *RootFlags) error {
 	return runDocsTableDimensionCommand(ctx, flags, docsTableDimensionCommand{
-		docID: c.DocID, table: c.Table, tab: c.Tab, dimension: docsTableDimensionColumn,
+		docID: c.DocID, table: c.Table, tab: c.Tab, dimension: docstable.Column,
 		action: opDelete, target: c.Col, dryRunOp: "docs.table-column.delete",
 	})
 }
-
-type docsTableDimension string
-
-const (
-	docsTableDimensionRow    docsTableDimension = "row"
-	docsTableDimensionColumn docsTableDimension = "column"
-)
 
 type docsTableDimensionCommand struct {
 	docID       string
 	table       string
 	tab         string
-	dimension   docsTableDimension
+	dimension   docstable.Dimension
 	action      string
 	target      int
 	appendAtEnd bool
@@ -219,11 +213,16 @@ func runDocsTableDimensionCommand(ctx context.Context, flags *RootFlags, command
 	requests := make([]*docs.Request, 0, len(selected))
 	results := make([]docsTableMutationResult, 0, len(selected))
 	for _, target := range selected {
-		req, resolved, buildErr := buildDocsTableDimensionRequest(
-			target.tableWithIndex, command.dimension, command.action, command.target, command.appendAtEnd, loaded.tabID,
+		req, resolved, buildErr := docstable.BuildDimensionRequest(
+			docsTablePlanTarget(target.tableWithIndex),
+			command.dimension,
+			docstable.Action(command.action),
+			command.target,
+			command.appendAtEnd,
+			loaded.tabID,
 		)
 		if buildErr != nil {
-			return buildErr
+			return usage(buildErr.Error())
 		}
 		requests = append(requests, req)
 		results = append(results, docsTableMutationResult{TableIndex: target.index, Index: resolved})
@@ -290,12 +289,12 @@ func runDocsTableMergeCommand(ctx context.Context, flags *RootFlags, command doc
 	requests := make([]*docs.Request, 0, len(selected))
 	results := make([]docsTableMutationResult, 0, len(selected))
 	for _, target := range selected {
-		req, buildErr := buildDocsTableMergeRequest(
-			target.tableWithIndex, command.action,
+		req, buildErr := docstable.BuildMergeRequest(
+			docsTablePlanTarget(target.tableWithIndex), docstable.Action(command.action),
 			command.startRow, command.startCol, command.endRow, command.endCol, loaded.tabID,
 		)
 		if buildErr != nil {
-			return buildErr
+			return usage(buildErr.Error())
 		}
 		requests = append(requests, req)
 		results = append(results, docsTableMutationResult{TableIndex: target.index, Range: rangeValue})
@@ -454,212 +453,6 @@ func parseDocsTableRowValues(raw string) ([]string, error) {
 	return values, nil
 }
 
-func buildDocsTableDimensionRequest(
-	target tableWithIndex,
-	dimension docsTableDimension,
-	action string,
-	requested int,
-	appendAtEnd bool,
-	tabID string,
-) (*docs.Request, int, error) {
-	if target.table == nil {
-		return nil, 0, usage("target table is empty")
-	}
-	count := len(target.table.TableRows)
-	if dimension == docsTableDimensionColumn {
-		count = docsTableColumnCount(target.table)
-	}
-	if count < 1 {
-		return nil, 0, usagef("target table has no %ss", dimension)
-	}
-
-	resolved := requested
-	if appendAtEnd {
-		resolved = count + 1
-	} else if resolved < 0 {
-		resolved = count + resolved + 1
-	}
-	switch action {
-	case opDelete:
-		if resolved < 1 || resolved > count {
-			return nil, 0, usagef("%s %d out of range (table has %d %ss)", dimension, requested, count, dimension)
-		}
-		if count == 1 {
-			return nil, 0, usagef("cannot delete the only %s in a table", dimension)
-		}
-	case opInsert:
-		if !appendAtEnd && (resolved < 1 || resolved > count) {
-			return nil, 0, usagef("%s %d out of range for insert (table has %d %ss)", dimension, requested, count, dimension)
-		}
-	default:
-		return nil, 0, usagef("unsupported table %s action %q", dimension, action)
-	}
-
-	rowIndex, columnIndex, err := docsTableDimensionReference(
-		target.table, dimension, action, resolved, appendAtEnd,
-	)
-	if err != nil {
-		return nil, 0, err
-	}
-	cellLocation := &docs.TableCellLocation{
-		TableStartLocation: &docs.Location{Index: target.startIdx, TabId: tabID},
-		RowIndex:           int64(rowIndex),
-		ColumnIndex:        int64(columnIndex),
-		ForceSendFields:    []string{"RowIndex", "ColumnIndex"},
-	}
-	if dimension == docsTableDimensionRow {
-		if action == opDelete {
-			return &docs.Request{DeleteTableRow: &docs.DeleteTableRowRequest{
-				TableCellLocation: cellLocation,
-			}}, resolved, nil
-		}
-		return &docs.Request{InsertTableRow: &docs.InsertTableRowRequest{
-			TableCellLocation: cellLocation,
-			InsertBelow:       appendAtEnd,
-		}}, resolved, nil
-	}
-
-	if action == opDelete {
-		return &docs.Request{DeleteTableColumn: &docs.DeleteTableColumnRequest{
-			TableCellLocation: cellLocation,
-		}}, resolved, nil
-	}
-	return &docs.Request{InsertTableColumn: &docs.InsertTableColumnRequest{
-		TableCellLocation: cellLocation,
-		InsertRight:       appendAtEnd,
-	}}, resolved, nil
-}
-
-func docsTableDimensionReference(
-	table *docs.Table,
-	dimension docsTableDimension,
-	action string,
-	resolved int,
-	appendAtEnd bool,
-) (int, int, error) {
-	if !docsTableHasRectangularRows(table) {
-		return 0, 0, usagef(
-			"cannot %s table %s on a non-rectangular table; merge/unmerge cells or normalize the table first",
-			action, dimension,
-		)
-	}
-	placements := docsTableCellPlacements(table)
-	if dimension == docsTableDimensionColumn {
-		for _, placement := range placements {
-			switch {
-			case action == opDelete && placement.columnSpan == 1 && placement.columnStart == resolved:
-				return placement.rowStart - 1, resolved - 1, nil
-			case action == opInsert && !appendAtEnd && placement.columnStart == resolved:
-				return placement.rowStart - 1, resolved - 1, nil
-			case action == opInsert && appendAtEnd && placement.columnEnd() == resolved-1:
-				return placement.rowStart - 1, resolved - 2, nil
-			}
-		}
-		if action == opDelete {
-			return 0, 0, usagef("cannot delete column %d because every reference cell spanning it is merged", resolved)
-		}
-		return 0, 0, usagef("cannot insert at column %d because the boundary is inside merged cells", resolved)
-	}
-
-	for _, placement := range placements {
-		switch {
-		case action == opDelete && placement.rowSpan == 1 && placement.rowStart == resolved:
-			return resolved - 1, placement.columnStart - 1, nil
-		case action == opInsert && !appendAtEnd && placement.rowStart == resolved:
-			return resolved - 1, placement.columnStart - 1, nil
-		case action == opInsert && appendAtEnd && placement.rowEnd() == resolved-1:
-			return resolved - 2, placement.columnStart - 1, nil
-		}
-	}
-	if action == opDelete {
-		return 0, 0, usagef("cannot delete row %d because every reference cell spanning it is merged", resolved)
-	}
-	return 0, 0, usagef("cannot insert at row %d because the boundary is inside merged cells", resolved)
-}
-
-func docsTableCellColumnSpan(cell *docs.TableCell) int {
-	if cell != nil && cell.TableCellStyle != nil && cell.TableCellStyle.ColumnSpan > 0 {
-		return int(cell.TableCellStyle.ColumnSpan)
-	}
-	return 1
-}
-
-func docsTableCellRowSpan(cell *docs.TableCell) int {
-	if cell != nil && cell.TableCellStyle != nil && cell.TableCellStyle.RowSpan > 0 {
-		return int(cell.TableCellStyle.RowSpan)
-	}
-	return 1
-}
-
-type docsTableCellPlacement struct {
-	rowStart    int
-	columnStart int
-	rowSpan     int
-	columnSpan  int
-}
-
-func (p docsTableCellPlacement) rowEnd() int {
-	return p.rowStart + p.rowSpan - 1
-}
-
-func (p docsTableCellPlacement) columnEnd() int {
-	return p.columnStart + p.columnSpan - 1
-}
-
-func docsTableCellPlacements(table *docs.Table) []docsTableCellPlacement {
-	if table == nil {
-		return nil
-	}
-	covered := map[[2]int]bool{}
-	placements := make([]docsTableCellPlacement, 0)
-	for rowIndex, row := range table.TableRows {
-		for columnIndex, cell := range row.TableCells {
-			position := [2]int{rowIndex + 1, columnIndex + 1}
-			if covered[position] {
-				continue
-			}
-			placement := docsTableCellPlacement{
-				rowStart:    position[0],
-				columnStart: position[1],
-				rowSpan:     docsTableCellRowSpan(cell),
-				columnSpan:  docsTableCellColumnSpan(cell),
-			}
-			placements = append(placements, placement)
-			for coveredRow := placement.rowStart; coveredRow <= placement.rowEnd(); coveredRow++ {
-				for coveredColumn := placement.columnStart; coveredColumn <= placement.columnEnd(); coveredColumn++ {
-					if coveredRow == placement.rowStart && coveredColumn == placement.columnStart {
-						continue
-					}
-					covered[[2]int{coveredRow, coveredColumn}] = true
-				}
-			}
-		}
-	}
-	return placements
-}
-
-func docsTableHasRectangularRows(table *docs.Table) bool {
-	columns := docsTableColumnCount(table)
-	if table == nil || columns < 1 || len(table.TableRows) == 0 {
-		return false
-	}
-	for _, row := range table.TableRows {
-		if row == nil || len(row.TableCells) != columns {
-			return false
-		}
-	}
-	return true
-}
-
-func docsTableRowBoundaryCrossesMerge(table *docs.Table, row int) bool {
-	for _, placement := range docsTableCellPlacements(table) {
-		if placement.rowStart < row && placement.rowEnd() >= row {
-			return true
-		}
-	}
-	return false
-}
-
 func parseDocsTableRange(raw string) (int, int, int, int, error) {
 	parts := strings.Split(strings.TrimSpace(raw), ":")
 	if len(parts) != 2 {
@@ -690,65 +483,6 @@ func parseDocsTableCell(raw, flag string) (int, int, error) {
 		return 0, 0, usagef("%s coordinates must be positive integers", flag)
 	}
 	return row, col, nil
-}
-
-func buildDocsTableMergeRequest(
-	target tableWithIndex,
-	action string,
-	startRow, startCol, endRow, endCol int,
-	tabID string,
-) (*docs.Request, error) {
-	if err := validateDocsTableRange(target.table, startRow, startCol, endRow, endCol); err != nil {
-		return nil, err
-	}
-	tableRange := &docs.TableRange{
-		TableCellLocation: &docs.TableCellLocation{
-			TableStartLocation: &docs.Location{Index: target.startIdx, TabId: tabID},
-			RowIndex:           int64(startRow - 1),
-			ColumnIndex:        int64(startCol - 1),
-			ForceSendFields:    []string{"RowIndex", "ColumnIndex"},
-		},
-		RowSpan:    int64(endRow - startRow + 1),
-		ColumnSpan: int64(endCol - startCol + 1),
-	}
-	switch action {
-	case mergeOp:
-		return &docs.Request{MergeTableCells: &docs.MergeTableCellsRequest{TableRange: tableRange}}, nil
-	case unmergeOp, splitOp:
-		tableRange.RowSpan = 1
-		tableRange.ColumnSpan = 1
-		return &docs.Request{UnmergeTableCells: &docs.UnmergeTableCellsRequest{TableRange: tableRange}}, nil
-	default:
-		return nil, usagef("unsupported table merge action %q", action)
-	}
-}
-
-func validateDocsTableRange(table *docs.Table, startRow, startCol, endRow, endCol int) error {
-	rows := 0
-	if table != nil {
-		rows = len(table.TableRows)
-	}
-	if startRow < 1 || startRow > rows {
-		return usagef("row %d out of range (table has %d rows)", startRow, rows)
-	}
-	if endRow < startRow || endRow > rows {
-		return usagef("row %d out of range (table has %d rows)", endRow, rows)
-	}
-	columns := docsTableColumnCount(table)
-	if columns == 0 {
-		for _, placement := range docsTableCellPlacements(table) {
-			if placement.columnEnd() > columns {
-				columns = placement.columnEnd()
-			}
-		}
-	}
-	if startCol < 1 || startCol > columns {
-		return usagef("col %d out of range (table has %d columns)", startCol, columns)
-	}
-	if endCol < startCol || endCol > columns {
-		return usagef("col %d out of range (table has %d columns)", endCol, columns)
-	}
-	return nil
 }
 
 func executeDocsTableRequests(
@@ -865,4 +599,8 @@ func writeDocsTableMutationResult(
 
 func formatDocsTableRange(startRow, startCol, endRow, endCol int) string {
 	return fmt.Sprintf("%d,%d:%d,%d", startRow, startCol, endRow, endCol)
+}
+
+func docsTablePlanTarget(target tableWithIndex) docstable.Target {
+	return docstable.Target{Table: target.table, StartIndex: target.startIdx}
 }

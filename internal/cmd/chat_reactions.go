@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"google.golang.org/api/chat/v1"
@@ -162,14 +161,13 @@ func (c *ChatMessagesReactionsListCmd) Run(ctx context.Context, flags *RootFlags
 		return nil
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "RESOURCE\tEMOJI\tUSER")
-	for _, r := range reactions {
-		if r == nil {
-			continue
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Name, reactionEmoji(r), reactionUser(r))
+	if err := outfmt.WriteTable(
+		ctx,
+		stdoutWriter(ctx),
+		compactChatRows(reactions),
+		chatReactionColumns(),
+	); err != nil {
+		return err
 	}
 	printNextPageHint(u, nextPageToken)
 	return nil

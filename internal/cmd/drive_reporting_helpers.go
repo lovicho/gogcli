@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -13,35 +14,49 @@ type driveDuSummary struct {
 	Depth int    `json:"depth"`
 }
 
-func summarizeDriveDu(items []driveTreeItem, rootID string, depthLimit int) []driveDuSummary {
+func summarizeDriveDu(items []driveTreeItem, rootID string, depthLimit int) ([]driveDuSummary, error) {
 	type folderMeta struct {
-		path  string
-		depth int
+		id              string
+		path            string
+		depth           int
+		parentPlacement drivePlacementID
 	}
 
-	parentByID := map[string]string{}
-	folderMetaByID := map[string]folderMeta{
-		rootID: {path: ".", depth: 0},
+	folderMetaByPlacement := map[drivePlacementID]folderMeta{
+		driveRootPlacementID: {
+			id:   rootID,
+			path: ".",
+		},
 	}
 	for _, it := range items {
 		if it.IsFolder() {
-			parentByID[it.ID] = it.ParentID
-			folderMetaByID[it.ID] = folderMeta{path: it.Path, depth: it.Depth}
+			if it.placementID == 0 {
+				return nil, fmt.Errorf("drive folder %q is missing placement identity", it.ID)
+			}
+			if _, exists := folderMetaByPlacement[it.placementID]; exists {
+				return nil, fmt.Errorf("duplicate drive placement identity %d", it.placementID)
+			}
+			folderMetaByPlacement[it.placementID] = folderMeta{
+				id:              it.ID,
+				path:            it.Path,
+				depth:           it.Depth,
+				parentPlacement: it.parentPlacementID,
+			}
 		}
 	}
 
-	sizes := map[string]*driveDuSummary{}
-	getSummary := func(id string) *driveDuSummary {
-		if s, ok := sizes[id]; ok {
+	sizes := map[drivePlacementID]*driveDuSummary{}
+	getSummary := func(placementID drivePlacementID) *driveDuSummary {
+		if s, ok := sizes[placementID]; ok {
 			return s
 		}
-		meta := folderMetaByID[id]
+		meta := folderMetaByPlacement[placementID]
 		s := &driveDuSummary{
-			ID:    id,
+			ID:    meta.id,
 			Path:  meta.path,
 			Depth: meta.depth,
 		}
-		sizes[id] = s
+		sizes[placementID] = s
 		return s
 	}
 
@@ -49,12 +64,24 @@ func summarizeDriveDu(items []driveTreeItem, rootID string, depthLimit int) []dr
 		if it.IsFolder() {
 			continue
 		}
-		parentID := it.ParentID
-		for parentID != "" {
-			s := getSummary(parentID)
+		if it.parentPlacementID == 0 {
+			return nil, fmt.Errorf("drive item %q is missing parent placement identity", it.ID)
+		}
+		parentPlacement := it.parentPlacementID
+		visited := make(map[drivePlacementID]struct{}, it.Depth+1)
+		for parentPlacement != 0 {
+			if _, exists := visited[parentPlacement]; exists {
+				return nil, fmt.Errorf("drive placement ancestry cycle at %d", parentPlacement)
+			}
+			visited[parentPlacement] = struct{}{}
+			meta, ok := folderMetaByPlacement[parentPlacement]
+			if !ok {
+				return nil, fmt.Errorf("drive item %q references unknown parent placement %d", it.ID, parentPlacement)
+			}
+			s := getSummary(parentPlacement)
 			s.Size += it.Size
 			s.Files++
-			parentID = parentByID[parentID]
+			parentPlacement = meta.parentPlacement
 		}
 	}
 
@@ -65,7 +92,7 @@ func summarizeDriveDu(items []driveTreeItem, rootID string, depthLimit int) []dr
 		}
 		out = append(out, *s)
 	}
-	return out
+	return out, nil
 }
 
 func sortDriveDu(items []driveDuSummary, sortBy string, order string) {

@@ -11,7 +11,6 @@ import (
 	"github.com/steipete/gogcli/internal/authclient"
 	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleauth"
-	"github.com/steipete/gogcli/internal/oauthclient"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/secrets"
 	"github.com/steipete/gogcli/internal/ui"
@@ -26,15 +25,16 @@ type AuthStatusCmd struct{}
 
 func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
-	configPath, err := config.ConfigPath()
+	configStore, err := commandConfigStore(ctx)
 	if err != nil {
 		return err
 	}
-	configExists, err := config.ConfigExists()
+	configPath := configStore.Path()
+	configExists, err := configStore.Exists()
 	if err != nil {
 		return err
 	}
-	backendInfo, err := secrets.ResolveKeyringBackendInfo()
+	backendInfo, err := secrets.ResolveKeyringBackendInfoFor(configStore)
 	if err != nil {
 		return err
 	}
@@ -51,18 +51,25 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if flags != nil {
 		if a, err := requireAccount(flags); err == nil {
 			account = a
-			resolvedClient, resolveErr := resolveClientForEmail(account, flags)
+			layout, layoutErr := commandLayout(ctx, config.PathKindConfig, config.PathKindData)
+			if layoutErr != nil {
+				return layoutErr
+			}
+			resolvedClient, resolveErr := resolveClientForEmail(ctx, account, flags)
 			if resolveErr != nil {
 				return resolveErr
 			}
 			client = resolvedClient
-			path, exists, pathErr := config.ExistingClientCredentialsPathFor(client)
-			if pathErr == nil {
-				credentialsPath = path
-				credentialsExists = exists
+			credentialFiles, filesErr := commandClientCredentialsStore(ctx)
+			if filesErr == nil {
+				path, exists, pathErr := credentialFiles.ExistingPath(client)
+				if pathErr == nil {
+					credentialsPath = path
+					credentialsExists = exists
+				}
 			}
-			clientSecretInKeyring = oauthclient.ClientSecretInKeyring(client)
-			if p, _, ok := bestServiceAccountPathAndMtime(normalizeEmail(account)); ok {
+			clientSecretInKeyring = commandClientSecretInKeyring(ctx, client)
+			if p, _, ok := bestServiceAccountPathAndMtime(layout, normalizeEmail(account)); ok {
 				serviceAccountConfigured = true
 				serviceAccountPath = p
 			}
@@ -119,7 +126,7 @@ func (c *AuthStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 func (c *AuthListCmd) Run(ctx context.Context, _ *RootFlags) error {
 	u := ui.FromContext(ctx)
-	store, err := openSecretsStore()
+	store, err := openAuthSecretsStore(ctx)
 	if err != nil {
 		return err
 	}
@@ -128,7 +135,11 @@ func (c *AuthListCmd) Run(ctx context.Context, _ *RootFlags) error {
 		return err
 	}
 
-	serviceAccountEmails, err := config.ListServiceAccountEmails()
+	layout, err := commandLayout(ctx, config.PathKindConfig, config.PathKindData)
+	if err != nil {
+		return err
+	}
+	serviceAccountEmails, err := layout.ListServiceAccountEmails()
 	if err != nil {
 		return err
 	}
@@ -143,6 +154,7 @@ func (c *AuthListCmd) Run(ctx context.Context, _ *RootFlags) error {
 	}
 
 	entries := buildAuthListEntries(tokens, tokenReadErrors, serviceAccountEmails)
+	annotateServiceAccountEntries(entries, layout)
 
 	if outfmt.IsJSON(ctx) {
 		return c.writeAuthListJSON(ctx, entries)
@@ -156,13 +168,13 @@ func (c *AuthListCmd) Run(ctx context.Context, _ *RootFlags) error {
 	return c.writeAuthListText(ctx, u, entries)
 }
 
-func bestServiceAccountPathAndMtime(email string) (string, time.Time, bool) {
-	if p, err := config.ExistingServiceAccountPath(email); err == nil {
+func bestServiceAccountPathAndMtime(layout config.Layout, email string) (string, time.Time, bool) {
+	if p, err := layout.ExistingServiceAccountPath(email); err == nil {
 		if st, err := os.Stat(p); err == nil {
 			return p, st.ModTime(), true
 		}
 	}
-	if p, err := config.ExistingKeepServiceAccountPath(email); err == nil {
+	if p, err := layout.ExistingKeepServiceAccountPath(email); err == nil {
 		if st, err := os.Stat(p); err == nil {
 			return p, st.ModTime(), true
 		}
@@ -218,21 +230,25 @@ func (c *AuthRemoveCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}, fmt.Sprintf("remove stored token for %s", email)); err != nil {
 		return err
 	}
-	store, err := openSecretsStore()
+	store, err := openAuthSecretsStore(ctx)
 	if err != nil {
 		return err
 	}
-	client, err := resolveClientForEmail(email, flags)
+	client, err := resolveClientForEmail(ctx, email, flags)
 	if err != nil {
 		return err
 	}
-	if err := store.DeleteToken(client, email); err != nil {
-		return err
+	if deleteErr := store.DeleteToken(client, email); deleteErr != nil {
+		return deleteErr
 	}
 
 	// Clean up config.json: remove aliases pointing to this email and the
 	// account-client entry for this email.
-	if updateErr := config.UpdateConfig(func(cfg *config.File) error {
+	configStore, err := commandConfigStore(ctx)
+	if err != nil {
+		return err
+	}
+	if updateErr := configStore.Update(func(cfg *config.File) error {
 		for alias, target := range cfg.AccountAliases {
 			if strings.EqualFold(target, email) {
 				delete(cfg.AccountAliases, alias)
@@ -314,14 +330,12 @@ func (c *AuthKeepCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return parseErr
 	}
 
-	destPath, err := config.KeepServiceAccountPath(email)
+	layout, err := commandLayout(ctx, config.PathKindData)
 	if err != nil {
 		return err
 	}
-	genericPath, err := config.ServiceAccountPath(email)
-	if err != nil {
-		return err
-	}
+	destPath := layout.KeepServiceAccountPath(email)
+	genericPath := layout.ServiceAccountPath(email)
 
 	if err := dryRunExit(ctx, flags, "auth.keep", map[string]any{
 		"email":        email,
@@ -332,7 +346,7 @@ func (c *AuthKeepCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	if _, err := config.EnsureDataDir(); err != nil {
+	if _, err := layout.EnsureDataDir(); err != nil {
 		return err
 	}
 

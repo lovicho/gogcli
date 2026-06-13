@@ -19,8 +19,9 @@ gog youtube (yt) <command> [flags]
 - [gog youtube activities](gog-youtube-activities.md) - List channel activities
 - [gog youtube channels](gog-youtube-channels.md) - List channels
 - [gog youtube comments](gog-youtube-comments.md) - List comment threads
-- [gog youtube playlists](gog-youtube-playlists.md) - List playlists
+- [gog youtube playlists](gog-youtube-playlists.md) - Manage playlists
 - [gog youtube search](gog-youtube-search.md) - Search YouTube for videos, channels, or playlists
+- [gog youtube subscriptions](gog-youtube-subscriptions.md) - Manage channel subscriptions
 - [gog youtube videos](gog-youtube-videos.md) - List or get videos
 
 ## Flags

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsa1"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -102,7 +102,7 @@ func (c *SheetsReadFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 					absCol := startCol + ci + 1
 					formats = append(formats, sheetsCellFormat{
 						Sheet:  sheetTitle,
-						A1:     formatA1Cell(sheetTitle, absRow, absCol),
+						A1:     sheetsa1.FormatCell(sheetTitle, absRow, absCol),
 						Row:    absRow,
 						Col:    absCol,
 						Value:  cell.FormattedValue,
@@ -127,21 +127,5 @@ func (c *SheetsReadFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-
-	fmt.Fprintln(w, "A1\tVALUE\tFORMAT")
-	for _, formatCell := range formats {
-		encoded, marshalErr := json.Marshal(formatCell.Format)
-		encodedJSON := "{}"
-		if marshalErr == nil {
-			encodedJSON = string(encoded)
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n",
-			oneLine(formatCell.A1),
-			oneLine(formatCell.Value),
-			encodedJSON,
-		)
-	}
-	return nil
+	return outfmt.WriteTable(ctx, stdoutWriter(ctx), formats, sheetsCellFormatColumns())
 }

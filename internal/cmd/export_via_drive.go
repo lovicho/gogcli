@@ -58,9 +58,11 @@ func exportViaDrive(ctx context.Context, flags *RootFlags, opts exportViaDriveOp
 	}
 	var defaultDownloadsDir string
 	if outPathFlag == "" {
-		if dir, err := config.DriveDownloadsDir(); err == nil {
-			defaultDownloadsDir = dir
+		layout, layoutErr := commandLayout(ctx, config.PathKindConfig)
+		if layoutErr != nil {
+			return layoutErr
 		}
+		defaultDownloadsDir = layout.DriveDownloadsDir()
 	}
 	if err := dryRunExit(ctx, flags, op, map[string]any{
 		"id":                    id,
@@ -97,7 +99,7 @@ func exportViaDrive(ctx context.Context, flags *RootFlags, opts exportViaDriveOp
 		return fmt.Errorf("file is not a %s (mimeType=%q)", label, meta.MimeType)
 	}
 
-	destPath, err := resolveDriveDownloadDestPath(meta, outPathFlag)
+	destPath, err := resolveDriveDownloadDestPath(meta, outPathFlag, defaultDownloadsDir)
 	if err != nil {
 		return err
 	}

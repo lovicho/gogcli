@@ -33,7 +33,7 @@ func requireGmailSendService(ctx context.Context, flags *RootFlags) (string, *gm
 	if err != nil {
 		return "", nil, err
 	}
-	if err = checkAccountNoSend(account); err != nil {
+	if err = checkAccountNoSend(ctx, account); err != nil {
 		return "", nil, err
 	}
 	return account, svc, nil

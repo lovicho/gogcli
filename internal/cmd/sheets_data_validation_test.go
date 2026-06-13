@@ -14,6 +14,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsvalidation"
 )
 
 func TestBuildDataValidationCondition(t *testing.T) {
@@ -43,13 +44,10 @@ func TestBuildDataValidationCondition(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			condition, err := buildDataValidationCondition(tt.kind, tt.values)
+			condition, err := sheetsvalidation.BuildCondition(tt.kind, tt.values)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("expected %q error, got %v", tt.wantErr, err)
-				}
-				if got := ExitCode(err); got != 2 {
-					t.Fatalf("ExitCode = %d, want 2", got)
 				}
 				return
 			}
@@ -273,12 +271,12 @@ func TestBuildTableValidationClearRequests(t *testing.T) {
 		EndCol:      9,
 		Columns:     columns,
 		Rule: &sheets.DataValidationRule{
-			Condition:    cloneBooleanCondition(columns[0].DataValidationRule.Condition),
+			Condition:    sheetsvalidation.CloneCondition(columns[0].DataValidationRule.Condition),
 			ShowCustomUi: true,
 		},
 	}}
 
-	requests, err := buildTableValidationClearRequests(&sheets.GridRange{
+	requests, err := sheetsvalidation.BuildClearRequests(&sheets.GridRange{
 		SheetId:          7,
 		StartRowIndex:    1,
 		EndRowIndex:      4,
@@ -310,7 +308,7 @@ func TestBuildTableValidationClearRequests(t *testing.T) {
 		t.Fatalf("untouched column = %#v", got)
 	}
 
-	_, err = buildTableValidationClearRequests(&sheets.GridRange{
+	_, err = sheetsvalidation.BuildClearRequests(&sheets.GridRange{
 		SheetId:          7,
 		StartRowIndex:    1,
 		EndRowIndex:      3,
@@ -339,7 +337,7 @@ func TestBuildTableValidationSetRequests(t *testing.T) {
 		EndCol:      9,
 		Columns:     columns,
 		Rule: &sheets.DataValidationRule{
-			Condition:    cloneBooleanCondition(columns[0].DataValidationRule.Condition),
+			Condition:    sheetsvalidation.CloneCondition(columns[0].DataValidationRule.Condition),
 			ShowCustomUi: true,
 		},
 	}}
@@ -355,7 +353,7 @@ func TestBuildTableValidationSetRequests(t *testing.T) {
 		Type:   "ONE_OF_LIST",
 		Values: []*sheets.ConditionValue{{UserEnteredValue: "new"}},
 	}
-	requests, err := buildTableValidationSetRequests(target, spans, listCondition)
+	requests, err := sheetsvalidation.BuildSetRequests(target, spans, listCondition)
 	if err != nil {
 		t.Fatalf("set requests: %v", err)
 	}
@@ -368,7 +366,7 @@ func TestBuildTableValidationSetRequests(t *testing.T) {
 		t.Fatalf("updated dropdown = %#v", updated)
 	}
 
-	requests, err = buildTableValidationSetRequests(target, spans, &sheets.BooleanCondition{
+	requests, err = sheetsvalidation.BuildSetRequests(target, spans, &sheets.BooleanCondition{
 		Type:   "NUMBER_GREATER",
 		Values: []*sheets.ConditionValue{{UserEnteredValue: "0"}},
 	})
@@ -387,7 +385,7 @@ func TestBuildTableValidationSetRequests(t *testing.T) {
 		EndCol:      10,
 		Columns:     columns,
 	})
-	requests, err = buildTableValidationSetRequests(&sheets.GridRange{
+	requests, err = sheetsvalidation.BuildSetRequests(&sheets.GridRange{
 		SheetId:          7,
 		StartRowIndex:    1,
 		EndRowIndex:      4,
@@ -403,7 +401,7 @@ func TestBuildTableValidationSetRequests(t *testing.T) {
 		t.Fatalf("updated text table column = %#v", updated)
 	}
 
-	requests, err = buildTableValidationSetRequests(&sheets.GridRange{
+	requests, err = sheetsvalidation.BuildSetRequests(&sheets.GridRange{
 		SheetId:          7,
 		StartRowIndex:    1,
 		EndRowIndex:      3,
@@ -417,7 +415,7 @@ func TestBuildTableValidationSetRequests(t *testing.T) {
 		t.Fatalf("expected partial text table condition error, got requests=%#v err=%v", requests, err)
 	}
 
-	_, err = buildTableValidationSetRequests(&sheets.GridRange{
+	_, err = sheetsvalidation.BuildSetRequests(&sheets.GridRange{
 		SheetId:          7,
 		StartRowIndex:    1,
 		EndRowIndex:      3,
@@ -503,7 +501,7 @@ func TestSubtractTableValidationSpans(t *testing.T) {
 		StartColumnIndex: 8,
 		EndColumnIndex:   11,
 	}
-	ranges := subtractTableValidationSpans(target, []tableValidationSpan{{
+	ranges := sheetsvalidation.SubtractSpans(target, []tableValidationSpan{{
 		SheetID:  7,
 		StartRow: 1,
 		EndRow:   4,
@@ -522,7 +520,7 @@ func TestSubtractTableValidationSpans(t *testing.T) {
 		t.Fatalf("right range = %#v", got)
 	}
 
-	if got := subtractTableValidationSpans(&sheets.GridRange{
+	if got := sheetsvalidation.SubtractSpans(&sheets.GridRange{
 		SheetId:          7,
 		StartRowIndex:    1,
 		EndRowIndex:      4,
@@ -536,12 +534,6 @@ func TestSubtractTableValidationSpans(t *testing.T) {
 		EndCol:   9,
 	}}); len(got) != 0 {
 		t.Fatalf("exact subtraction = %#v", got)
-	}
-}
-
-func TestFormatA1CellPreservesSheetTitleWhitespace(t *testing.T) {
-	if got := formatA1Cell("  Sheet One  ", 2, 3); got != "'  Sheet One  '!C2" {
-		t.Fatalf("formatA1Cell = %q", got)
 	}
 }
 
@@ -560,7 +552,7 @@ func TestBuildTableValidationCopyRequests(t *testing.T) {
 	}}
 
 	t.Run("normal tiling groups one column", func(t *testing.T) {
-		requests, err := buildTableValidationCopyRequests(
+		requests, err := sheetsvalidation.BuildCopyRequests(
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 7, StartColumnIndex: 10, EndColumnIndex: 11},
 			false,
@@ -579,7 +571,7 @@ func TestBuildTableValidationCopyRequests(t *testing.T) {
 	})
 
 	t.Run("small destination expands to source footprint", func(t *testing.T) {
-		requests, err := buildTableValidationCopyRequests(
+		requests, err := sheetsvalidation.BuildCopyRequests(
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 2, StartColumnIndex: 10, EndColumnIndex: 11},
 			false,
@@ -598,7 +590,7 @@ func TestBuildTableValidationCopyRequests(t *testing.T) {
 	})
 
 	t.Run("non-multiple destination uses one source footprint", func(t *testing.T) {
-		requests, err := buildTableValidationCopyRequests(
+		requests, err := sheetsvalidation.BuildCopyRequests(
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 5, StartColumnIndex: 10, EndColumnIndex: 11},
 			false,
@@ -617,7 +609,7 @@ func TestBuildTableValidationCopyRequests(t *testing.T) {
 	})
 
 	t.Run("header gaps remain gaps", func(t *testing.T) {
-		requests, err := buildTableValidationCopyRequests(
+		requests, err := sheetsvalidation.BuildCopyRequests(
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 0, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 0, EndRowIndex: 8, StartColumnIndex: 10, EndColumnIndex: 11},
 			false,
@@ -636,7 +628,7 @@ func TestBuildTableValidationCopyRequests(t *testing.T) {
 	})
 
 	t.Run("transpose maps source column to destination row", func(t *testing.T) {
-		requests, err := buildTableValidationCopyRequests(
+		requests, err := sheetsvalidation.BuildCopyRequests(
 			&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 10},
 			&sheets.GridRange{SheetId: 2, StartRowIndex: 1, EndRowIndex: 3, StartColumnIndex: 10, EndColumnIndex: 13},
 			true,
@@ -700,7 +692,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 			EndCol:      9,
 			Columns:     sourceColumns,
 			Rule: &sheets.DataValidationRule{
-				Condition:    cloneBooleanCondition(sourceColumns[0].DataValidationRule.Condition),
+				Condition:    sheetsvalidation.CloneCondition(sourceColumns[0].DataValidationRule.Condition),
 				ShowCustomUi: true,
 			},
 		},
@@ -714,7 +706,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 			EndCol:      11,
 			Columns:     destinationColumns,
 			Rule: &sheets.DataValidationRule{
-				Condition:    cloneBooleanCondition(destinationColumns[0].DataValidationRule.Condition),
+				Condition:    sheetsvalidation.CloneCondition(destinationColumns[0].DataValidationRule.Condition),
 				ShowCustomUi: true,
 			},
 		},
@@ -739,7 +731,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 			Columns:     typedDestinationColumns,
 		},
 	}
-	requests, err := buildTableValidationCopyRequests(
+	requests, err := sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 10, EndColumnIndex: 11},
 		false,
@@ -757,7 +749,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 		t.Fatalf("updated destination = %#v", updated)
 	}
 
-	_, err = buildTableValidationCopyRequests(
+	_, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 2, StartColumnIndex: 8, EndColumnIndex: 9},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 2, StartColumnIndex: 10, EndColumnIndex: 11},
 		false,
@@ -769,7 +761,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 
 	sameRuleSpans := append([]tableValidationSpan(nil), spans...)
 	sameRuleSpans[1].Rule = spans[0].Rule
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 2, StartColumnIndex: 8, EndColumnIndex: 9},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 2, StartColumnIndex: 10, EndColumnIndex: 11},
 		false,
@@ -782,7 +774,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 		t.Fatalf("same-rule partial destination requests = %#v", requests)
 	}
 
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 12, EndColumnIndex: 13},
 		false,
@@ -800,7 +792,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 		t.Fatalf("updated text destination = %#v", updated)
 	}
 
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 12, EndColumnIndex: 13},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 10, EndColumnIndex: 11},
 		false,
@@ -817,7 +809,7 @@ func TestBuildTableValidationCopyRequestsUpdatesDestinationTable(t *testing.T) {
 		t.Fatalf("cleared destination dropdown = %#v", updated)
 	}
 
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 12, EndColumnIndex: 13},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 14, EndColumnIndex: 15},
 		false,
@@ -836,7 +828,7 @@ func TestBuildTableValidationCopyRequestsLargeFillStaysGrouped(t *testing.T) {
 		Condition:    &sheets.BooleanCondition{Type: "ONE_OF_LIST"},
 		ShowCustomUi: true,
 	}
-	requests, err := buildTableValidationCopyRequests(
+	requests, err := sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 		&sheets.GridRange{SheetId: 2, StartRowIndex: 1, EndRowIndex: 1_000_000, StartColumnIndex: 10, EndColumnIndex: 11},
 		false,
@@ -866,7 +858,7 @@ func TestBuildTableValidationCopyRequestsMergesAdjacentSourceColumnsBeforeLimit(
 		Condition:    &sheets.BooleanCondition{Type: "ONE_OF_LIST"},
 		ShowCustomUi: true,
 	}
-	requests, err := buildTableValidationCopyRequests(
+	requests, err := sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 10},
 		&sheets.GridRange{SheetId: 2, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 10, EndColumnIndex: 1012},
 		false,
@@ -892,12 +884,12 @@ func TestBuildTableValidationCopyRequestsRejectsLargeSparseFill(t *testing.T) {
 		Condition:    &sheets.BooleanCondition{Type: "ONE_OF_LIST"},
 		ShowCustomUi: true,
 	}
-	_, err := buildTableValidationCopyRequests(
+	_, err := sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 0, EndRowIndex: 2, StartColumnIndex: 8, EndColumnIndex: 10},
 		&sheets.GridRange{
 			SheetId:          2,
 			StartRowIndex:    0,
-			EndRowIndex:      2 * (maxTableValidationCopySegments + 1),
+			EndRowIndex:      2 * (sheetsvalidation.MaxCopySegments + 1),
 			StartColumnIndex: 10,
 			EndColumnIndex:   12,
 		},
@@ -928,14 +920,14 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 		StartCol:    8,
 		EndCol:      9,
 	}}
-	_, err := buildTableValidationCopyRequests(
+	_, err := sheetsvalidation.BuildCopyRequests(
 		source,
 		destination,
 		false,
 		spans,
 		tableValidationCopyOptions{
-			ordinarySourceValidationKnown: true,
-			ordinaryValidatedCells: []validationCellCoordinate{{
+			OrdinarySourceValidationKnown: true,
+			OrdinaryValidatedCells: []validationCellCoordinate{{
 				Row: 1,
 				Col: 0,
 			}},
@@ -945,13 +937,13 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 		t.Fatalf("expected ordinary-to-table rejection, got %v", err)
 	}
 
-	requests, err := buildTableValidationCopyRequests(
+	requests, err := sheetsvalidation.BuildCopyRequests(
 		source,
 		destination,
 		false,
 		spans,
 		tableValidationCopyOptions{
-			ordinarySourceValidationKnown: true,
+			OrdinarySourceValidationKnown: true,
 		},
 	)
 	if err != nil {
@@ -969,7 +961,7 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 			Condition: &sheets.BooleanCondition{Type: "ONE_OF_LIST"},
 		},
 	}}
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 0, EndColumnIndex: 1},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 9},
 		false,
@@ -988,7 +980,7 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 			},
 		}},
 		tableValidationCopyOptions{
-			ordinarySourceValidationKnown: true,
+			OrdinarySourceValidationKnown: true,
 		},
 	)
 	if err != nil {
@@ -1002,7 +994,7 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 		t.Fatalf("ordinary no-validation dropdown update = %#v", updated)
 	}
 
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 0, EndColumnIndex: 2},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 10},
 		false,
@@ -1016,8 +1008,8 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 			EndCol:      10,
 		}},
 		tableValidationCopyOptions{
-			ordinarySourceValidationKnown: true,
-			ordinaryValidatedCells: []validationCellCoordinate{{
+			OrdinarySourceValidationKnown: true,
+			OrdinaryValidatedCells: []validationCellCoordinate{{
 				Row: 1,
 				Col: 0,
 			}},
@@ -1030,7 +1022,7 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 		t.Fatalf("mapped ordinary validation requests = %#v", requests)
 	}
 
-	requests, err = buildTableValidationCopyRequests(
+	requests, err = sheetsvalidation.BuildCopyRequests(
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 0, EndColumnIndex: 2},
 		&sheets.GridRange{SheetId: 1, StartRowIndex: 1, EndRowIndex: 4, StartColumnIndex: 8, EndColumnIndex: 10},
 		false,
@@ -1054,7 +1046,7 @@ func TestBuildTableValidationCopyRequestsRejectsOrdinarySourceIntoTable(t *testi
 			},
 		},
 		tableValidationCopyOptions{
-			ordinarySourceValidationKnown: true,
+			OrdinarySourceValidationKnown: true,
 		},
 	)
 	if err != nil {
@@ -1111,7 +1103,7 @@ func TestResolveTableValidationCopyOptionsUsesEffectiveDestination(t *testing.T)
 	if err != nil {
 		t.Fatalf("resolve options: %v", err)
 	}
-	if !opts.ordinarySourceValidationKnown || len(opts.ordinaryValidatedCells) != 0 {
+	if !opts.OrdinarySourceValidationKnown || len(opts.OrdinaryValidatedCells) != 0 {
 		t.Fatalf("options = %#v", opts)
 	}
 }

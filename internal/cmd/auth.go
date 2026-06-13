@@ -1,29 +1,63 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/googleauth"
 	"github.com/steipete/gogcli/internal/secrets"
 )
 
-var (
-	openSecretsStore        = secrets.OpenDefault
-	authorizeGoogle         = googleauth.Authorize
-	ensureKeychainAccess    = secrets.EnsureKeychainAccess
-	fetchAuthorizedIdentity = googleauth.IdentityForRefreshToken
-)
+func openAuthSecretsStore(ctx context.Context) (secrets.Store, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.OpenSecretsStore != nil {
+		return runtime.Auth.OpenSecretsStore()
+	}
+	return secrets.OpenDefault()
+}
 
-func ensureKeychainAccessIfNeeded() error {
-	backendInfo, err := secrets.ResolveKeyringBackendInfo()
+func authorizeGoogleAccount(ctx context.Context, opts googleauth.AuthorizeOptions) (string, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.AuthorizeGoogle != nil {
+		return runtime.Auth.AuthorizeGoogle(ctx, opts)
+	}
+	return googleauth.Authorize(ctx, opts)
+}
+
+func fetchAuthIdentity(
+	ctx context.Context,
+	client string,
+	refreshToken string,
+	scopes []string,
+	timeout time.Duration,
+) (googleauth.Identity, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.FetchAuthorizedIdentity != nil {
+		return runtime.Auth.FetchAuthorizedIdentity(ctx, client, refreshToken, scopes, timeout)
+	}
+	return googleauth.IdentityForRefreshToken(ctx, client, refreshToken, scopes, timeout)
+}
+
+func ensureKeychainAccessIfNeeded(ctx context.Context) error {
+	backendInfo, err := resolveKeyringBackendInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve keyring backend: %w", err)
 	}
 	if backendInfo.Value == strFile {
 		return nil
 	}
-	return ensureKeychainAccess()
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Auth.EnsureKeychainAccess != nil {
+		return runtime.Auth.EnsureKeychainAccess(ctx)
+	}
+	return secrets.EnsureKeychainAccessContext(ctx)
+}
+
+func resolveKeyringBackendInfo(ctx context.Context) (secrets.KeyringBackendInfo, error) {
+	store, err := commandConfigStore(ctx)
+	if err != nil {
+		return secrets.KeyringBackendInfo{}, err
+	}
+	return secrets.ResolveKeyringBackendInfoFor(store)
 }
 
 func normalizeEmail(value string) string {

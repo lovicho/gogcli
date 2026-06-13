@@ -43,7 +43,15 @@ func (c *GmailAttachmentCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return usage("messageId/attachmentId required")
 	}
 
-	dest, err := resolveAttachmentDest(messageID, attachmentID, c.Output.Path, c.Name, false)
+	defaultDir := ""
+	if strings.TrimSpace(c.Output.Path) == "" {
+		layout, err := commandLayout(ctx, config.PathKindConfig)
+		if err != nil {
+			return err
+		}
+		defaultDir = layout.GmailAttachmentsDir()
+	}
+	dest, err := resolveAttachmentDest(messageID, attachmentID, c.Output.Path, c.Name, defaultDir)
 	if err != nil {
 		return err
 	}
@@ -52,7 +60,7 @@ func (c *GmailAttachmentCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if dryRunErr := dryRunExit(ctx, flags, "gmail.attachment.download", map[string]any{
 		"message_id":    messageID,
 		"attachment_id": attachmentID,
-		"path":          dest.Path,
+		"path":          dest,
 	}); dryRunErr != nil {
 		return dryRunErr
 	}
@@ -67,35 +75,19 @@ func (c *GmailAttachmentCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	dest, err = resolveAttachmentDest(messageID, attachmentID, c.Output.Path, c.Name, true)
-	if err != nil {
-		return err
-	}
-	if dest.EnsureDefaultDir {
-		// Ensure the config dir exists (so permissions are correct) before we write under it.
-		if _, ensureErr := config.EnsureGmailAttachmentsDir(); ensureErr != nil {
-			return ensureErr
-		}
-	}
-
 	expectedSize := int64(-1)
-	if st, statErr := os.Stat(dest.Path); statErr == nil && st.Mode().IsRegular() {
+	if st, statErr := os.Stat(dest); statErr == nil && st.Mode().IsRegular() {
 		// Only hit messages.get when we might have a cache-hit candidate.
 		expectedSize = lookupAttachmentSizeEstimate(ctx, svc, messageID, attachmentID)
 	}
-	path, cached, bytes, err := downloadAttachmentToPath(ctx, svc, messageID, attachmentID, dest.Path, expectedSize)
+	path, cached, bytes, err := downloadAttachmentToPath(ctx, svc, messageID, attachmentID, dest, expectedSize)
 	if err != nil {
 		return err
 	}
 	return printAttachmentDownloadResult(ctx, u, path, cached, bytes)
 }
 
-type attachmentDest struct {
-	Path             string
-	EnsureDefaultDir bool
-}
-
-func resolveAttachmentDest(messageID, attachmentID, outPathFlag, name string, allowEnsureDefaultDir bool) (attachmentDest, error) {
+func resolveAttachmentDest(messageID, attachmentID, outPathFlag, name, defaultDir string) (string, error) {
 	shortID := attachmentID
 	if len(shortID) > 8 {
 		shortID = shortID[:8]
@@ -103,25 +95,21 @@ func resolveAttachmentDest(messageID, attachmentID, outPathFlag, name string, al
 	safeFilename := sanitizeAttachmentFilename(name, defaultGmailAttachmentFilename)
 
 	if strings.TrimSpace(outPathFlag) == "" {
-		dir, err := config.GmailAttachmentsDir()
-		if err != nil {
-			return attachmentDest{}, err
+		if strings.TrimSpace(defaultDir) == "" {
+			return "", errors.New("missing default attachment directory")
 		}
-		return attachmentDest{
-			Path:             filepath.Join(dir, fmt.Sprintf("%s_%s_%s", messageID, shortID, safeFilename)),
-			EnsureDefaultDir: allowEnsureDefaultDir,
-		}, nil
+		return filepath.Join(defaultDir, fmt.Sprintf("%s_%s_%s", messageID, shortID, safeFilename)), nil
 	}
 
 	outPath, err := config.ExpandPath(outPathFlag)
 	if err != nil {
-		return attachmentDest{}, err
+		return "", err
 	}
 
 	isDir := isDirIntent(outPathFlag, outPath)
 	if !isDir {
 		// file path; keep as-is
-		return attachmentDest{Path: outPath}, nil
+		return outPath, nil
 	}
 
 	filename := safeFilename
@@ -129,7 +117,7 @@ func resolveAttachmentDest(messageID, attachmentID, outPathFlag, name string, al
 		filename = fmt.Sprintf("%s_%s_attachment.bin", messageID, shortID)
 	}
 
-	return attachmentDest{Path: filepath.Join(outPath, filename)}, nil
+	return filepath.Join(outPath, filename), nil
 }
 
 func isDirIntent(outPathFlag, expandedOutPath string) bool {

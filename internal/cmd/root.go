@@ -49,6 +49,7 @@ type RootFlags struct {
 	NoInput             bool   `help:"Never prompt; fail instead (useful for CI)" aliases:"non-interactive,noninteractive"`
 	Verbose             bool   `help:"Enable verbose logging" short:"v"`
 	diagnostics         io.Writer
+	authOperations      app.AuthOperations
 }
 
 type CLI struct {
@@ -156,6 +157,7 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 		return reportEarlyError(runtimeIO.Err, wrapParseError(err))
 	}
 	cli.diagnostics = runtimeIO.Err
+	cli.authOperations = runtime.Auth
 	applyExplicitOutputModePrecedence(kctx, &cli.RootFlags)
 	if !preHomeApplied && strings.TrimSpace(cli.Home) != "" {
 		restoreHome, homeErr := config.SetHomeOverride(cli.Home)
@@ -174,7 +176,7 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 	if err = enforceDisabledCommands(kctx, cli.DisableCommands); err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
 	}
-	if err = enforceGmailNoSend(kctx, &cli.RootFlags); err != nil {
+	if err = enforceGmailNoSend(kctx, &cli.RootFlags, runtime); err != nil {
 		return reportEarlyError(runtimeIO.Err, err)
 	}
 
@@ -205,6 +207,9 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 
 	ctx := context.Background()
 	ctx = app.WithRuntime(ctx, runtime)
+	ctx = authclient.WithClientResolver(ctx, func(email string, override string) (string, error) {
+		return resolveRuntimeClient(runtime, cli.Home, email, override)
+	})
 	ctx = outfmt.WithMode(ctx, mode)
 	ctx = outfmt.WithJSONTransform(ctx, outfmt.JSONTransform{
 		ResultsOnly: cli.ResultsOnly,

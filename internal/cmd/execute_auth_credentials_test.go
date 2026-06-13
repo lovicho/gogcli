@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/99designs/keyring"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
+	"github.com/steipete/gogcli/internal/oauthclient"
 	"github.com/steipete/gogcli/internal/secrets"
 )
 
@@ -75,6 +78,85 @@ func TestExecute_AuthCredentials_JSON(t *testing.T) {
 	}
 	if creds.ClientID != "id" || creds.ClientSecret != "" {
 		t.Fatalf("unexpected metadata: %#v", creds)
+	}
+}
+
+func TestExecute_AuthCredentials_UsesInjectedStores(t *testing.T) {
+	ambient := t.TempDir()
+	t.Setenv("HOME", ambient)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(ambient, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(ambient, "data"))
+	t.Setenv("GOG_HOME", "")
+	t.Setenv("GOG_CONFIG_DIR", "")
+	t.Setenv("GOG_DATA_DIR", "")
+	useFileKeyringForAuthCredentials(t)
+
+	root := t.TempDir()
+	layout := config.Layout{
+		ConfigDir:      filepath.Join(root, "config"),
+		DataDir:        filepath.Join(root, "data"),
+		ExplicitConfig: true,
+		ExplicitData:   true,
+	}
+	configStore := config.NewConfigStore(layout)
+
+	in := filepath.Join(t.TempDir(), "creds.json")
+	if err := os.WriteFile(in, []byte(`{"installed":{"client_id":"id","client_secret":"sec"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	runtime := &app.Runtime{
+		IO: app.IO{
+			In:  strings.NewReader(""),
+			Out: &stdout,
+			Err: &stderr,
+		},
+		Config: configStore,
+	}
+	if err := executeWithRuntime([]string{"--client", "work", "auth", "credentials", in, "--domain", "example.com"}, runtime); err != nil {
+		t.Fatalf("executeWithRuntime: %v\nstderr=%s", err, stderr.String())
+	}
+
+	files := config.NewClientCredentialsStore(layout)
+	metadata, err := files.ReadMetadata("work")
+	if err != nil {
+		t.Fatalf("read injected metadata: %v", err)
+	}
+	if metadata.ClientID != "id" || metadata.ClientSecret != "" {
+		t.Fatalf("injected metadata = %#v", metadata)
+	}
+
+	cfg, err := configStore.Read()
+	if err != nil {
+		t.Fatalf("read injected config: %v", err)
+	}
+	if cfg.ClientDomains["example.com"] != "work" {
+		t.Fatalf("client domains = %#v", cfg.ClientDomains)
+	}
+
+	repository, err := secrets.OpenWithConfig(layout, configStore)
+	if err != nil {
+		t.Fatalf("open injected secrets: %v", err)
+	}
+	key, err := oauthclient.ClientSecretKey("work")
+	if err != nil {
+		t.Fatalf("client secret key: %v", err)
+	}
+	secret, err := repository.GetSecret(key)
+	if err != nil {
+		t.Fatalf("read injected client secret: %v", err)
+	}
+	if string(secret) != "sec" {
+		t.Fatalf("client secret = %q, want sec", secret)
+	}
+
+	ambientPath, err := config.ClientCredentialsPathFor("work")
+	if err != nil {
+		t.Fatalf("ambient credentials path: %v", err)
+	}
+	if _, err := os.Stat(ambientPath); !os.IsNotExist(err) {
+		t.Fatalf("ambient credentials unexpectedly written at %s: %v", ambientPath, err)
 	}
 }
 
@@ -248,11 +330,8 @@ func TestExecute_AuthCredentialsRemove_RemovesCredentialTokenAndDomain(t *testin
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 	useFileKeyringForAuthCredentials(t)
 
-	origOpen := openSecretsStore
-	t.Cleanup(func() { openSecretsStore = origOpen })
-
 	store := newMemSecretsStore()
-	openSecretsStore = func() (secrets.Store, error) { return store, nil }
+	runtime := runtimeWithAuthStore(store)
 
 	if err := config.WriteClientCredentialsFor("work", config.ClientCredentials{ClientID: "id", ClientSecret: "sec"}); err != nil {
 		t.Fatalf("WriteClientCredentialsFor: %v", err)
@@ -272,7 +351,7 @@ func TestExecute_AuthCredentialsRemove_RemovesCredentialTokenAndDomain(t *testin
 
 	out := captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--force", "auth", "credentials", "remove", "work"}); err != nil {
+			if err := executeWithRuntime([]string{"--json", "--force", "auth", "credentials", "remove", "work"}, runtime); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
 		})
@@ -327,11 +406,8 @@ func TestExecute_AuthCredentialsRemoveAll(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg-config"))
 	useFileKeyringForAuthCredentials(t)
 
-	origOpen := openSecretsStore
-	t.Cleanup(func() { openSecretsStore = origOpen })
-
 	store := newMemSecretsStore()
-	openSecretsStore = func() (secrets.Store, error) { return store, nil }
+	runtime := runtimeWithAuthStore(store)
 
 	for _, client := range []string{config.DefaultClientName, "work"} {
 		if err := config.WriteClientCredentialsFor(client, config.ClientCredentials{ClientID: "id-" + client, ClientSecret: "sec"}); err != nil {
@@ -350,7 +426,7 @@ func TestExecute_AuthCredentialsRemoveAll(t *testing.T) {
 
 	out := captureStdout(t, func() {
 		_ = captureStderr(t, func() {
-			if err := Execute([]string{"--json", "--force", "auth", "credentials", "remove", "all"}); err != nil {
+			if err := executeWithRuntime([]string{"--json", "--force", "auth", "credentials", "remove", "all"}, runtime); err != nil {
 				t.Fatalf("Execute: %v", err)
 			}
 		})

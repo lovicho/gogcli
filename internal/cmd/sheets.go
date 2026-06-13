@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsvalues"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -197,27 +197,13 @@ func (c *SheetsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err != nil {
 			return usagef("read --values-json: %v", err)
 		}
-		dec := json.NewDecoder(strings.NewReader(string(b)))
-		dec.UseNumber()
-		if unmarshalErr := dec.Decode(&values); unmarshalErr != nil {
-			return usagef("invalid JSON values: %v", unmarshalErr)
-		}
-		var extra any
-		if extraErr := dec.Decode(&extra); extraErr != io.EOF {
-			return usage("invalid JSON values: trailing content")
+
+		values, err = sheetsvalues.DecodeStrict(b)
+		if err != nil {
+			return sheetsValuesPlannerError(err)
 		}
 	case len(c.Values) > 0:
-		// Parse comma-separated rows, pipe-separated cells
-		rawValues := strings.Join(c.Values, " ")
-		rows := strings.Split(rawValues, ",")
-		for _, row := range rows {
-			cells := strings.Split(strings.TrimSpace(row), "|")
-			rowData := make([]interface{}, len(cells))
-			for i, cell := range cells {
-				rowData[i] = strings.TrimSpace(cell)
-			}
-			values = append(values, rowData)
-		}
+		values = sheetsvalues.ParseArgs(c.Values)
 	default:
 		return usage("provide values as args or via --values-json")
 	}
@@ -369,25 +355,12 @@ func parseSheetsBatchUpdateData(dataJSON string, input io.Reader) ([]*sheets.Val
 	if err != nil {
 		return nil, usagef("read --data-json: %v", err)
 	}
-	var data []*sheets.ValueRange
-	if unmarshalErr := json.Unmarshal(b, &data); unmarshalErr != nil {
-		return nil, usagef("invalid JSON data: %v", unmarshalErr)
+
+	data, err := sheetsvalues.DecodeRanges(b)
+	if err != nil {
+		return nil, sheetsValuesPlannerError(err)
 	}
-	if len(data) == 0 {
-		return nil, usage("--data-json must contain at least one value range")
-	}
-	for i, vr := range data {
-		if vr == nil {
-			return nil, usagef("--data-json range %d is null", i)
-		}
-		vr.Range = cleanRange(vr.Range)
-		if strings.TrimSpace(vr.Range) == "" {
-			return nil, usagef("--data-json range %d has empty range", i)
-		}
-		if len(vr.Values) == 0 {
-			return nil, usagef("--data-json range %d has empty values", i)
-		}
-	}
+
 	return data, nil
 }
 
@@ -421,20 +394,13 @@ func (c *SheetsAppendCmd) Run(ctx context.Context, flags *RootFlags) error {
 		if err != nil {
 			return usagef("read --values-json: %v", err)
 		}
-		if unmarshalErr := json.Unmarshal(b, &values); unmarshalErr != nil {
-			return usagef("invalid JSON values: %v", unmarshalErr)
+
+		values, err = sheetsvalues.Decode(b)
+		if err != nil {
+			return sheetsValuesPlannerError(err)
 		}
 	case len(c.Values) > 0:
-		rawValues := strings.Join(c.Values, " ")
-		rows := strings.Split(rawValues, ",")
-		for _, row := range rows {
-			cells := strings.Split(strings.TrimSpace(row), "|")
-			rowData := make([]interface{}, len(cells))
-			for i, cell := range cells {
-				rowData[i] = strings.TrimSpace(cell)
-			}
-			values = append(values, rowData)
-		}
+		values = sheetsvalues.ParseArgs(c.Values)
 	default:
 		return usage("provide values as args or via --values-json")
 	}
@@ -642,19 +608,7 @@ func (c *SheetsMetadataCmd) Run(ctx context.Context, flags *RootFlags) error {
 	u.Out().Println("")
 	u.Out().Println("Sheets:")
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "ID\tTITLE\tROWS\tCOLS")
-	for _, sheet := range resp.Sheets {
-		props := sheet.Properties
-		fmt.Fprintf(w, "%d\t%s\t%d\t%d\n",
-			props.SheetId,
-			props.Title,
-			props.GridProperties.RowCount,
-			props.GridProperties.ColumnCount,
-		)
-	}
-	return nil
+	return outfmt.WriteTable(ctx, stdoutWriter(ctx), resp.Sheets, sheetsMetadataColumns())
 }
 
 type SheetsCreateCmd struct {

@@ -2,13 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsa1"
+	"github.com/steipete/gogcli/internal/sheetsdimension"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -20,13 +22,7 @@ type SheetsDeleteDimensionCmd struct {
 	End           int64  `name:"end" help:"Last row/column to delete (1-based, inclusive; required with a sheet target)"`
 }
 
-type sheetsDeleteDimensionSpec struct {
-	SheetName  string
-	Dimension  string
-	Label      string
-	StartIndex int64
-	EndIndex   int64
-}
+type sheetsDeleteDimensionSpec = sheetsdimension.DeleteSpec
 
 type sheetsDeleteDimensionTable struct {
 	TableID  string            `json:"tableId"`
@@ -43,9 +39,9 @@ func (c *SheetsDeleteDimensionCmd) Run(ctx context.Context, flags *RootFlags) er
 		return usage("empty spreadsheetId")
 	}
 
-	spec, err := parseSheetsDeleteDimensionSpec(c.Target, c.Dimension, c.Start, c.End)
+	spec, err := sheetsdimension.ParseDeleteSpec(c.Target, c.Dimension, c.Start, c.End)
 	if err != nil {
-		return err
+		return sheetsDimensionPlannerError(err)
 	}
 
 	if dryRunErr := dryRunExit(ctx, flags, "sheets.delete-dimension", map[string]any{
@@ -82,14 +78,15 @@ func (c *SheetsDeleteDimensionCmd) Run(ctx context.Context, flags *RootFlags) er
 	if props == nil {
 		return fmt.Errorf("sheet metadata disappeared (id=%d)", sheetID)
 	}
-	if boundsErr := validateSheetsDeleteDimensionBounds(spec, props); boundsErr != nil {
-		return boundsErr
+	if boundsErr := sheetsdimension.ValidateBounds(spec, props); boundsErr != nil {
+		return sheetsDimensionPlannerError(boundsErr)
 	}
 
-	tableUpdates, err := planSheetsDeleteDimensionTables(tables, sheetID, sheetTitle, spec)
+	plannedUpdates, err := sheetsdimension.PlanTableUpdates(tables, sheetID, spec)
 	if err != nil {
-		return err
+		return sheetsDimensionPlannerError(err)
 	}
+	tableUpdates := sheetsDeleteDimensionTableResults(sheetTitle, plannedUpdates)
 	if err := confirmDestructiveChecked(
 		ctx,
 		flagsWithoutDryRun(flags),
@@ -146,62 +143,6 @@ func (c *SheetsDeleteDimensionCmd) Run(ctx context.Context, flags *RootFlags) er
 	return nil
 }
 
-func parseSheetsDeleteDimensionSpec(target, dimension string, start, end int64) (sheetsDeleteDimensionSpec, error) {
-	target = cleanRange(strings.TrimSpace(target))
-	if target == "" {
-		return sheetsDeleteDimensionSpec{}, usage("empty rangeOrSheet")
-	}
-
-	spec := sheetsDeleteDimensionSpec{}
-	switch strings.ToUpper(strings.TrimSpace(dimension)) {
-	case "ROW", "ROWS":
-		spec.Dimension = sheetsDimensionRows
-		spec.Label = "rows"
-	case "COL", "COLS", "COLUMN", "COLUMNS":
-		spec.Dimension = sheetsDimensionColumns
-		spec.Label = "columns"
-	default:
-		return sheetsDeleteDimensionSpec{}, usagef("dimension must be ROWS or COLUMNS, got %q", dimension)
-	}
-
-	if start == 0 && end == 0 {
-		if !strings.Contains(target, "!") {
-			return sheetsDeleteDimensionSpec{}, usage("sheet targets require both --start and --end; range targets must include a sheet name")
-		}
-		var span dimensionSpan
-		var err error
-		if spec.Dimension == sheetsDimensionRows {
-			span, err = parseRowsSpan(target, "delete-dimension")
-		} else {
-			span, err = parseColumnsSpan(target, "delete-dimension")
-		}
-		if err != nil {
-			return sheetsDeleteDimensionSpec{}, usagef(
-				"sheet targets require both --start and --end; otherwise provide a matching row/column range: %v",
-				err,
-			)
-		}
-		spec.SheetName = span.SheetName
-		spec.StartIndex = span.StartIndex
-		spec.EndIndex = span.EndIndex
-		return spec, nil
-	}
-	if start == 0 || end == 0 {
-		return sheetsDeleteDimensionSpec{}, usage("provide both --start and --end")
-	}
-	if start < 1 {
-		return sheetsDeleteDimensionSpec{}, usage("start must be >= 1")
-	}
-	if end < start {
-		return sheetsDeleteDimensionSpec{}, usage("end must be >= start")
-	}
-
-	spec.SheetName = target
-	spec.StartIndex = start - 1
-	spec.EndIndex = end
-	return spec, nil
-}
-
 func fetchSheetsDeleteDimensionMetadata(
 	ctx context.Context,
 	svc *sheets.Service,
@@ -250,116 +191,27 @@ func findSheetPropertiesByID(catalog *spreadsheetRangeCatalog, sheetID int64) *s
 	return nil
 }
 
-func validateSheetsDeleteDimensionBounds(spec sheetsDeleteDimensionSpec, props *sheets.SheetProperties) error {
-	if props == nil || props.GridProperties == nil {
-		return nil
+func sheetsDimensionPlannerError(err error) error {
+	var validationErr sheetsdimension.ValidationError
+	if errors.As(err, &validationErr) {
+		return usage(validationErr.Error())
 	}
-	var size int64
-	if spec.Dimension == sheetsDimensionRows {
-		size = props.GridProperties.RowCount
-	} else {
-		size = props.GridProperties.ColumnCount
-	}
-	if size <= 0 {
-		return nil
-	}
-	if spec.EndIndex > size {
-		return usagef("%s end %d exceeds sheet size %d", spec.Label, spec.EndIndex, size)
-	}
-	if spec.StartIndex == 0 && spec.EndIndex == size {
-		return usagef("cannot delete every %s in a sheet", spec.Label[:len(spec.Label)-1])
-	}
-	return nil
+	return err
 }
 
-func planSheetsDeleteDimensionTables(
-	tables []*sheets.Table,
-	sheetID int64,
+func sheetsDeleteDimensionTableResults(
 	sheetTitle string,
-	spec sheetsDeleteDimensionSpec,
-) ([]sheetsDeleteDimensionTable, error) {
-	updates := make([]sheetsDeleteDimensionTable, 0)
-	for _, table := range tables {
-		if table == nil || table.Range == nil || table.Range.SheetId != sheetID {
-			continue
-		}
-		after, intersects, err := resizeTableRangeAfterDimensionDelete(table.Range, spec)
-		if err != nil {
-			label := strings.TrimSpace(table.Name)
-			if label == "" {
-				label = strings.TrimSpace(table.TableId)
-			}
-			return nil, usagef("cannot delete %s %d-%d: table %q would lose its entire %s extent",
-				spec.Label, spec.StartIndex+1, spec.EndIndex, label, spec.Label[:len(spec.Label)-1])
-		}
-		if !intersects {
-			continue
-		}
-		if after.SheetId == 0 {
-			after.ForceSendFields = append(after.ForceSendFields, "SheetId")
-		}
-		updates = append(updates, sheetsDeleteDimensionTable{
-			TableID:  strings.TrimSpace(table.TableId),
-			Name:     strings.TrimSpace(table.Name),
-			BeforeA1: gridRangeToA1(sheetTitle, table.Range),
-			AfterA1:  gridRangeToA1(sheetTitle, after),
-			Range:    after,
+	updates []sheetsdimension.TableUpdate,
+) []sheetsDeleteDimensionTable {
+	results := make([]sheetsDeleteDimensionTable, 0, len(updates))
+	for _, update := range updates {
+		results = append(results, sheetsDeleteDimensionTable{
+			TableID:  update.TableID,
+			Name:     update.Name,
+			BeforeA1: sheetsa1.FormatGridRange(sheetTitle, update.Before),
+			AfterA1:  sheetsa1.FormatGridRange(sheetTitle, update.After),
+			Range:    update.After,
 		})
 	}
-	sort.Slice(updates, func(i, j int) bool {
-		if updates[i].TableID == updates[j].TableID {
-			return updates[i].Name < updates[j].Name
-		}
-		return updates[i].TableID < updates[j].TableID
-	})
-	return updates, nil
-}
-
-func resizeTableRangeAfterDimensionDelete(
-	tableRange *sheets.GridRange,
-	spec sheetsDeleteDimensionSpec,
-) (*sheets.GridRange, bool, error) {
-	if tableRange == nil {
-		return nil, false, nil
-	}
-	var tableStart, tableEnd int64
-	if spec.Dimension == sheetsDimensionRows {
-		tableStart, tableEnd = tableRange.StartRowIndex, tableRange.EndRowIndex
-	} else {
-		tableStart, tableEnd = tableRange.StartColumnIndex, tableRange.EndColumnIndex
-	}
-	if tableEnd <= tableStart {
-		return nil, false, fmt.Errorf("invalid bounded table range")
-	}
-	if spec.EndIndex <= tableStart || spec.StartIndex >= tableEnd {
-		return nil, false, nil
-	}
-
-	afterStart := dimensionBoundaryAfterDelete(tableStart, spec.StartIndex, spec.EndIndex)
-	afterEnd := dimensionBoundaryAfterDelete(tableEnd, spec.StartIndex, spec.EndIndex)
-	if afterEnd <= afterStart {
-		return nil, true, fmt.Errorf("empty table range")
-	}
-
-	after := *tableRange
-	after.ForceSendFields = append([]string(nil), tableRange.ForceSendFields...)
-	if spec.Dimension == sheetsDimensionRows {
-		after.StartRowIndex = afterStart
-		after.EndRowIndex = afterEnd
-	} else {
-		after.StartColumnIndex = afterStart
-		after.EndColumnIndex = afterEnd
-	}
-	return &after, true, nil
-}
-
-func dimensionBoundaryAfterDelete(boundary, deleteStart, deleteEnd int64) int64 {
-	switch {
-	case boundary <= deleteStart:
-		return boundary
-	case boundary >= deleteEnd:
-		return boundary - (deleteEnd - deleteStart)
-	default:
-		return deleteStart
-	}
+	return results
 }

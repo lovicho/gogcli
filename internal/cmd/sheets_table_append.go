@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsvalues"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -113,27 +113,19 @@ func parseSheetsAppendValues(valuesJSON string, values []string, input io.Reader
 		if err != nil {
 			return nil, usagef("read --values-json: %v", err)
 		}
-		var parsed [][]interface{}
-		if err := json.Unmarshal(b, &parsed); err != nil {
-			return nil, usagef("invalid JSON values: %v", err)
+
+		parsed, err := sheetsvalues.Decode(b)
+		if err != nil {
+			return nil, sheetsValuesPlannerError(err)
 		}
-		if len(parsed) == 0 {
-			return nil, usage("provide at least one row")
+
+		if err := sheetsvalues.RequireRows(parsed); err != nil {
+			return nil, sheetsValuesPlannerError(err)
 		}
+
 		return parsed, nil
 	case len(values) > 0:
-		rawValues := strings.Join(values, " ")
-		rows := strings.Split(rawValues, ",")
-		parsed := make([][]interface{}, 0, len(rows))
-		for _, row := range rows {
-			cells := strings.Split(strings.TrimSpace(row), "|")
-			rowData := make([]interface{}, len(cells))
-			for i, cell := range cells {
-				rowData[i] = strings.TrimSpace(cell)
-			}
-			parsed = append(parsed, rowData)
-		}
-		return parsed, nil
+		return sheetsvalues.ParseArgs(values), nil
 	default:
 		return nil, usage("provide values as args or via --values-json")
 	}

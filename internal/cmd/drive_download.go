@@ -11,6 +11,7 @@ import (
 
 	"google.golang.org/api/drive/v3"
 
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -72,7 +73,15 @@ func (c *DriveDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return fileFormatErr
 	}
 
-	destPath, err := resolveDriveDownloadDestPath(meta, c.Output.Path)
+	defaultDir := ""
+	if strings.TrimSpace(c.Output.Path) == "" {
+		layout, layoutErr := commandLayout(ctx, config.PathKindConfig)
+		if layoutErr != nil {
+			return layoutErr
+		}
+		defaultDir = layout.DriveDownloadsDir()
+	}
+	destPath, err := resolveDriveDownloadDestPath(meta, c.Output.Path, defaultDir)
 	if err != nil {
 		return err
 	}
@@ -196,11 +205,11 @@ func validateDriveDownloadFormatForFile(meta *drive.File, format string) error {
 	return usagef("--format %q not supported for non-Google Workspace files (mimeType=%q); file can only be downloaded as-is", format, meta.MimeType)
 }
 
-var driveDownload = func(ctx context.Context, svc *drive.Service, fileID string) (*http.Response, error) {
+func driveDownload(ctx context.Context, svc *drive.Service, fileID string) (*http.Response, error) {
 	return svc.Files.Get(fileID).SupportsAllDrives(true).Context(ctx).Download()
 }
 
-var driveExportDownload = func(ctx context.Context, svc *drive.Service, fileID string, mimeType string) (*http.Response, error) {
+func driveExportDownload(ctx context.Context, svc *drive.Service, fileID string, mimeType string) (*http.Response, error) {
 	return svc.Files.Export(fileID, mimeType).Context(ctx).Download()
 }
 

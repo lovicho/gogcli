@@ -16,10 +16,6 @@ func TestDerivedPaths(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "xdg-data"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "xdg-state"))
 
-	base, err := Dir()
-	if err != nil {
-		t.Fatalf("Dir: %v", err)
-	}
 	dataBase, err := DataDir()
 	if err != nil {
 		t.Fatalf("DataDir: %v", err)
@@ -45,24 +41,6 @@ func TestDerivedPaths(t *testing.T) {
 
 	if !strings.HasPrefix(watchDir, stateBase) {
 		t.Fatalf("expected watch dir under %q, got %q", stateBase, watchDir)
-	}
-
-	attachmentsDir, err := GmailAttachmentsDir()
-	if err != nil {
-		t.Fatalf("GmailAttachmentsDir: %v", err)
-	}
-
-	if !strings.HasPrefix(attachmentsDir, base) {
-		t.Fatalf("expected attachments dir under %q, got %q", base, attachmentsDir)
-	}
-
-	downloadsDir, err := DriveDownloadsDir()
-	if err != nil {
-		t.Fatalf("DriveDownloadsDir: %v", err)
-	}
-
-	if !strings.HasPrefix(downloadsDir, base) {
-		t.Fatalf("expected downloads dir under %q, got %q", base, downloadsDir)
 	}
 }
 
@@ -431,6 +409,7 @@ func TestListServiceAccountEmailsExplicitDataSkipsLegacy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListServiceAccountEmails: %v", err)
 	}
+
 	if len(emails) != 0 {
 		t.Fatalf("expected no legacy service accounts with explicit data dir, got %#v", emails)
 	}

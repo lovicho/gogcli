@@ -1,12 +1,8 @@
-//nolint:wsl_v5
 package config
 
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 )
 
@@ -79,6 +75,15 @@ func DomainFromEmail(email string) string {
 }
 
 func ResolveClientForAccount(cfg File, email string, override string) (string, error) {
+	return ResolveClientForAccountWithCredentials(cfg, email, override, ClientCredentialsExists)
+}
+
+func ResolveClientForAccountWithCredentials(
+	cfg File,
+	email string,
+	override string,
+	credentialsExist func(string) (bool, error),
+) (string, error) {
 	if strings.TrimSpace(override) != "" {
 		return NormalizeClientNameOrDefault(override)
 	}
@@ -96,9 +101,12 @@ func ResolveClientForAccount(cfg File, email string, override string) (string, e
 			return NormalizeClientNameOrDefault(client)
 		}
 
-		if ok, err := ClientCredentialsExists(domain); err == nil && ok {
-			if normalized, err := NormalizeClientName(domain); err == nil {
-				return normalized, nil
+		if credentialsExist != nil {
+			ok, err := credentialsExist(domain)
+			if err == nil && ok {
+				if normalized, err := NormalizeClientName(domain); err == nil {
+					return normalized, nil
+				}
 			}
 		}
 	}
@@ -189,70 +197,10 @@ type ClientCredentialsInfo struct {
 }
 
 func ListClientCredentials() ([]ClientCredentialsInfo, error) {
-	dataDir, err := DataDir()
+	store, err := DefaultClientCredentialsStore()
 	if err != nil {
 		return nil, err
 	}
 
-	out := make([]ClientCredentialsInfo, 0)
-	seen := make(map[string]struct{})
-	dirs := []string{dataDir}
-	if !HasExplicitDataOverride() {
-		configDir, err := Dir()
-		if err != nil {
-			return nil, err
-		}
-		dirs = append(dirs, configDir)
-	}
-	for _, dir := range uniquePaths(dirs...) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-
-			return nil, fmt.Errorf("read credentials dir: %w", err)
-		}
-
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-
-			name := e.Name()
-			switch {
-			case name == "credentials.json":
-				if _, ok := seen[DefaultClientName]; ok {
-					continue
-				}
-				seen[DefaultClientName] = struct{}{}
-				out = append(out, ClientCredentialsInfo{
-					Client:  DefaultClientName,
-					Path:    filepath.Join(dir, name),
-					Default: true,
-				})
-			case strings.HasPrefix(name, "credentials-") && strings.HasSuffix(name, ".json"):
-				raw := strings.TrimSuffix(strings.TrimPrefix(name, "credentials-"), ".json")
-
-				client, err := NormalizeClientName(raw)
-				if err != nil {
-					continue
-				}
-				if _, ok := seen[client]; ok {
-					continue
-				}
-				seen[client] = struct{}{}
-
-				out = append(out, ClientCredentialsInfo{
-					Client:  client,
-					Path:    filepath.Join(dir, name),
-					Default: false,
-				})
-			}
-		}
-	}
-
-	sort.Slice(out, func(i, j int) bool { return out[i].Client < out[j].Client })
-
-	return out, nil
+	return store.List()
 }

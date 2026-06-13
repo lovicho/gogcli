@@ -10,8 +10,8 @@ import (
 	"github.com/steipete/gogcli/internal/googleapi"
 )
 
-func getYouTubeAPIKey() (string, error) {
-	cfg, err := config.ReadConfig()
+func getYouTubeAPIKey(ctx context.Context) (string, error) {
+	cfg, err := loadConfig(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -23,7 +23,7 @@ func getYouTubeAPIKey() (string, error) {
 }
 
 func getYouTubeServiceWithAPIKey(ctx context.Context) (*youtube.Service, error) {
-	key, err := getYouTubeAPIKey()
+	key, err := getYouTubeAPIKey(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -45,4 +45,11 @@ func getYouTubeCommentsServiceForAccount(ctx context.Context, account string) (*
 		return runtime.Services.YouTubeComments(ctx, account)
 	}
 	return googleapi.NewYouTubeCommentsForAccount(ctx, account)
+}
+
+func getYouTubeWriteServiceForAccount(ctx context.Context, account string) (*youtube.Service, error) {
+	if runtime, ok := app.FromContext(ctx); ok && runtime.Services.YouTubeWrite != nil {
+		return runtime.Services.YouTubeWrite(ctx, account)
+	}
+	return googleapi.NewYouTubeWriteForAccount(ctx, account)
 }

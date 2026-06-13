@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 634.
+Generated pages: 642.
 
 ## Top-level Commands
 
@@ -183,7 +183,7 @@ Generated pages: 634.
     - [gog classroom courses](gog-classroom-courses.md) - Courses
       - [gog classroom courses archive](gog-classroom-courses-archive.md) - Archive a course
       - [gog classroom courses create](gog-classroom-courses-create.md) - Create a course
-      - [gog classroom courses delete](gog-classroom-courses-delete.md) - Delete a course
+      - [gog classroom courses delete](gog-classroom-courses-delete.md) - Delete an archived course
       - [gog classroom courses get](gog-classroom-courses-get.md) - Get a course
       - [gog classroom courses join](gog-classroom-courses-join.md) - Join a course
       - [gog classroom courses leave](gog-classroom-courses-leave.md) - Leave a course
@@ -424,7 +424,7 @@ Generated pages: 634.
     - [gog gmail attachment](gog-gmail-attachment.md) - Download a single attachment
     - [gog gmail autoreply](gog-gmail-autoreply.md) - Reply once to matching messages
     - [gog gmail batch](gog-gmail-batch.md) - Batch operations (permanent delete requires broader Gmail scope; use gmail trash for normal trashing)
-      - [gog gmail batch delete](gog-gmail-batch-delete.md) - Permanently delete multiple messages; use 'gmail trash' to move messages to trash with the default gmail.modify scope
+      - [gog gmail batch delete](gog-gmail-batch-delete.md) - Permanently delete messages; requires https://mail.google.com/ OAuth scope (use 'gmail trash' with the default scope)
       - [gog gmail batch modify](gog-gmail-batch-modify.md) - Modify labels on multiple messages
     - [gog gmail drafts](gog-gmail-drafts.md) - Draft operations
       - [gog gmail drafts create](gog-gmail-drafts-create.md) - Create a draft
@@ -677,10 +677,18 @@ Generated pages: 634.
       - [gog youtube channels list](gog-youtube-channels-list.md) - List channels by ID or authenticated user
     - [gog youtube comments](gog-youtube-comments.md) - List comment threads
       - [gog youtube comments list](gog-youtube-comments-list.md) - List comment threads for a video or channel
-    - [gog youtube playlists](gog-youtube-playlists.md) - List playlists
+    - [gog youtube playlists](gog-youtube-playlists.md) - Manage playlists
+      - [gog youtube playlists add](gog-youtube-playlists-add.md) - Add a video to a playlist
+      - [gog youtube playlists create](gog-youtube-playlists-create.md) - Create a new playlist
+      - [gog youtube playlists delete](gog-youtube-playlists-delete.md) - Delete a playlist
       - [gog youtube playlists list](gog-youtube-playlists-list.md) - List playlists by channel or authenticated user
+      - [gog youtube playlists remove](gog-youtube-playlists-remove.md) - Remove a video from a playlist
     - [gog youtube search](gog-youtube-search.md) - Search YouTube for videos, channels, or playlists
       - [gog youtube search list](gog-youtube-search-list.md) - Search for videos, channels, or playlists
+    - [gog youtube subscriptions](gog-youtube-subscriptions.md) - Manage channel subscriptions
+      - [gog youtube subscriptions list](gog-youtube-subscriptions-list.md) - List subscriptions for authenticated user
+      - [gog youtube subscriptions subscribe](gog-youtube-subscriptions-subscribe.md) - Subscribe to a channel
+      - [gog youtube subscriptions unsubscribe](gog-youtube-subscriptions-unsubscribe.md) - Unsubscribe from a channel
     - [gog youtube videos](gog-youtube-videos.md) - List or get videos
       - [gog youtube videos list](gog-youtube-videos-list.md) - List videos by ID or chart
   - [gog zoom](gog-zoom.md) - Zoom

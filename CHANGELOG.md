@@ -2,6 +2,15 @@
 
 ## 0.25.1 - Unreleased
 
+### Added
+
+- YouTube: add subscription listing and management plus playlist create, add, remove, and delete commands with least-privilege OAuth, dry-run support, structured output, and destructive-operation confirmation. (#767) — thanks @beezly.
+
+### Fixed
+
+- Drive: preserve repeated folder placements in tree, inventory, and size summaries; reject cyclic folder graphs instead of collapsing paths or scanning indefinitely.
+- Classroom: require an archived course before deletion with actionable lifecycle guidance, and prevent live tests from leaving consumer-account courses behind.
+
 ## 0.25.0 - 2026-06-12
 
 ### Added
@@ -18,6 +27,9 @@
 - Drive: add a secure push-notification receiver with persisted cursors, authenticated callbacks, sequential hooks, and optional channel auto-renewal. (#689, #764)
 
 ### Fixed
+
+- Gmail: preflight the broader OAuth grant required by permanent batch deletion and report an exact reauthorization command instead of a generic API 403.
+- CLI: classify Photos Library, Photos Picker, and Places HTTP failures with the documented stable exit codes instead of generic exit code 1.
 
 - Docs: recognize valid one-column Markdown tables, while preserving separator-shaped rows after the delimiter as table data.
 - Docs: scope default-tab named-range replace and delete requests correctly in multi-tab documents.

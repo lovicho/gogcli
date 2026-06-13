@@ -2,26 +2,27 @@ package cmd
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
 )
 
 func TestConfigCmd_JSONParity(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Parallel()
 
+	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
 	cfg := config.File{
 		KeyringBackend:  "file",
 		DefaultTimezone: "UTC",
 	}
-	if err := config.WriteConfig(cfg); err != nil {
+	if err := store.Write(cfg); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
+	runtime := &app.Runtime{Config: store}
 
-	listResult := executeWithTestRuntime(t, []string{"--json", "config", "list"}, nil)
+	listResult := executeWithTestRuntime(t, []string{"--json", "config", "list"}, runtime)
 	if listResult.err != nil {
 		t.Fatalf("Execute: %v\nstderr=%q", listResult.err, listResult.stderr)
 	}
@@ -34,7 +35,7 @@ func TestConfigCmd_JSONParity(t *testing.T) {
 		t.Fatalf("list json parse: %v\nout=%q", err, listResult.stdout)
 	}
 
-	getResult := executeWithTestRuntime(t, []string{"--json", "config", "get", "timezone"}, nil)
+	getResult := executeWithTestRuntime(t, []string{"--json", "config", "get", "timezone"}, runtime)
 	if getResult.err != nil {
 		t.Fatalf("Execute: %v\nstderr=%q", getResult.err, getResult.stderr)
 	}
@@ -55,10 +56,10 @@ func TestConfigCmd_JSONParity(t *testing.T) {
 }
 
 func TestConfigCmd_JSONEmptyValues(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config-home"))
+	t.Parallel()
 
-	listResult := executeWithTestRuntime(t, []string{"--json", "config", "list"}, nil)
+	runtime := &app.Runtime{Config: config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})}
+	listResult := executeWithTestRuntime(t, []string{"--json", "config", "list"}, runtime)
 	if listResult.err != nil {
 		t.Fatalf("Execute: %v\nstderr=%q", listResult.err, listResult.stderr)
 	}
@@ -77,7 +78,7 @@ func TestConfigCmd_JSONEmptyValues(t *testing.T) {
 		t.Fatalf("expected empty keyring_backend, got %q", list.KeyringBackend)
 	}
 
-	getResult := executeWithTestRuntime(t, []string{"--json", "config", "get", "timezone"}, nil)
+	getResult := executeWithTestRuntime(t, []string{"--json", "config", "get", "timezone"}, runtime)
 	if getResult.err != nil {
 		t.Fatalf("Execute: %v\nstderr=%q", getResult.err, getResult.stderr)
 	}
@@ -94,6 +95,8 @@ func TestConfigCmd_JSONEmptyValues(t *testing.T) {
 }
 
 func TestConfigCmd_InvalidInputIsUsageError(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args []string
@@ -123,10 +126,11 @@ func TestConfigCmd_InvalidInputIsUsageError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("HOME", t.TempDir())
-			t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config-home"))
+			t.Parallel()
 
-			err := Execute(tt.args)
+			runtime := &app.Runtime{Config: config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})}
+			result := executeWithTestRuntime(t, tt.args, runtime)
+			err := result.err
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -141,13 +145,15 @@ func TestConfigCmd_InvalidInputIsUsageError(t *testing.T) {
 }
 
 func TestConfigNoSendRoundTrip(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config-home"))
+	t.Parallel()
 
-	if err := Execute([]string{"config", "no-send", "set", "User@Example.com"}); err != nil {
-		t.Fatalf("set: %v", err)
+	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
+	runtime := &app.Runtime{Config: store}
+	setResult := executeWithTestRuntime(t, []string{"config", "no-send", "set", "User@Example.com"}, runtime)
+	if setResult.err != nil {
+		t.Fatalf("set: %v", setResult.err)
 	}
-	cfg, err := config.ReadConfig()
+	cfg, err := store.Read()
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}
@@ -155,7 +161,7 @@ func TestConfigNoSendRoundTrip(t *testing.T) {
 		t.Fatalf("expected normalized no-send account, got %#v", cfg.NoSendAccounts)
 	}
 
-	result := executeWithTestRuntime(t, []string{"config", "no-send", "list"}, nil)
+	result := executeWithTestRuntime(t, []string{"config", "no-send", "list"}, runtime)
 	if result.err != nil {
 		t.Fatalf("list: %v\nstderr=%q", result.err, result.stderr)
 	}
@@ -163,10 +169,11 @@ func TestConfigNoSendRoundTrip(t *testing.T) {
 		t.Fatalf("expected listed account, got %q", result.stdout)
 	}
 
-	if execErr := Execute([]string{"config", "no-send", "remove", "user@example.com"}); execErr != nil {
-		t.Fatalf("remove: %v", execErr)
+	removeResult := executeWithTestRuntime(t, []string{"config", "no-send", "remove", "user@example.com"}, runtime)
+	if removeResult.err != nil {
+		t.Fatalf("remove: %v", removeResult.err)
 	}
-	cfg, err = config.ReadConfig()
+	cfg, err = store.Read()
 	if err != nil {
 		t.Fatalf("ReadConfig: %v", err)
 	}

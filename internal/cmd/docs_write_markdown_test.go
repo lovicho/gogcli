@@ -16,6 +16,8 @@ import (
 	"google.golang.org/api/docs/v1"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
+
+	"github.com/steipete/gogcli/internal/docsmarkdown"
 )
 
 func TestDocsWrite_MarkdownReplaceUsesDriveUpdate(t *testing.T) {
@@ -722,7 +724,7 @@ func TestDocsWrite_MarkdownAppendStartsStyledBlocksOnFreshParagraph(t *testing.T
 	if len(reqs) != 4 {
 		t.Fatalf("expected insert, bullet, code text style, and code shading requests, got %#v", reqs)
 	}
-	if got := reqs[0].InsertText; got == nil || got.Location.Index != 9 || got.Text != "\nItem\n\nline 1"+docsSoftLineBreak+"line 2\n" {
+	if got := reqs[0].InsertText; got == nil || got.Location.Index != 9 || got.Text != "\nItem\n\nline 1"+docsmarkdown.SoftLineBreak+"line 2\n" {
 		t.Fatalf("unexpected markdown insert: %#v", got)
 	}
 	if got := reqs[1].CreateParagraphBullets; got == nil || got.Range.StartIndex != 10 || got.Range.EndIndex != 15 {

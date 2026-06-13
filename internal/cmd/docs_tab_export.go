@@ -123,7 +123,7 @@ func resolveTabID(ctx context.Context, docsSvc *docs.Service, docID, tabQuery st
 	return tab.TabProperties.TabId, nil
 }
 
-func tabExportOutPath(outFlag, docID, tabQuery, format string) (string, error) {
+func tabExportOutPath(outFlag, docID, tabQuery, format, defaultDir string) (string, error) {
 	defaultBase := docID + "_" + sanitizeFilenameComponent(tabQuery) + "." + format
 
 	outPath := strings.TrimSpace(outFlag)
@@ -137,11 +137,10 @@ func tabExportOutPath(outFlag, docID, tabQuery, format string) (string, error) {
 		}
 		return expanded, nil
 	}
-	dir, err := config.EnsureDriveDownloadsDir()
-	if err != nil {
-		return "", err
+	if strings.TrimSpace(defaultDir) == "" {
+		return "", errors.New("missing default downloads directory")
 	}
-	return filepath.Join(dir, defaultBase), nil
+	return filepath.Join(defaultDir, defaultBase), nil
 }
 
 // runDocsTabExport performs a per-tab export using the undocumented Docs export
@@ -165,7 +164,15 @@ func runDocsTabExport(ctx context.Context, flags *RootFlags, p tabExportParams) 
 		return fmtErr
 	}
 
-	outPath, pathErr := tabExportOutPath(p.OutFlag, p.DocID, p.TabQuery, format)
+	defaultDir := ""
+	if strings.TrimSpace(p.OutFlag) == "" {
+		layout, layoutErr := commandLayout(ctx, config.PathKindConfig)
+		if layoutErr != nil {
+			return layoutErr
+		}
+		defaultDir = layout.DriveDownloadsDir()
+	}
+	outPath, pathErr := tabExportOutPath(p.OutFlag, p.DocID, p.TabQuery, format, defaultDir)
 	if pathErr != nil {
 		return pathErr
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/steipete/gogcli/internal/config"
 )
 
-func resolveDriveDownloadDestPath(meta *drive.File, outPathFlag string) (string, error) {
+func resolveDriveDownloadDestPath(meta *drive.File, outPathFlag, defaultDir string) (string, error) {
 	if meta == nil {
 		return "", errors.New("missing file metadata")
 	}
@@ -43,11 +43,10 @@ func resolveDriveDownloadDestPath(meta *drive.File, outPathFlag string) (string,
 	defaultName := fmt.Sprintf("%s_%s", meta.Id, safeName)
 
 	if destPath == "" {
-		dir, err := config.EnsureDriveDownloadsDir()
-		if err != nil {
-			return "", err
+		if strings.TrimSpace(defaultDir) == "" {
+			return "", errors.New("missing default downloads directory")
 		}
-		return filepath.Join(dir, defaultName), nil
+		return filepath.Join(defaultDir, defaultName), nil
 	}
 
 	if st, err := os.Stat(destPath); err == nil && st.IsDir() {

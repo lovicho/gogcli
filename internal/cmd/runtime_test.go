@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -29,8 +32,142 @@ import (
 	youtubeapi "google.golang.org/api/youtube/v3"
 
 	"github.com/steipete/gogcli/internal/app"
+	"github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 )
+
+func TestConfigureRuntimeConfigUsesInjectedLayout(t *testing.T) {
+	t.Parallel()
+
+	layout := config.Layout{ConfigDir: t.TempDir()}
+	runtime := &app.Runtime{Layout: layout}
+	if err := configureRuntimeConfig(runtime, ""); err != nil {
+		t.Fatalf("configureRuntimeConfig: %v", err)
+	}
+	if runtime.Config == nil {
+		t.Fatal("expected config store")
+	}
+	if runtime.Config.Path() != layout.ConfigPath() {
+		t.Fatalf("config path = %q, want %q", runtime.Config.Path(), layout.ConfigPath())
+	}
+}
+
+func TestConfigureRuntimeConfigPreservesInjectedStore(t *testing.T) {
+	t.Parallel()
+
+	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
+	runtime := &app.Runtime{Config: store}
+	if err := configureRuntimeConfig(runtime, ""); err != nil {
+		t.Fatalf("configureRuntimeConfig: %v", err)
+	}
+	if runtime.Config != store {
+		t.Fatal("injected config store was replaced")
+	}
+	if runtime.Layout.ConfigDir != store.Layout().ConfigDir {
+		t.Fatalf("runtime config dir = %q, want %q", runtime.Layout.ConfigDir, store.Layout().ConfigDir)
+	}
+}
+
+func TestConfigureRuntimeLayoutPreservesInjectedExplicitKinds(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "injected-data")
+	runtime := &app.Runtime{Layout: config.Layout{
+		DataDir:      dataDir,
+		ExplicitData: true,
+	}}
+
+	if err := configureRuntimeLayout(runtime, filepath.Join(root, "home"), config.PathKindConfig); err != nil {
+		t.Fatalf("configureRuntimeLayout: %v", err)
+	}
+	if runtime.Layout.DataDir != dataDir {
+		t.Fatalf("data dir = %q, want %q", runtime.Layout.DataDir, dataDir)
+	}
+	if !runtime.Layout.ExplicitData {
+		t.Fatal("injected ExplicitData flag was cleared")
+	}
+}
+
+func TestConfigureRuntimeLayoutRejectsAmbientFallbackForInjectedConfig(t *testing.T) {
+	t.Parallel()
+
+	store := config.NewConfigStore(config.Layout{ConfigDir: t.TempDir()})
+	runtime := &app.Runtime{Config: store}
+
+	err := configureRuntimeLayout(runtime, "", config.PathKindConfig, config.PathKindData)
+	if !errors.Is(err, errIncompleteRuntimeLayout) {
+		t.Fatalf("configureRuntimeLayout() error = %v, want incomplete runtime layout", err)
+	}
+}
+
+func TestManagedRuntimeConfigCanResolveAdditionalKinds(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	runtime := &app.Runtime{}
+	if err := configureRuntimeConfig(runtime, root); err != nil {
+		t.Fatalf("configureRuntimeConfig: %v", err)
+	}
+	if !runtime.ConfigManaged {
+		t.Fatal("runtime-created config store was not marked managed")
+	}
+
+	if err := configureRuntimeLayout(runtime, root, config.PathKindData); err != nil {
+		t.Fatalf("configureRuntimeLayout: %v", err)
+	}
+	if runtime.Layout.DataDir != filepath.Join(root, "data") {
+		t.Fatalf("data dir = %q, want %q", runtime.Layout.DataDir, filepath.Join(root, "data"))
+	}
+}
+
+func TestResolveRuntimeClientUsesInjectedCredentialStore(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	layout := config.Layout{
+		ConfigDir:      filepath.Join(root, "config"),
+		DataDir:        filepath.Join(root, "data"),
+		ExplicitConfig: true,
+		ExplicitData:   true,
+	}
+	files := config.NewClientCredentialsStore(layout)
+	if err := files.WriteMetadata("example.com", config.ClientCredentials{ClientID: "id"}); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+
+	runtime := &app.Runtime{Config: config.NewConfigStore(layout)}
+	client, err := resolveRuntimeClient(runtime, "", "user@example.com", "")
+	if err != nil {
+		t.Fatalf("resolveRuntimeClient: %v", err)
+	}
+	if client != "example.com" {
+		t.Fatalf("client = %q, want example.com", client)
+	}
+}
+
+func TestNormalizedRuntimeOpensSecretsWithInjectedConfig(t *testing.T) {
+	t.Setenv("GOG_KEYRING_BACKEND", "")
+
+	root := t.TempDir()
+	layout := config.Layout{
+		ConfigDir: filepath.Join(root, "config"),
+		DataDir:   filepath.Join(root, "data"),
+	}
+	store := config.NewConfigStore(layout)
+	if err := store.Write(config.File{KeyringBackend: "invalid"}); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	runtime := normalizedRuntime(&app.Runtime{Layout: layout, Config: store})
+	_, err := runtime.Auth.OpenSecretsStore()
+	if err == nil || !strings.Contains(err.Error(), "invalid keyring backend") {
+		t.Fatalf("OpenSecretsStore() error = %v, want injected backend validation", err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("OpenSecretsStore() read ambient config instead of injected store: %v", err)
+	}
+}
 
 func TestExecuteRuntimeRoutesMigratedCommandOutput(t *testing.T) {
 	var stdout bytes.Buffer

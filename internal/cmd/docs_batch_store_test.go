@@ -17,9 +17,8 @@ import (
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/config"
-	"github.com/steipete/gogcli/internal/outfmt"
-	"github.com/steipete/gogcli/internal/ui"
 )
 
 func TestDocsBatchStoreLifecyclePreservesRequestJSON(t *testing.T) {
@@ -110,7 +109,7 @@ func TestDocsBatchStoreRejectsIdentityRevisionAndNonemptyReplace(t *testing.T) {
 }
 
 func TestBatchEndAtomicSubmitsExactPayloadAndDeletesState(t *testing.T) {
-	store, state := prepareDocsBatchEndTest(t, 1)
+	store, state, ctx := prepareDocsBatchEndTest(t, 1)
 
 	var received docsBatchWireBody
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +124,7 @@ func TestBatchEndAtomicSubmitsExactPayloadAndDeletesState(t *testing.T) {
 	defer server.Close()
 	restoreDocsBatchHTTPTest(t, server)
 
-	if err := (&BatchEndCmd{BatchID: state.BatchID}).Run(batchTestContext(t), &RootFlags{}); err != nil {
+	if err := (&BatchEndCmd{BatchID: state.BatchID}).Run(ctx, &RootFlags{}); err != nil {
 		t.Fatalf("end: %v", err)
 	}
 	if len(received.Requests) != 1 {
@@ -140,7 +139,7 @@ func TestBatchEndAtomicSubmitsExactPayloadAndDeletesState(t *testing.T) {
 }
 
 func TestBatchEndAutoSplitChainsRevision(t *testing.T) {
-	store, state := prepareDocsBatchEndTest(t, docsBatchUpdateRequestCap+1)
+	store, state, ctx := prepareDocsBatchEndTest(t, docsBatchUpdateRequestCap+1)
 
 	var requestCounts []int
 	var revisions []string
@@ -164,7 +163,7 @@ func TestBatchEndAutoSplitChainsRevision(t *testing.T) {
 	defer server.Close()
 	restoreDocsBatchHTTPTest(t, server)
 
-	if err := (&BatchEndCmd{BatchID: state.BatchID, AutoSplit: true}).Run(batchTestContext(t), &RootFlags{}); err != nil {
+	if err := (&BatchEndCmd{BatchID: state.BatchID, AutoSplit: true}).Run(ctx, &RootFlags{}); err != nil {
 		t.Fatalf("end split: %v", err)
 	}
 	if fmt.Sprint(requestCounts) != "[500 1]" {
@@ -179,7 +178,7 @@ func TestBatchEndAutoSplitChainsRevision(t *testing.T) {
 }
 
 func TestBatchEndContinueOnErrorRetainsFailedRequests(t *testing.T) {
-	store, state := prepareDocsBatchEndTest(t, 2)
+	store, state, ctx := prepareDocsBatchEndTest(t, 2)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body docsBatchWireBody
@@ -196,7 +195,7 @@ func TestBatchEndContinueOnErrorRetainsFailedRequests(t *testing.T) {
 	defer server.Close()
 	restoreDocsBatchHTTPTest(t, server)
 
-	if err := (&BatchEndCmd{BatchID: state.BatchID, ContinueOnError: true}).Run(batchTestContext(t), &RootFlags{}); err != nil {
+	if err := (&BatchEndCmd{BatchID: state.BatchID, ContinueOnError: true}).Run(ctx, &RootFlags{}); err != nil {
 		t.Fatalf("end continue: %v", err)
 	}
 	loaded, err := store.get(state.BatchID)
@@ -212,7 +211,7 @@ func TestBatchEndContinueOnErrorRetainsFailedRequests(t *testing.T) {
 }
 
 func TestBatchEndDryRunKeepsStateWithoutHTTP(t *testing.T) {
-	store, state := prepareDocsBatchEndTest(t, 1)
+	store, state, ctx := prepareDocsBatchEndTest(t, 1)
 	oldClient := newDocsBatchHTTPClient
 	newDocsBatchHTTPClient = func(context.Context, string) (*http.Client, error) {
 		t.Fatal("dry run created HTTP client")
@@ -220,7 +219,7 @@ func TestBatchEndDryRunKeepsStateWithoutHTTP(t *testing.T) {
 	}
 	t.Cleanup(func() { newDocsBatchHTTPClient = oldClient })
 
-	if err := (&BatchEndCmd{BatchID: state.BatchID}).Run(batchTestContext(t), &RootFlags{DryRun: true}); err != nil {
+	if err := (&BatchEndCmd{BatchID: state.BatchID}).Run(ctx, &RootFlags{DryRun: true}); err != nil {
 		t.Fatalf("dry-run end: %v", err)
 	}
 	if _, err := store.get(state.BatchID); err != nil {
@@ -229,14 +228,8 @@ func TestBatchEndDryRunKeepsStateWithoutHTTP(t *testing.T) {
 }
 
 func TestBatchJSONUsesRuntimeOutput(t *testing.T) {
-	restoreHome, err := config.SetHomeOverride(t.TempDir())
-	if err != nil {
-		t.Fatalf("set home: %v", err)
-	}
-	t.Cleanup(restoreHome)
-
 	var output bytes.Buffer
-	ctx := newCmdRuntimeJSONOutputContext(t, &output, io.Discard)
+	ctx := withDocsBatchStateDir(newCmdRuntimeJSONOutputContext(t, &output, io.Discard), t.TempDir())
 	if err := (&BatchListCmd{}).Run(ctx); err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -252,13 +245,24 @@ func TestBatchJSONUsesRuntimeOutput(t *testing.T) {
 	}
 }
 
-func TestBatchLocalMutatorsHonorDryRun(t *testing.T) {
-	restoreHome, err := config.SetHomeOverride(t.TempDir())
-	if err != nil {
-		t.Fatalf("set home: %v", err)
-	}
-	t.Cleanup(restoreHome)
+func TestBatchListUsesRuntimeStateDir(t *testing.T) {
+	runtimeStateDir := t.TempDir()
+	ambientStateDir := filepath.Join(t.TempDir(), "ambient")
+	t.Setenv("GOG_STATE_DIR", ambientStateDir)
 
+	ctx := withDocsBatchStateDir(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), runtimeStateDir)
+	if err := (&BatchListCmd{}).Run(ctx); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(runtimeStateDir, "batches")); err != nil {
+		t.Fatalf("runtime batch directory: %v", err)
+	}
+	if _, err := os.Stat(ambientStateDir); !os.IsNotExist(err) {
+		t.Fatalf("ambient state directory unexpectedly touched: %v", err)
+	}
+}
+
+func TestBatchLocalMutatorsHonorDryRun(t *testing.T) {
 	ctx := batchTestContext(t)
 	dryRun := &RootFlags{DryRun: true}
 	beginErr := (&BatchBeginCmd{Service: docsBatchService, DocID: "doc1"}).Run(ctx, dryRun)
@@ -266,7 +270,7 @@ func TestBatchLocalMutatorsHonorDryRun(t *testing.T) {
 		t.Fatalf("begin dry run: %v", beginErr)
 	}
 
-	store, err := newDocsBatchStore()
+	store, err := newDocsBatchStore(ctx)
 	if err != nil {
 		t.Fatalf("new store: %v", err)
 	}
@@ -305,26 +309,6 @@ func TestBatchLocalMutatorsHonorDryRun(t *testing.T) {
 }
 
 func TestDocsInsertPageBreakBatchQueuesWithoutSubmitting(t *testing.T) {
-	restoreHome, err := config.SetHomeOverride(t.TempDir())
-	if err != nil {
-		t.Fatalf("set home: %v", err)
-	}
-	t.Cleanup(restoreHome)
-
-	store, err := newDocsBatchStore()
-	if err != nil {
-		t.Fatalf("new store: %v", err)
-	}
-	state, err := store.create(docsBatchState{
-		Service:    docsBatchService,
-		DocumentID: "doc1",
-		Account:    "a@b.com",
-		Client:     "default",
-	})
-	if err != nil {
-		t.Fatalf("create: %v", err)
-	}
-
 	postCalls := 0
 	docService, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -338,7 +322,20 @@ func TestDocsInsertPageBreakBatchQueuesWithoutSubmitting(t *testing.T) {
 	defer cleanup()
 
 	command := &DocsInsertPageBreakCmd{}
-	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docService)
+	ctx := withDocsTestService(batchTestContext(t), docService)
+	store, err := newDocsBatchStore(ctx)
+	if err != nil {
+		t.Fatalf("new store: %v", err)
+	}
+	state, err := store.create(docsBatchState{
+		Service:    docsBatchService,
+		DocumentID: "doc1",
+		Account:    "a@b.com",
+		Client:     "default",
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
 	if runErr := runKong(t, command, []string{"doc1", "--index", "7", "--batch", state.BatchID}, ctx, &RootFlags{Account: "a@b.com"}); runErr != nil {
 		t.Fatalf("queue page break: %v", runErr)
 	}
@@ -365,15 +362,11 @@ func TestDocsWriteBatchRejectsMultiPhaseModes(t *testing.T) {
 	}
 }
 
-func prepareDocsBatchEndTest(t *testing.T, requestCount int) (*docsBatchStore, *docsBatchState) {
+func prepareDocsBatchEndTest(t *testing.T, requestCount int) (*docsBatchStore, *docsBatchState, context.Context) {
 	t.Helper()
-	restoreHome, err := config.SetHomeOverride(t.TempDir())
-	if err != nil {
-		t.Fatalf("set home: %v", err)
-	}
-	t.Cleanup(restoreHome)
 
-	store, err := newDocsBatchStore()
+	ctx := batchTestContext(t)
+	store, err := newDocsBatchStore(ctx)
 	if err != nil {
 		t.Fatalf("new store: %v", err)
 	}
@@ -397,7 +390,7 @@ func prepareDocsBatchEndTest(t *testing.T, requestCount int) (*docsBatchStore, *
 		t.Fatalf("append: %v", err)
 	}
 
-	return store, state
+	return store, state, ctx
 }
 
 func restoreDocsBatchHTTPTest(t *testing.T, server *httptest.Server) {
@@ -418,12 +411,16 @@ func batchTestContext(t *testing.T) context.Context {
 	t.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	testUI, err := ui.New(ui.Options{Stdout: &stdout, Stderr: &stderr, Color: "never"})
-	if err != nil {
-		t.Fatalf("new UI: %v", err)
-	}
+	return withDocsBatchStateDir(newCmdRuntimeOutputContext(t, &stdout, &stderr), t.TempDir())
+}
 
-	return outfmt.WithMode(ui.WithUI(context.Background(), testUI), outfmt.Mode{})
+func withDocsBatchStateDir(ctx context.Context, stateDir string) context.Context {
+	return withTestRuntime(ctx, func(runtime *app.Runtime) {
+		runtime.Layout = config.Layout{
+			StateDir:      stateDir,
+			ExplicitState: true,
+		}
+	})
 }
 
 func TestDocsBatchPruneRemovesOnlyStaleState(t *testing.T) {

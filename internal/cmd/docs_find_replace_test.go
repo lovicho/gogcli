@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"google.golang.org/api/docs/v1"
+
+	"github.com/steipete/gogcli/internal/docsmarkdown"
 )
 
 func newDocsFindReplaceTestContext(t *testing.T, svc *docs.Service) context.Context {
@@ -573,7 +575,7 @@ func TestDocsFindReplace_MarkdownCodeBlockStartsFreshParagraphWhenInline(t *test
 	if len(reqs) != 7 {
 		t.Fatalf("expected delete, insert, text/paragraph/bullet resets, code text style, and code shading requests, got %#v", reqs)
 	}
-	if got := reqs[1].InsertText; got == nil || got.Location.Index != 7 || got.Text != "\nline1"+docsSoftLineBreak+"line2\n" {
+	if got := reqs[1].InsertText; got == nil || got.Location.Index != 7 || got.Text != "\nline1"+docsmarkdown.SoftLineBreak+"line2\n" {
 		t.Fatalf("unexpected insert request: %#v", got)
 	}
 	if got := reqs[5].UpdateTextStyle; got == nil || got.Range.StartIndex != 8 || got.Range.EndIndex != 20 {

@@ -8,13 +8,13 @@ import (
 
 var errMissingAccount = errors.New("missing account")
 
-func SetNoSendAccount(account string, disabled bool) error {
+func (s *ConfigStore) SetNoSendAccount(account string, disabled bool) error {
 	account = normalizeNoSendAccount(account)
 	if account == "" {
 		return errMissingAccount
 	}
 
-	return UpdateConfig(func(cfg *File) error {
+	return s.Update(func(cfg *File) error {
 		if disabled {
 			if cfg.NoSendAccounts == nil {
 				cfg.NoSendAccounts = make(map[string]bool)
@@ -34,8 +34,8 @@ func SetNoSendAccount(account string, disabled bool) error {
 	})
 }
 
-func IsNoSendAccount(account string) (bool, error) {
-	cfg, err := ReadConfig()
+func (s *ConfigStore) IsNoSendAccount(account string) (bool, error) {
+	cfg, err := s.Read()
 	if err != nil {
 		return false, err
 	}

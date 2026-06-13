@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,6 +10,8 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsa1"
+	"github.com/steipete/gogcli/internal/sheetsvalidation"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -92,31 +94,7 @@ func (c *SheetsValidationGetCmd) Run(ctx context.Context, flags *RootFlags) erro
 		return nil
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "A1\tTYPE\tVALUES\tSTRICT\tSHOW_CUSTOM_UI\tINPUT_MESSAGE")
-	for _, item := range validations {
-		conditionType := ""
-		values := []string{}
-		if item.Rule != nil && item.Rule.Condition != nil {
-			conditionType = item.Rule.Condition.Type
-			for _, value := range item.Rule.Condition.Values {
-				if value != nil {
-					values = append(values, value.UserEnteredValue)
-				}
-			}
-		}
-		encodedValues, _ := json.Marshal(values)
-		fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%t\t%s\n",
-			oneLine(item.A1),
-			oneLine(conditionType),
-			encodedValues,
-			item.Rule != nil && item.Rule.Strict,
-			item.Rule != nil && item.Rule.ShowCustomUi,
-			oneLine(validationInputMessage(item.Rule)),
-		)
-	}
-	return nil
+	return outfmt.WriteTable(ctx, stdoutWriter(ctx), validations, sheetsValidationColumns())
 }
 
 func resolveValidationReadRange(input string, catalog *spreadsheetRangeCatalog) (string, *sheets.GridRange, error) {
@@ -138,7 +116,7 @@ func resolveValidationReadRange(input string, catalog *spreadsheetRangeCatalog) 
 			return canonicalName, gridRange, nil
 		}
 	}
-	parsed, parseErr := parseA1Range(rangeSpec)
+	parsed, parseErr := sheetsa1.Parse(rangeSpec)
 	if parseErr == nil && parsed.SheetName == "" {
 		_, sheetTitle, err := resolveSheetIDByNameOrFirstWithCatalog(catalog, "")
 		if err != nil {
@@ -149,7 +127,7 @@ func resolveValidationReadRange(input string, catalog *spreadsheetRangeCatalog) 
 		if err != nil {
 			return "", nil, err
 		}
-		return formatSheetPrefix(sheetTitle) + rangeSpec, gridRange, nil
+		return sheetsa1.SheetPrefix(sheetTitle) + rangeSpec, gridRange, nil
 	}
 	gridRange, err := resolveGridRangeWithCatalog(rangeSpec, catalog, "validation")
 	if err != nil {
@@ -174,9 +152,9 @@ func (c *SheetsValidationSetCmd) Run(ctx context.Context, flags *RootFlags) erro
 	if err != nil {
 		return err
 	}
-	condition, err := buildDataValidationCondition(c.Type, c.Values)
+	condition, err := sheetsvalidation.BuildCondition(c.Type, c.Values)
 	if err != nil {
-		return err
+		return sheetsValidationPlannerError(err)
 	}
 	rule := &sheets.DataValidationRule{
 		Condition:    condition,
@@ -203,9 +181,9 @@ func (c *SheetsValidationSetCmd) Run(ctx context.Context, flags *RootFlags) erro
 		if err != nil {
 			return nil, "", err
 		}
-		tableRequests, err := buildTableValidationSetRequests(gridRange, tableSpans, condition)
+		tableRequests, err := sheetsvalidation.BuildSetRequests(gridRange, tableSpans, condition)
 		if err != nil {
-			return nil, "", err
+			return nil, "", sheetsValidationPlannerError(err)
 		}
 		if len(tableRequests) > 0 && !c.FilteredRowsIncluded {
 			return nil, "", usage("setting table-managed dropdown validation requires --filtered-rows-included")
@@ -217,7 +195,7 @@ func (c *SheetsValidationSetCmd) Run(ctx context.Context, flags *RootFlags) erro
 
 		ordinaryRanges := []*sheets.GridRange{gridRange}
 		if len(tableRequests) > 0 && condition.Type == sheetsConditionOneOfList {
-			ordinaryRanges = subtractTableValidationSpans(gridRange, tableSpans)
+			ordinaryRanges = sheetsvalidation.SubtractSpans(gridRange, tableSpans)
 		}
 		requests := append([]*sheets.Request(nil), tableRequests...)
 		for _, ordinaryRange := range ordinaryRanges {
@@ -269,14 +247,14 @@ func (c *SheetsValidationClearCmd) Run(ctx context.Context, flags *RootFlags) er
 		if err != nil {
 			return nil, "", err
 		}
-		tableRequests, err := buildTableValidationClearRequests(gridRange, tableSpans)
+		tableRequests, err := sheetsvalidation.BuildClearRequests(gridRange, tableSpans)
 		if err != nil {
-			return nil, "", err
+			return nil, "", sheetsValidationPlannerError(err)
 		}
 		if len(tableRequests) > 0 && !c.FilteredRowsIncluded {
 			return nil, "", usage("clearing table-managed dropdown validation requires --filtered-rows-included")
 		}
-		ordinaryRanges := subtractTableValidationSpans(gridRange, tableSpans)
+		ordinaryRanges := sheetsvalidation.SubtractSpans(gridRange, tableSpans)
 		requests := make([]*sheets.Request, 0, len(ordinaryRanges)+len(tableRequests))
 		for _, ordinaryRange := range ordinaryRanges {
 			requests = append(requests, &sheets.Request{
@@ -333,7 +311,7 @@ func collectCellValidations(resp *sheets.Spreadsheet) []sheetsCellValidation {
 					colNumber := int(data.StartColumn) + colOffset + 1
 					items = append(items, sheetsCellValidation{
 						Sheet: title,
-						A1:    formatA1Cell(title, rowNumber, colNumber),
+						A1:    sheetsa1.FormatCell(title, rowNumber, colNumber),
 						Row:   rowNumber,
 						Col:   colNumber,
 						Rule:  cell.DataValidation,
@@ -376,95 +354,16 @@ func resolveValidationGridRange(ctx context.Context, svc *sheets.Service, spread
 	return boundGridRangeToSheet(gridRange, catalog), nil
 }
 
-func buildDataValidationCondition(rawType string, rawValues []string) (*sheets.BooleanCondition, error) {
-	conditionType := strings.ToUpper(strings.TrimSpace(rawType))
-	conditionType = strings.NewReplacer("-", "_", " ", "_").Replace(conditionType)
-	if conditionType == "" {
-		return nil, usage("empty --type")
-	}
+type tableValidationSpan = sheetsvalidation.Span
 
-	minValues, maxValues, ok := validationConditionArity(conditionType)
-	if !ok {
-		return nil, usagef("unsupported validation --type %q", rawType)
-	}
-	values := append([]string(nil), rawValues...)
-	if len(values) < minValues || (maxValues >= 0 && len(values) > maxValues) {
-		switch {
-		case minValues == maxValues:
-			return nil, usagef("%s requires exactly %d --value flag(s)", conditionType, minValues)
-		case maxValues < 0:
-			return nil, usagef("%s requires at least %d --value flag(s)", conditionType, minValues)
-		default:
-			return nil, usagef("%s accepts %d to %d --value flag(s)", conditionType, minValues, maxValues)
-		}
-	}
-	if conditionType == sheetsConditionOneOfList {
-		for _, value := range values {
-			trimmed := strings.TrimSpace(value)
-			if strings.HasPrefix(trimmed, "=") || strings.HasPrefix(trimmed, "+") {
-				return nil, usage("ONE_OF_LIST values cannot be formulas")
-			}
-		}
-	}
-	if conditionType == "ONE_OF_RANGE" {
-		values[0] = strings.TrimSpace(values[0])
-		if values[0] == "" || values[0] == "=" || values[0] == "+" {
-			return nil, usage("ONE_OF_RANGE requires a non-empty range value")
-		}
-		if !strings.HasPrefix(values[0], "=") && !strings.HasPrefix(values[0], "+") {
-			values[0] = "=" + values[0]
-		}
-	}
-	if conditionType == "CUSTOM_FORMULA" {
-		values[0] = strings.TrimSpace(values[0])
-		if !strings.HasPrefix(values[0], "=") && !strings.HasPrefix(values[0], "+") {
-			return nil, usage("CUSTOM_FORMULA value must begin with = or +")
-		}
-	}
+type a1Range = sheetsa1.Range
 
-	conditionValues := make([]*sheets.ConditionValue, 0, len(values))
-	for _, value := range values {
-		conditionValues = append(conditionValues, &sheets.ConditionValue{
-			UserEnteredValue: value,
-			ForceSendFields:  []string{"UserEnteredValue"},
-		})
+func sheetsValidationPlannerError(err error) error {
+	var validationErr sheetsvalidation.ValidationError
+	if errors.As(err, &validationErr) {
+		return usage(validationErr.Error())
 	}
-	return &sheets.BooleanCondition{
-		Type:   conditionType,
-		Values: conditionValues,
-	}, nil
-}
-
-func validationConditionArity(conditionType string) (int, int, bool) {
-	switch conditionType {
-	case "TEXT_IS_EMAIL", "TEXT_IS_URL", "DATE_IS_VALID":
-		return 0, 0, true
-	case "BOOLEAN":
-		return 0, 2, true
-	case sheetsConditionOneOfList:
-		return 1, -1, true
-	case "NUMBER_BETWEEN", "NUMBER_NOT_BETWEEN", "DATE_BETWEEN", "DATE_NOT_BETWEEN":
-		return 2, 2, true
-	case "NUMBER_GREATER", "NUMBER_GREATER_THAN_EQ", "NUMBER_LESS", "NUMBER_LESS_THAN_EQ",
-		"NUMBER_EQ", "NUMBER_NOT_EQ", "TEXT_CONTAINS", "TEXT_NOT_CONTAINS", "TEXT_EQ",
-		"DATE_EQ", "DATE_BEFORE", "DATE_AFTER", "DATE_ON_OR_BEFORE", "DATE_ON_OR_AFTER",
-		"ONE_OF_RANGE", "CUSTOM_FORMULA":
-		return 1, 1, true
-	default:
-		return 0, 0, false
-	}
-}
-
-type tableValidationSpan struct {
-	SheetID     int64
-	TableID     string
-	ColumnIndex int64
-	StartRow    int64
-	EndRow      int64
-	StartCol    int64
-	EndCol      int64
-	Rule        *sheets.DataValidationRule
-	Columns     []*sheets.TableColumnProperties
+	return err
 }
 
 func fetchTableValidationSpans(ctx context.Context, svc *sheets.Service, spreadsheetID string) ([]tableValidationSpan, error) {
@@ -499,7 +398,7 @@ func fetchTableValidationSpans(ctx context.Context, svc *sheets.Service, spreads
 				var rule *sheets.DataValidationRule
 				if column.DataValidationRule != nil && column.DataValidationRule.Condition != nil {
 					rule = &sheets.DataValidationRule{
-						Condition:    cloneBooleanCondition(column.DataValidationRule.Condition),
+						Condition:    sheetsvalidation.CloneCondition(column.DataValidationRule.Condition),
 						ShowCustomUi: true,
 					}
 				}
@@ -518,255 +417,6 @@ func fetchTableValidationSpans(ctx context.Context, svc *sheets.Service, spreads
 		}
 	}
 	return spans, nil
-}
-
-func buildTableValidationClearRequests(target *sheets.GridRange, spans []tableValidationSpan) ([]*sheets.Request, error) {
-	if target == nil {
-		return nil, nil
-	}
-	type clearGroup struct {
-		columns []*sheets.TableColumnProperties
-		indexes map[int64]struct{}
-	}
-	groups := make(map[string]*clearGroup)
-	for _, span := range spans {
-		if span.Rule == nil {
-			continue
-		}
-		if span.SheetID != target.SheetId {
-			continue
-		}
-		if _, _, ok := intersectGridIndexes(span.StartRow, span.EndRow, target.StartRowIndex, target.EndRowIndex); !ok {
-			continue
-		}
-		if _, _, ok := intersectGridIndexes(span.StartCol, span.EndCol, target.StartColumnIndex, target.EndColumnIndex); !ok {
-			continue
-		}
-		if !gridRangeCoversSpan(target, span) {
-			return nil, usagef(
-				"range partially intersects table-managed dropdown column %d in table %s; clear the full table data column",
-				span.ColumnIndex+1,
-				span.TableID,
-			)
-		}
-
-		group := groups[span.TableID]
-		if group == nil {
-			group = &clearGroup{
-				columns: span.Columns,
-				indexes: make(map[int64]struct{}),
-			}
-			groups[span.TableID] = group
-		}
-		group.indexes[span.ColumnIndex] = struct{}{}
-	}
-
-	tableIDs := make([]string, 0, len(groups))
-	for tableID := range groups {
-		tableIDs = append(tableIDs, tableID)
-	}
-	sort.Strings(tableIDs)
-	requests := make([]*sheets.Request, 0, len(tableIDs))
-	for _, tableID := range tableIDs {
-		group := groups[tableID]
-		columns := cloneTableColumnProperties(group.columns, group.indexes, nil)
-		requests = append(requests, &sheets.Request{
-			UpdateTable: &sheets.UpdateTableRequest{
-				Table: &sheets.Table{
-					TableId:          tableID,
-					ColumnProperties: columns,
-				},
-				Fields: "columnProperties",
-			},
-		})
-	}
-	return requests, nil
-}
-
-func buildTableValidationSetRequests(
-	target *sheets.GridRange,
-	spans []tableValidationSpan,
-	condition *sheets.BooleanCondition,
-) ([]*sheets.Request, error) {
-	if target == nil || condition == nil {
-		return nil, nil
-	}
-	type setGroup struct {
-		columns []*sheets.TableColumnProperties
-		indexes map[int64]struct{}
-	}
-	groups := make(map[string]*setGroup)
-	for _, span := range spans {
-		if span.SheetID != target.SheetId {
-			continue
-		}
-		if _, _, ok := intersectGridIndexes(span.StartRow, span.EndRow, target.StartRowIndex, target.EndRowIndex); !ok {
-			continue
-		}
-		if _, _, ok := intersectGridIndexes(span.StartCol, span.EndCol, target.StartColumnIndex, target.EndColumnIndex); !ok {
-			continue
-		}
-		if condition.Type != sheetsConditionOneOfList {
-			return nil, usagef(
-				"table column %d in table %s only supports ONE_OF_LIST dropdown validation",
-				span.ColumnIndex+1,
-				span.TableID,
-			)
-		}
-		if !gridRangeCoversSpan(target, span) {
-			return nil, usagef(
-				"range partially intersects table-managed dropdown column %d in table %s; set validation on the full table data column",
-				span.ColumnIndex+1,
-				span.TableID,
-			)
-		}
-		group := groups[span.TableID]
-		if group == nil {
-			group = &setGroup{
-				columns: span.Columns,
-				indexes: make(map[int64]struct{}),
-			}
-			groups[span.TableID] = group
-		}
-		group.indexes[span.ColumnIndex] = struct{}{}
-	}
-
-	tableIDs := make([]string, 0, len(groups))
-	for tableID := range groups {
-		tableIDs = append(tableIDs, tableID)
-	}
-	sort.Strings(tableIDs)
-	requests := make([]*sheets.Request, 0, len(tableIDs))
-	for _, tableID := range tableIDs {
-		group := groups[tableID]
-		requests = append(requests, &sheets.Request{
-			UpdateTable: &sheets.UpdateTableRequest{
-				Table: &sheets.Table{
-					TableId:          tableID,
-					ColumnProperties: cloneTableColumnProperties(group.columns, group.indexes, condition),
-				},
-				Fields: "columnProperties",
-			},
-		})
-	}
-	return requests, nil
-}
-
-func cloneTableColumnProperties(
-	columns []*sheets.TableColumnProperties,
-	updateIndexes map[int64]struct{},
-	condition *sheets.BooleanCondition,
-) []*sheets.TableColumnProperties {
-	updates := make(map[int64]*sheets.BooleanCondition, len(updateIndexes))
-	for index := range updateIndexes {
-		updates[index] = condition
-	}
-	return cloneTableColumnPropertiesWithConditions(columns, updates)
-}
-
-func cloneTableColumnPropertiesWithConditions(
-	columns []*sheets.TableColumnProperties,
-	updates map[int64]*sheets.BooleanCondition,
-) []*sheets.TableColumnProperties {
-	cloned := make([]*sheets.TableColumnProperties, 0, len(columns))
-	for _, column := range columns {
-		if column == nil {
-			continue
-		}
-		item := &sheets.TableColumnProperties{
-			ColumnIndex:        column.ColumnIndex,
-			ColumnName:         column.ColumnName,
-			ColumnType:         column.ColumnType,
-			DataValidationRule: column.DataValidationRule,
-			ForceSendFields:    []string{"ColumnIndex"},
-		}
-		if condition, update := updates[column.ColumnIndex]; update {
-			if condition != nil && condition.Type == sheetsConditionOneOfList {
-				item.ColumnType = sheetsTypeDropdown
-				item.DataValidationRule = &sheets.TableColumnDataValidationRule{
-					Condition: cloneBooleanCondition(condition),
-				}
-			} else {
-				item.ColumnType = sheetsTypeText
-				item.DataValidationRule = nil
-				item.NullFields = []string{"DataValidationRule"}
-			}
-		}
-		cloned = append(cloned, item)
-	}
-	return cloned
-}
-
-func gridRangeCoversSpan(target *sheets.GridRange, span tableValidationSpan) bool {
-	if target == nil || target.SheetId != span.SheetID {
-		return false
-	}
-	rowsCovered := target.StartRowIndex <= span.StartRow && (target.EndRowIndex == 0 || target.EndRowIndex >= span.EndRow)
-	colsCovered := target.StartColumnIndex <= span.StartCol && (target.EndColumnIndex == 0 || target.EndColumnIndex >= span.EndCol)
-	return rowsCovered && colsCovered
-}
-
-func subtractTableValidationSpans(target *sheets.GridRange, spans []tableValidationSpan) []*sheets.GridRange {
-	if target == nil {
-		return nil
-	}
-	ranges := []*sheets.GridRange{target}
-	for _, span := range spans {
-		if span.SheetID != target.SheetId {
-			continue
-		}
-		cut := &sheets.GridRange{
-			SheetId:          span.SheetID,
-			StartRowIndex:    span.StartRow,
-			EndRowIndex:      span.EndRow,
-			StartColumnIndex: span.StartCol,
-			EndColumnIndex:   span.EndCol,
-		}
-		next := make([]*sheets.GridRange, 0, len(ranges)+3)
-		for _, current := range ranges {
-			next = append(next, subtractGridRange(current, cut)...)
-		}
-		ranges = next
-	}
-	return ranges
-}
-
-func subtractGridRange(current, cut *sheets.GridRange) []*sheets.GridRange {
-	if current == nil || cut == nil || current.SheetId != cut.SheetId {
-		return []*sheets.GridRange{current}
-	}
-	rowStart := max(current.StartRowIndex, cut.StartRowIndex)
-	rowEnd := min(current.EndRowIndex, cut.EndRowIndex)
-	colStart := max(current.StartColumnIndex, cut.StartColumnIndex)
-	colEnd := min(current.EndColumnIndex, cut.EndColumnIndex)
-	if rowEnd <= rowStart || colEnd <= colStart {
-		return []*sheets.GridRange{current}
-	}
-
-	makeRange := func(startRow, endRow, startCol, endCol int64) *sheets.GridRange {
-		return &sheets.GridRange{
-			SheetId:          current.SheetId,
-			StartRowIndex:    startRow,
-			EndRowIndex:      endRow,
-			StartColumnIndex: startCol,
-			EndColumnIndex:   endCol,
-			ForceSendFields:  []string{"SheetId"},
-		}
-	}
-	parts := make([]*sheets.GridRange, 0, 4)
-	if current.StartRowIndex < rowStart {
-		parts = append(parts, makeRange(current.StartRowIndex, rowStart, current.StartColumnIndex, current.EndColumnIndex))
-	}
-	if rowEnd < current.EndRowIndex {
-		parts = append(parts, makeRange(rowEnd, current.EndRowIndex, current.StartColumnIndex, current.EndColumnIndex))
-	}
-	if current.StartColumnIndex < colStart {
-		parts = append(parts, makeRange(rowStart, rowEnd, current.StartColumnIndex, colStart))
-	}
-	if colEnd < current.EndColumnIndex {
-		parts = append(parts, makeRange(rowStart, rowEnd, colEnd, current.EndColumnIndex))
-	}
-	return parts
 }
 
 func boundGridRangeToSheet(grid *sheets.GridRange, catalog *spreadsheetRangeCatalog) *sheets.GridRange {
@@ -789,24 +439,6 @@ func boundGridRangeToSheet(grid *sheets.GridRange, catalog *spreadsheetRangeCata
 	return &bounded
 }
 
-func cloneBooleanCondition(condition *sheets.BooleanCondition) *sheets.BooleanCondition {
-	if condition == nil {
-		return nil
-	}
-	values := make([]*sheets.ConditionValue, 0, len(condition.Values))
-	for _, value := range condition.Values {
-		if value == nil {
-			continue
-		}
-		values = append(values, &sheets.ConditionValue{
-			RelativeDate:     value.RelativeDate,
-			UserEnteredValue: value.UserEnteredValue,
-			ForceSendFields:  []string{"UserEnteredValue"},
-		})
-	}
-	return &sheets.BooleanCondition{Type: condition.Type, Values: values}
-}
-
 func appendTableCellValidations(
 	items []sheetsCellValidation,
 	spans []tableValidationSpan,
@@ -825,11 +457,21 @@ func appendTableCellValidations(
 		if span.Rule == nil || span.SheetID != target.SheetId {
 			continue
 		}
-		startRow, endRow, ok := intersectGridIndexes(span.StartRow, span.EndRow, target.StartRowIndex, target.EndRowIndex)
+		startRow, endRow, ok := sheetsvalidation.IntersectGridIndexes(
+			span.StartRow,
+			span.EndRow,
+			target.StartRowIndex,
+			target.EndRowIndex,
+		)
 		if !ok {
 			continue
 		}
-		startCol, endCol, ok := intersectGridIndexes(span.StartCol, span.EndCol, target.StartColumnIndex, target.EndColumnIndex)
+		startCol, endCol, ok := sheetsvalidation.IntersectGridIndexes(
+			span.StartCol,
+			span.EndCol,
+			target.StartColumnIndex,
+			target.EndColumnIndex,
+		)
 		if !ok {
 			continue
 		}
@@ -843,7 +485,7 @@ func appendTableCellValidations(
 				seen[key] = struct{}{}
 				items = append(items, sheetsCellValidation{
 					Sheet: title,
-					A1:    formatA1Cell(title, int(row+1), int(col+1)),
+					A1:    sheetsa1.FormatCell(title, int(row+1), int(col+1)),
 					Row:   int(row + 1),
 					Col:   int(col + 1),
 					Rule:  span.Rule,
@@ -854,271 +496,9 @@ func appendTableCellValidations(
 	return items
 }
 
-func intersectGridIndexes(aStart, aEnd, bStart, bEnd int64) (int64, int64, bool) {
-	start := max(aStart, bStart)
-	end := aEnd
-	if bEnd > 0 && (end == 0 || bEnd < end) {
-		end = bEnd
-	}
-	return start, end, end > start
-}
+type tableValidationCopyOptions = sheetsvalidation.CopyOptions
 
-type validationCopySegment struct {
-	StartRow int64
-	EndRow   int64
-	StartCol int64
-	EndCol   int64
-	RuleKey  string
-	Rule     *sheets.DataValidationRule
-}
-
-const maxTableValidationCopySegments = 1000
-
-type tableValidationCopyOptions struct {
-	ordinarySourceValidationKnown bool
-	ordinaryValidatedCells        []validationCellCoordinate
-}
-
-type validationCellCoordinate struct {
-	Row int64
-	Col int64
-}
-
-func buildTableValidationCopyRequests(
-	source, destination *sheets.GridRange,
-	transpose bool,
-	spans []tableValidationSpan,
-	options ...tableValidationCopyOptions,
-) ([]*sheets.Request, error) {
-	if source == nil || destination == nil ||
-		source.EndRowIndex <= source.StartRowIndex || source.EndColumnIndex <= source.StartColumnIndex ||
-		destination.EndRowIndex <= destination.StartRowIndex || destination.EndColumnIndex <= destination.StartColumnIndex {
-		return nil, nil
-	}
-
-	destination = effectiveCopyDestination(source, destination, transpose)
-	sourceSpans := relevantSourceTableValidationSpans(source, spans)
-	ordinarySourceRanges := subtractTableValidationSpans(source, sourceSpans)
-	destinationSpan, hasDestinationTable := firstIntersectingTableValidationSpan(destination, spans)
-	opts := tableValidationCopyOptions{}
-	if len(options) > 0 {
-		opts = options[0]
-	}
-	if hasDestinationTable && len(ordinarySourceRanges) > 0 {
-		if !opts.ordinarySourceValidationKnown {
-			return nil, usagef(
-				"copying validation into table column %d in table %s requires a table-column source",
-				destinationSpan.ColumnIndex+1,
-				destinationSpan.TableID,
-			)
-		}
-		for _, candidate := range spans {
-			if tableValidationSpanIntersects(destination, candidate) &&
-				ordinaryValidationMapsToTableSpan(
-					source,
-					destination,
-					transpose,
-					opts.ordinaryValidatedCells,
-					ordinarySourceRanges,
-					candidate,
-				) {
-				return nil, usagef(
-					"copying ordinary cell validation into table column %d in table %s is not supported",
-					candidate.ColumnIndex+1,
-					candidate.TableID,
-				)
-			}
-		}
-	}
-	if len(sourceSpans) == 0 && !hasDestinationTable {
-		return nil, nil
-	}
-
-	merged := []validationCopySegment{}
-	if len(sourceSpans) > 0 {
-		segments, err := buildTableValidationCopySegments(source, destination, transpose, sourceSpans)
-		if err != nil {
-			return nil, err
-		}
-		merged = mergeValidationCopySegments(segments)
-	}
-
-	coverageSegments := append([]validationCopySegment(nil), merged...)
-	if hasDestinationTable && len(ordinarySourceRanges) > 0 {
-		ordinarySpans := make([]tableValidationSpan, 0, len(ordinarySourceRanges))
-		for _, ordinaryRange := range ordinarySourceRanges {
-			ordinarySpans = append(ordinarySpans, tableValidationSpan{
-				SheetID:  ordinaryRange.SheetId,
-				StartRow: ordinaryRange.StartRowIndex,
-				EndRow:   ordinaryRange.EndRowIndex,
-				StartCol: ordinaryRange.StartColumnIndex,
-				EndCol:   ordinaryRange.EndColumnIndex,
-			})
-		}
-		ordinarySegments, err := buildTableValidationCopySegments(
-			source,
-			destination,
-			transpose,
-			ordinarySpans,
-		)
-		if err != nil {
-			return nil, err
-		}
-		coverageSegments = mergeValidationCopySegments(append(coverageSegments, ordinarySegments...))
-	}
-
-	tableRequests := []*sheets.Request{}
-	protectedSpans := []tableValidationSpan{}
-	if hasDestinationTable {
-		var err error
-		tableRequests, protectedSpans, err = buildDestinationTableValidationCopyRequests(
-			destination,
-			spans,
-			coverageSegments,
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	requests := append([]*sheets.Request(nil), tableRequests...)
-	for _, segment := range merged {
-		ranges := []*sheets.GridRange{{
-			SheetId:          destination.SheetId,
-			StartRowIndex:    segment.StartRow,
-			EndRowIndex:      segment.EndRow,
-			StartColumnIndex: segment.StartCol,
-			EndColumnIndex:   segment.EndCol,
-			ForceSendFields:  []string{"SheetId"},
-		}}
-		for _, span := range protectedSpans {
-			cut := &sheets.GridRange{
-				SheetId:          span.SheetID,
-				StartRowIndex:    span.StartRow,
-				EndRowIndex:      span.EndRow,
-				StartColumnIndex: span.StartCol,
-				EndColumnIndex:   span.EndCol,
-			}
-			next := make([]*sheets.GridRange, 0, len(ranges)+3)
-			for _, current := range ranges {
-				next = append(next, subtractGridRange(current, cut)...)
-			}
-			ranges = next
-		}
-		for _, gridRange := range ranges {
-			requests = append(requests, &sheets.Request{
-				SetDataValidation: &sheets.SetDataValidationRequest{
-					Range:                gridRange,
-					Rule:                 segment.Rule,
-					FilteredRowsIncluded: true,
-					ForceSendFields:      []string{"FilteredRowsIncluded"},
-				},
-			})
-		}
-	}
-	return requests, nil
-}
-
-func firstIntersectingTableValidationSpan(
-	target *sheets.GridRange,
-	spans []tableValidationSpan,
-) (tableValidationSpan, bool) {
-	if target == nil {
-		return tableValidationSpan{}, false
-	}
-	for _, span := range spans {
-		if tableValidationSpanIntersects(target, span) {
-			return span, true
-		}
-	}
-	return tableValidationSpan{}, false
-}
-
-func ordinaryValidationMapsToTableSpan(
-	source, destination *sheets.GridRange,
-	transpose bool,
-	validatedCells []validationCellCoordinate,
-	ordinarySourceRanges []*sheets.GridRange,
-	span tableValidationSpan,
-) bool {
-	if source == nil || destination == nil || !tableValidationSpanIntersects(destination, span) {
-		return false
-	}
-	startRow, endRow, _ := intersectGridIndexes(
-		span.StartRow,
-		span.EndRow,
-		destination.StartRowIndex,
-		destination.EndRowIndex,
-	)
-	startCol, endCol, _ := intersectGridIndexes(
-		span.StartCol,
-		span.EndCol,
-		destination.StartColumnIndex,
-		destination.EndColumnIndex,
-	)
-	patternHeight := source.EndRowIndex - source.StartRowIndex
-	patternWidth := source.EndColumnIndex - source.StartColumnIndex
-	if transpose {
-		patternHeight, patternWidth = patternWidth, patternHeight
-	}
-	for _, cell := range validatedCells {
-		if !gridRangesContainCell(ordinarySourceRanges, source.SheetId, cell.Row, cell.Col) {
-			continue
-		}
-		rowOffset := cell.Row - source.StartRowIndex
-		colOffset := cell.Col - source.StartColumnIndex
-		if transpose {
-			rowOffset, colOffset = colOffset, rowOffset
-		}
-		if repeatingOffsetIntersects(
-			destination.StartRowIndex+rowOffset,
-			patternHeight,
-			startRow,
-			endRow,
-		) && repeatingOffsetIntersects(
-			destination.StartColumnIndex+colOffset,
-			patternWidth,
-			startCol,
-			endCol,
-		) {
-			return true
-		}
-	}
-	return false
-}
-
-func gridRangesContainCell(ranges []*sheets.GridRange, sheetID, row, col int64) bool {
-	for _, gridRange := range ranges {
-		if gridRange != nil &&
-			gridRange.SheetId == sheetID &&
-			row >= gridRange.StartRowIndex && row < gridRange.EndRowIndex &&
-			col >= gridRange.StartColumnIndex && col < gridRange.EndColumnIndex {
-			return true
-		}
-	}
-	return false
-}
-
-func repeatingOffsetIntersects(base, step, start, end int64) bool {
-	if step <= 0 || end <= start || base >= end {
-		return false
-	}
-	if base < start {
-		base += ((start - base + step - 1) / step) * step
-	}
-	return base < end
-}
-
-func tableValidationSpanIntersects(target *sheets.GridRange, span tableValidationSpan) bool {
-	if target == nil || span.SheetID != target.SheetId {
-		return false
-	}
-	if _, _, ok := intersectGridIndexes(span.StartRow, span.EndRow, target.StartRowIndex, target.EndRowIndex); !ok {
-		return false
-	}
-	_, _, ok := intersectGridIndexes(span.StartCol, span.EndCol, target.StartColumnIndex, target.EndColumnIndex)
-	return ok
-}
+type validationCellCoordinate = sheetsvalidation.CellCoordinate
 
 func resolveTableValidationCopyOptions(
 	ctx context.Context,
@@ -1129,12 +509,12 @@ func resolveTableValidationCopyOptions(
 	catalog *spreadsheetRangeCatalog,
 	transpose bool,
 ) (tableValidationCopyOptions, error) {
-	effectiveDestination := effectiveCopyDestination(source, destination, transpose)
-	if _, ok := firstIntersectingTableValidationSpan(effectiveDestination, spans); !ok {
+	effectiveDestination := sheetsvalidation.EffectiveCopyDestination(source, destination, transpose)
+	if _, ok := sheetsvalidation.FirstIntersectingSpan(effectiveDestination, spans); !ok {
 		return tableValidationCopyOptions{}, nil
 	}
-	sourceSpans := relevantSourceTableValidationSpans(source, spans)
-	if len(subtractTableValidationSpans(source, sourceSpans)) == 0 {
+	sourceSpans := sheetsvalidation.RelevantSourceSpans(source, spans)
+	if len(sheetsvalidation.SubtractSpans(source, sourceSpans)) == 0 {
 		return tableValidationCopyOptions{}, nil
 	}
 	if catalog == nil {
@@ -1144,7 +524,7 @@ func resolveTableValidationCopyOptions(
 	if !ok {
 		return tableValidationCopyOptions{}, usagef("copy source references unknown sheet ID %d", source.SheetId)
 	}
-	sourceA1 := gridRangeToA1(sheetTitle, source)
+	sourceA1 := sheetsa1.FormatGridRange(sheetTitle, source)
 	if sourceA1 == "" {
 		return tableValidationCopyOptions{}, usage("copy source range cannot be represented in A1 notation")
 	}
@@ -1183,427 +563,9 @@ func resolveTableValidationCopyOptions(
 		}
 	}
 	return tableValidationCopyOptions{
-		ordinarySourceValidationKnown: true,
-		ordinaryValidatedCells:        validatedCells,
+		OrdinarySourceValidationKnown: true,
+		OrdinaryValidatedCells:        validatedCells,
 	}, nil
-}
-
-func relevantSourceTableValidationSpans(source *sheets.GridRange, spans []tableValidationSpan) []tableValidationSpan {
-	relevant := make([]tableValidationSpan, 0)
-	for _, span := range spans {
-		if span.SheetID != source.SheetId {
-			continue
-		}
-		startRow, endRow, rowsOK := intersectGridIndexes(
-			span.StartRow,
-			span.EndRow,
-			source.StartRowIndex,
-			source.EndRowIndex,
-		)
-		startCol, endCol, colsOK := intersectGridIndexes(
-			span.StartCol,
-			span.EndCol,
-			source.StartColumnIndex,
-			source.EndColumnIndex,
-		)
-		if !rowsOK || !colsOK {
-			continue
-		}
-		clipped := span
-		clipped.StartRow = startRow
-		clipped.EndRow = endRow
-		clipped.StartCol = startCol
-		clipped.EndCol = endCol
-		relevant = append(relevant, clipped)
-	}
-	return relevant
-}
-
-func buildTableValidationCopySegments(
-	source, destination *sheets.GridRange,
-	transpose bool,
-	spans []tableValidationSpan,
-) ([]validationCopySegment, error) {
-	sourceHeight := source.EndRowIndex - source.StartRowIndex
-	sourceWidth := source.EndColumnIndex - source.StartColumnIndex
-	patternHeight, patternWidth := sourceHeight, sourceWidth
-	if transpose {
-		patternHeight, patternWidth = sourceWidth, sourceHeight
-	}
-	rowTiles := (destination.EndRowIndex - destination.StartRowIndex) / patternHeight
-	colTiles := (destination.EndColumnIndex - destination.StartColumnIndex) / patternWidth
-	patternSegments := make([]validationCopySegment, 0, len(spans))
-	for _, span := range spans {
-		ruleKey, err := validationRuleKey(span.Rule)
-		if err != nil {
-			return nil, err
-		}
-		patternSegments = append(patternSegments, validationCopySegment{
-			StartRow: span.StartRow,
-			EndRow:   span.EndRow,
-			StartCol: span.StartCol,
-			EndCol:   span.EndCol,
-			RuleKey:  ruleKey,
-			Rule:     span.Rule,
-		})
-	}
-	patternSegments = mergeValidationCopySegments(patternSegments)
-
-	segments := make([]validationCopySegment, 0, len(patternSegments))
-	var err error
-	for _, patternSegment := range patternSegments {
-		relRowStart := patternSegment.StartRow - source.StartRowIndex
-		relRowEnd := patternSegment.EndRow - source.StartRowIndex
-		relColStart := patternSegment.StartCol - source.StartColumnIndex
-		relColEnd := patternSegment.EndCol - source.StartColumnIndex
-		mappedRowStart, mappedRowEnd := relRowStart, relRowEnd
-		mappedColStart, mappedColEnd := relColStart, relColEnd
-		if transpose {
-			mappedRowStart, mappedRowEnd = relColStart, relColEnd
-			mappedColStart, mappedColEnd = relRowStart, relRowEnd
-		}
-		fullRows := mappedRowStart == 0 && mappedRowEnd == patternHeight
-		fullCols := mappedColStart == 0 && mappedColEnd == patternWidth
-		if fullRows && fullCols {
-			segments, err = appendValidationCopySegment(segments, validationCopySegment{
-				StartRow: destination.StartRowIndex,
-				EndRow:   destination.EndRowIndex,
-				StartCol: destination.StartColumnIndex,
-				EndCol:   destination.EndColumnIndex,
-				RuleKey:  patternSegment.RuleKey,
-				Rule:     patternSegment.Rule,
-			})
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if fullRows {
-			for colTile := int64(0); colTile < colTiles; colTile++ {
-				segments, err = appendValidationCopySegment(segments, validationCopySegment{
-					StartRow: destination.StartRowIndex,
-					EndRow:   destination.EndRowIndex,
-					StartCol: destination.StartColumnIndex + colTile*patternWidth + mappedColStart,
-					EndCol:   destination.StartColumnIndex + colTile*patternWidth + mappedColEnd,
-					RuleKey:  patternSegment.RuleKey,
-					Rule:     patternSegment.Rule,
-				})
-				if err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-		if fullCols {
-			for rowTile := int64(0); rowTile < rowTiles; rowTile++ {
-				segments, err = appendValidationCopySegment(segments, validationCopySegment{
-					StartRow: destination.StartRowIndex + rowTile*patternHeight + mappedRowStart,
-					EndRow:   destination.StartRowIndex + rowTile*patternHeight + mappedRowEnd,
-					StartCol: destination.StartColumnIndex,
-					EndCol:   destination.EndColumnIndex,
-					RuleKey:  patternSegment.RuleKey,
-					Rule:     patternSegment.Rule,
-				})
-				if err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-		for rowTile := int64(0); rowTile < rowTiles; rowTile++ {
-			for colTile := int64(0); colTile < colTiles; colTile++ {
-				segment := validationCopySegment{
-					StartRow: destination.StartRowIndex + rowTile*patternHeight + mappedRowStart,
-					EndRow:   destination.StartRowIndex + rowTile*patternHeight + mappedRowEnd,
-					StartCol: destination.StartColumnIndex + colTile*patternWidth + mappedColStart,
-					EndCol:   destination.StartColumnIndex + colTile*patternWidth + mappedColEnd,
-					RuleKey:  patternSegment.RuleKey,
-					Rule:     patternSegment.Rule,
-				}
-				segments, err = appendValidationCopySegment(segments, segment)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-	return segments, nil
-}
-
-func appendValidationCopySegment(
-	segments []validationCopySegment,
-	segment validationCopySegment,
-) ([]validationCopySegment, error) {
-	if len(segments) >= maxTableValidationCopySegments {
-		return nil, usagef(
-			"copying table-managed validation requires more than %d supplemental ranges; narrow the destination or copy one source footprint",
-			maxTableValidationCopySegments,
-		)
-	}
-	return append(segments, segment), nil
-}
-
-func mergeValidationCopySegments(segments []validationCopySegment) []validationCopySegment {
-	sort.Slice(segments, func(i, j int) bool {
-		if segments[i].StartCol != segments[j].StartCol {
-			return segments[i].StartCol < segments[j].StartCol
-		}
-		if segments[i].EndCol != segments[j].EndCol {
-			return segments[i].EndCol < segments[j].EndCol
-		}
-		if segments[i].RuleKey != segments[j].RuleKey {
-			return segments[i].RuleKey < segments[j].RuleKey
-		}
-		return segments[i].StartRow < segments[j].StartRow
-	})
-	vertical := make([]validationCopySegment, 0, len(segments))
-	for _, segment := range segments {
-		last := len(vertical) - 1
-		if last >= 0 &&
-			vertical[last].StartCol == segment.StartCol &&
-			vertical[last].EndCol == segment.EndCol &&
-			vertical[last].RuleKey == segment.RuleKey &&
-			vertical[last].EndRow == segment.StartRow {
-			vertical[last].EndRow = segment.EndRow
-			continue
-		}
-		vertical = append(vertical, segment)
-	}
-
-	sort.Slice(vertical, func(i, j int) bool {
-		if vertical[i].StartRow != vertical[j].StartRow {
-			return vertical[i].StartRow < vertical[j].StartRow
-		}
-		if vertical[i].EndRow != vertical[j].EndRow {
-			return vertical[i].EndRow < vertical[j].EndRow
-		}
-		if vertical[i].RuleKey != vertical[j].RuleKey {
-			return vertical[i].RuleKey < vertical[j].RuleKey
-		}
-		return vertical[i].StartCol < vertical[j].StartCol
-	})
-	merged := make([]validationCopySegment, 0, len(vertical))
-	for _, segment := range vertical {
-		last := len(merged) - 1
-		if last >= 0 &&
-			merged[last].StartRow == segment.StartRow &&
-			merged[last].EndRow == segment.EndRow &&
-			merged[last].RuleKey == segment.RuleKey &&
-			merged[last].EndCol == segment.StartCol {
-			merged[last].EndCol = segment.EndCol
-			continue
-		}
-		merged = append(merged, segment)
-	}
-	return merged
-}
-
-func buildDestinationTableValidationCopyRequests(
-	destination *sheets.GridRange,
-	spans []tableValidationSpan,
-	segments []validationCopySegment,
-) ([]*sheets.Request, []tableValidationSpan, error) {
-	type copyGroup struct {
-		columns    []*sheets.TableColumnProperties
-		conditions map[int64]*sheets.BooleanCondition
-	}
-	groups := make(map[string]*copyGroup)
-	protected := make([]tableValidationSpan, 0)
-	for _, span := range spans {
-		if span.SheetID != destination.SheetId {
-			continue
-		}
-		if _, _, ok := intersectGridIndexes(span.StartRow, span.EndRow, destination.StartRowIndex, destination.EndRowIndex); !ok {
-			continue
-		}
-		if _, _, ok := intersectGridIndexes(span.StartCol, span.EndCol, destination.StartColumnIndex, destination.EndColumnIndex); !ok {
-			continue
-		}
-		startRow, endRow, _ := intersectGridIndexes(
-			span.StartRow,
-			span.EndRow,
-			destination.StartRowIndex,
-			destination.EndRowIndex,
-		)
-		startCol, endCol, _ := intersectGridIndexes(
-			span.StartCol,
-			span.EndCol,
-			destination.StartColumnIndex,
-			destination.EndColumnIndex,
-		)
-		condition, ruleKey, covered := validationRuleCoverage(
-			segments,
-			startRow,
-			endRow,
-			startCol,
-			endCol,
-		)
-		if !covered {
-			return nil, nil, usagef(
-				"copy into table column %d in table %s requires a table-column source covering the destination",
-				span.ColumnIndex+1,
-				span.TableID,
-			)
-		}
-		existingKey, err := validationRuleKey(span.Rule)
-		if err != nil {
-			return nil, nil, err
-		}
-		if ruleKey == existingKey {
-			protected = append(protected, span)
-			continue
-		}
-		if !gridRangeCoversSpan(destination, span) {
-			return nil, nil, usagef(
-				"copy destination partially intersects table-managed dropdown column %d in table %s with a different rule",
-				span.ColumnIndex+1,
-				span.TableID,
-			)
-		}
-
-		group := groups[span.TableID]
-		if group == nil {
-			group = &copyGroup{
-				columns:    span.Columns,
-				conditions: make(map[int64]*sheets.BooleanCondition),
-			}
-			groups[span.TableID] = group
-		}
-		group.conditions[span.ColumnIndex] = condition
-		protected = append(protected, span)
-	}
-
-	tableIDs := make([]string, 0, len(groups))
-	for tableID := range groups {
-		tableIDs = append(tableIDs, tableID)
-	}
-	sort.Strings(tableIDs)
-	requests := make([]*sheets.Request, 0, len(tableIDs))
-	for _, tableID := range tableIDs {
-		group := groups[tableID]
-		requests = append(requests, &sheets.Request{
-			UpdateTable: &sheets.UpdateTableRequest{
-				Table: &sheets.Table{
-					TableId:          tableID,
-					ColumnProperties: cloneTableColumnPropertiesWithConditions(group.columns, group.conditions),
-				},
-				Fields: "columnProperties",
-			},
-		})
-	}
-	return requests, protected, nil
-}
-
-func validationRuleCoverage(
-	segments []validationCopySegment,
-	startRow, endRow, startCol, endCol int64,
-) (*sheets.BooleanCondition, string, bool) {
-	if endRow <= startRow || endCol <= startCol {
-		return nil, "", false
-	}
-	type interval struct {
-		start int64
-		end   int64
-		key   string
-		rule  *sheets.DataValidationRule
-	}
-	expectedKey := ""
-	haveExpectedKey := false
-	var expectedCondition *sheets.BooleanCondition
-	for col := startCol; col < endCol; col++ {
-		intervals := make([]interval, 0)
-		for _, segment := range segments {
-			if col < segment.StartCol || col >= segment.EndCol {
-				continue
-			}
-			overlapStart := max(startRow, segment.StartRow)
-			overlapEnd := min(endRow, segment.EndRow)
-			if overlapEnd > overlapStart {
-				intervals = append(intervals, interval{
-					start: overlapStart,
-					end:   overlapEnd,
-					key:   segment.RuleKey,
-					rule:  segment.Rule,
-				})
-			}
-		}
-		sort.Slice(intervals, func(i, j int) bool { return intervals[i].start < intervals[j].start })
-		cursor := startRow
-		ruleKey := ""
-		haveRuleKey := false
-		var condition *sheets.BooleanCondition
-		for _, item := range intervals {
-			if item.start > cursor {
-				return nil, "", false
-			}
-			if item.end <= cursor {
-				continue
-			}
-			if !haveRuleKey {
-				ruleKey = item.key
-				haveRuleKey = true
-				if item.rule != nil {
-					condition = item.rule.Condition
-				}
-			} else if item.key != ruleKey {
-				return nil, "", false
-			}
-			cursor = item.end
-			if cursor >= endRow {
-				break
-			}
-		}
-		if cursor < endRow {
-			return nil, "", false
-		}
-		if !haveExpectedKey {
-			expectedKey = ruleKey
-			haveExpectedKey = true
-			expectedCondition = condition
-		} else if ruleKey != expectedKey {
-			return nil, "", false
-		}
-	}
-	return expectedCondition, expectedKey, haveExpectedKey
-}
-
-func validationRuleKey(rule *sheets.DataValidationRule) (string, error) {
-	if rule == nil || rule.Condition == nil {
-		return "", nil
-	}
-	encoded, err := json.Marshal(rule)
-	if err != nil {
-		return "", err
-	}
-	return string(encoded), nil
-}
-
-func effectiveCopyDestination(source, destination *sheets.GridRange, transpose bool) *sheets.GridRange {
-	if source == nil || destination == nil {
-		return destination
-	}
-	minHeight := source.EndRowIndex - source.StartRowIndex
-	minWidth := source.EndColumnIndex - source.StartColumnIndex
-	if transpose {
-		minHeight, minWidth = minWidth, minHeight
-	}
-	effective := *destination
-	effective.EndRowIndex = effective.StartRowIndex + effectivePasteLength(
-		minHeight,
-		effective.EndRowIndex-effective.StartRowIndex,
-	)
-	effective.EndColumnIndex = effective.StartColumnIndex + effectivePasteLength(
-		minWidth,
-		effective.EndColumnIndex-effective.StartColumnIndex,
-	)
-	return &effective
-}
-
-func effectivePasteLength(sourceLength, destinationLength int64) int64 {
-	if destinationLength >= sourceLength && destinationLength%sourceLength == 0 {
-		return destinationLength
-	}
-	return sourceLength
 }
 
 func copyDataValidation(ctx context.Context, svc *sheets.Service, spreadsheetID, sourceA1, destA1 string) error {
@@ -1645,9 +607,9 @@ func copyDataValidation(ctx context.Context, svc *sheets.Service, spreadsheetID,
 	if err != nil {
 		return err
 	}
-	supplemental, err := buildTableValidationCopyRequests(sourceGrid, destGrid, false, spans, copyOptions)
+	supplemental, err := sheetsvalidation.BuildCopyRequests(sourceGrid, destGrid, false, spans, copyOptions)
 	if err != nil {
-		return err
+		return sheetsValidationPlannerError(err)
 	}
 	requests := make([]*sheets.Request, 0, 1+len(supplemental))
 	requests = append(requests, &sheets.Request{
@@ -1702,7 +664,7 @@ func toGridRange(r a1Range, sheetID int64) *sheets.GridRange {
 }
 
 func parseSheetRange(a1, label string) (a1Range, error) {
-	r, err := parseA1Range(a1)
+	r, err := sheetsa1.Parse(a1)
 	if err != nil {
 		return a1Range{}, usagef("parse %s range: %v", label, err)
 	}

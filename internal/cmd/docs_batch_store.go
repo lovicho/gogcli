@@ -80,10 +80,14 @@ type docsBatchStore struct {
 	lock *filelock.Lock
 }
 
-func newDocsBatchStore() (*docsBatchStore, error) {
-	dir, err := config.EnsureBatchDir()
+func newDocsBatchStore(ctx context.Context) (*docsBatchStore, error) {
+	layout, err := commandLayout(ctx, config.PathKindState)
 	if err != nil {
 		return nil, err
+	}
+	dir := layout.BatchDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("ensure batch dir: %w", err)
 	}
 
 	return newDocsBatchStoreAt(dir), nil

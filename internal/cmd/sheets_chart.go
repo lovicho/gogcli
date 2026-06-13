@@ -2,13 +2,13 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetschart"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -50,15 +50,7 @@ func (c *SheetsChartListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
-	type chartItem struct {
-		ChartID    int64  `json:"chartId"`
-		Title      string `json:"title"`
-		Type       string `json:"type"`
-		SheetID    int64  `json:"sheetId"`
-		SheetTitle string `json:"sheetTitle"`
-	}
-
-	items := make([]chartItem, 0)
+	items := make([]sheetsChartItem, 0)
 	for _, sheet := range resp.Sheets {
 		sheetTitle := ""
 		var sheetID int64
@@ -70,7 +62,7 @@ func (c *SheetsChartListCmd) Run(ctx context.Context, flags *RootFlags) error {
 			if ch == nil {
 				continue
 			}
-			it := chartItem{
+			it := sheetsChartItem{
 				ChartID:    ch.ChartId,
 				SheetID:    sheetID,
 				SheetTitle: sheetTitle,
@@ -94,15 +86,7 @@ func (c *SheetsChartListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "CHART_ID\tTITLE\tTYPE\tSHEET_ID\tSHEET_TITLE")
-	for _, it := range items {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%s\n",
-			it.ChartID, it.Title, it.Type, it.SheetID, it.SheetTitle,
-		)
-	}
-	return nil
+	return outfmt.WriteTable(ctx, stdoutWriter(ctx), items, sheetsChartColumns())
 }
 
 // ---------- get ----------
@@ -206,12 +190,12 @@ func (c *SheetsChartCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return usage("empty --spec-json")
 	}
 
-	chart, err := parseEmbeddedChartJSON(specBytes)
+	chart, err := sheetschart.ParseEmbedded(specBytes)
 	if err != nil {
 		return usagef("invalid --spec-json: %v", err)
 	}
 	if c.Anchor != "" {
-		if _, anchorErr := parseA1Cell(c.Anchor); anchorErr != nil {
+		if _, anchorErr := sheetschart.ParseAnchor(c.Anchor); anchorErr != nil {
 			return usagef("invalid --anchor %q: %v", c.Anchor, anchorErr)
 		}
 	}
@@ -236,7 +220,7 @@ func (c *SheetsChartCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	needsSheetResolution := c.Sheet != "" || c.Anchor != "" || chartSpecHasZeroSheetIDs(chart.Spec)
+	needsSheetResolution := c.Sheet != "" || c.Anchor != "" || sheetschart.HasZeroSheetIDs(chart.Spec)
 	var sheet chartSheetResolution
 	if needsSheetResolution {
 		var posErr error
@@ -244,14 +228,14 @@ func (c *SheetsChartCreateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		if posErr != nil {
 			return posErr
 		}
-		normalizeZeroSheetIDsInChartSpec(chart.Spec, sheet.SheetID, sheet.HasSheetIDZero)
+		sheetschart.NormalizeZeroSheetIDs(chart.Spec, sheet.SheetID, sheet.HasSheetIDZero)
 	}
 
 	// Resolve sheet name → ID for the anchor position.
 	if c.Sheet != "" || c.Anchor != "" {
-		pos, posErr := buildChartPosition(sheet.SheetID, c.Anchor, c.Width, c.Height)
+		pos, posErr := sheetschart.BuildPosition(sheet.SheetID, c.Anchor, c.Width, c.Height)
 		if posErr != nil {
-			return posErr
+			return usagef("invalid --anchor %q: %v", c.Anchor, posErr)
 		}
 		chart.Position = pos
 	}
@@ -310,7 +294,7 @@ func (c *SheetsChartUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return usage("empty --spec-json")
 	}
 
-	spec, err := parseChartSpecJSON(specBytes)
+	spec, err := sheetschart.ParseSpec(specBytes)
 	if err != nil {
 		return usagef("invalid --spec-json: %v", err)
 	}
@@ -336,7 +320,7 @@ func (c *SheetsChartUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	if err != nil {
 		return err
 	}
-	normalizeZeroSheetIDsInChartSpec(spec, sheet.SheetID, sheet.HasSheetIDZero)
+	sheetschart.NormalizeZeroSheetIDs(spec, sheet.SheetID, sheet.HasSheetIDZero)
 
 	req := &sheets.BatchUpdateSpreadsheetRequest{
 		Requests: []*sheets.Request{

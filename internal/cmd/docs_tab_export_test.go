@@ -462,8 +462,7 @@ func TestTabExportOutPath(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-			path, err := tabExportOutPath(tt.outFlag, tt.docID, tt.tabQuery, tt.format)
+			path, err := tabExportOutPath(tt.outFlag, tt.docID, tt.tabQuery, tt.format, t.TempDir())
 			if err != nil {
 				t.Fatalf("tabExportOutPath: %v", err)
 			}
@@ -476,7 +475,7 @@ func TestTabExportOutPath(t *testing.T) {
 
 func TestTabExportOutPath_ExplicitPath(t *testing.T) {
 	outPath := filepath.Join(t.TempDir(), "custom.pdf")
-	path, err := tabExportOutPath(outPath, "doc1", "t.abc", "pdf")
+	path, err := tabExportOutPath(outPath, "doc1", "t.abc", "pdf", "")
 	if err != nil {
 		t.Fatalf("tabExportOutPath: %v", err)
 	}
@@ -487,7 +486,7 @@ func TestTabExportOutPath_ExplicitPath(t *testing.T) {
 
 func TestTabExportOutPath_DirectoryOutput(t *testing.T) {
 	tmpDir := t.TempDir()
-	path, err := tabExportOutPath(tmpDir, "doc1", "t.abc", "pdf")
+	path, err := tabExportOutPath(tmpDir, "doc1", "t.abc", "pdf", "")
 	if err != nil {
 		t.Fatalf("tabExportOutPath: %v", err)
 	}

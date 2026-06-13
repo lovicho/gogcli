@@ -9,6 +9,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/steipete/gogcli/internal/outfmt"
+	"github.com/steipete/gogcli/internal/sheetsa1"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -62,20 +63,7 @@ func (c *SheetsTableListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return nil
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "NAME\tTABLE_ID\tSHEET_ID\tSHEET_TITLE\tA1\tCOLUMNS")
-	for _, table := range tables {
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\t%d\n",
-			table.Name,
-			table.TableID,
-			table.SheetID,
-			table.SheetTitle,
-			table.A1,
-			len(table.Columns),
-		)
-	}
-	return nil
+	return outfmt.WriteTable(ctx, stdoutWriter(ctx), tables, sheetsTableColumns())
 }
 
 type SheetsTableGetCmd struct {
@@ -365,7 +353,7 @@ func sheetsTableToItem(table *sheets.Table, catalog *spreadsheetRangeCatalog) sh
 			item.SheetTitle = catalog.SheetTitlesByID[table.Range.SheetId]
 		}
 		if item.SheetTitle != "" {
-			item.A1 = gridRangeToA1(item.SheetTitle, table.Range)
+			item.A1 = sheetsa1.FormatGridRange(item.SheetTitle, table.Range)
 			if dataA1, ok := sheetsTableDataRangeA1(item.SheetTitle, table); ok {
 				item.DataA1 = dataA1
 			}

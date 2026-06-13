@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/api/docs/v1"
 
+	"github.com/steipete/gogcli/internal/docsformat"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
 )
@@ -113,7 +114,7 @@ func (c *DocsFormatCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}); err != nil {
 		return err
 	}
-	if err := validateDocsBatchTarget(flags, c.Batch, id); err != nil {
+	if err := validateDocsBatchTarget(ctx, flags, c.Batch, id); err != nil {
 		return err
 	}
 
@@ -240,143 +241,48 @@ func (c *DocsFormatCmd) writeResult(ctx context.Context, resp *docs.BatchUpdateD
 }
 
 func (f DocsFormatFlags) any() bool {
-	return strings.TrimSpace(f.FontFamily) != "" ||
-		f.FontSize != 0 ||
-		strings.TrimSpace(f.TextColor) != "" ||
-		strings.TrimSpace(f.BgColor) != "" ||
-		strings.TrimSpace(f.link) != "" ||
-		f.noLink ||
-		f.Code ||
-		f.Bold || f.NoBold ||
-		f.Italic || f.NoItalic ||
-		f.Underline || f.NoUnderline ||
-		f.Strikethrough || f.NoStrike ||
-		strings.TrimSpace(f.Alignment) != "" ||
-		f.LineSpacing != 0 ||
-		f.HeadingLevel != nil ||
-		strings.TrimSpace(f.NamedStyle) != ""
+	return f.options().Any()
 }
 
 func (f DocsFormatFlags) buildRequests(start, end int64, tabID string) ([]*docs.Request, error) {
-	if start <= 0 || end <= start {
-		return nil, fmt.Errorf("invalid format range: %d..%d", start, end)
-	}
-	textReq, ok, err := f.buildTextStyleRequest(start, end, tabID)
+	requests, err := docsformat.BuildRequests(f.options(), start, end, tabID)
 	if err != nil {
-		return nil, err
+		return nil, usage(err.Error())
 	}
-	paraReq, paraOK, err := f.buildParagraphStyleRequest(start, end, tabID)
-	if err != nil {
-		return nil, err
-	}
-	reqs := make([]*docs.Request, 0, 2)
-	if ok {
-		reqs = append(reqs, textReq)
-	}
-	if paraOK {
-		reqs = append(reqs, paraReq)
-	}
-	if len(reqs) == 0 {
-		return nil, usage("no formatting flags provided")
-	}
-	return reqs, nil
+	return requests, nil
 }
 
-func (f DocsFormatFlags) buildTextStyleRequest(start, end int64, tabID string) (*docs.Request, bool, error) {
-	style := &docs.TextStyle{}
-	var fields []string
+func (f DocsFormatFlags) options() docsformat.Options {
+	return docsformat.Options{
+		FontFamily:     f.FontFamily,
+		FontSize:       f.FontSize,
+		TextColor:      f.TextColor,
+		Background:     f.BgColor,
+		Link:           f.link,
+		ClearLink:      f.noLink,
+		ResolvedLink:   f.resolvedLink,
+		Code:           f.Code,
+		Bold:           f.Bold,
+		ClearBold:      f.NoBold,
+		Italic:         f.Italic,
+		ClearItalic:    f.NoItalic,
+		Underline:      f.Underline,
+		ClearUnderline: f.NoUnderline,
+		Strikethrough:  f.Strikethrough,
+		ClearStrike:    f.NoStrike,
+		Alignment:      f.Alignment,
+		LineSpacing:    f.LineSpacing,
+		HeadingLevel:   f.HeadingLevel,
+		NamedStyle:     f.NamedStyle,
+	}
+}
 
-	if f.Code {
-		if strings.TrimSpace(f.FontFamily) != "" {
-			return nil, false, usage("--code cannot be combined with --font-family")
-		}
-		if strings.TrimSpace(f.BgColor) != "" {
-			return nil, false, usage("--code cannot be combined with --bg-color")
-		}
-		style.WeightedFontFamily = &docs.WeightedFontFamily{FontFamily: "Courier New"}
-		style.BackgroundColor = greyColor(codeBackgroundGrey)
-		fields = append(fields, "weightedFontFamily", "backgroundColor")
+func docsFormatColor(hex, flag string) (*docs.OptionalColor, error) {
+	color, err := docsformat.Color(hex, flag)
+	if err != nil {
+		return nil, usage(err.Error())
 	}
-	if font := strings.TrimSpace(f.FontFamily); font != "" {
-		style.WeightedFontFamily = &docs.WeightedFontFamily{FontFamily: font}
-		fields = append(fields, "weightedFontFamily")
-	}
-	if f.FontSize < 0 {
-		return nil, false, usage("--font-size must be positive")
-	}
-	if f.FontSize > 0 {
-		style.FontSize = &docs.Dimension{Magnitude: f.FontSize, Unit: "PT"}
-		fields = append(fields, "fontSize")
-	}
-	if color := strings.TrimSpace(f.TextColor); color != "" {
-		optionalColor, err := docsFormatColor(color, "--text-color")
-		if err != nil {
-			return nil, false, err
-		}
-		style.ForegroundColor = optionalColor
-		fields = append(fields, "foregroundColor")
-	}
-	if color := strings.TrimSpace(f.BgColor); color != "" {
-		optionalColor, err := docsFormatColor(color, "--bg-color")
-		if err != nil {
-			return nil, false, err
-		}
-		style.BackgroundColor = optionalColor
-		fields = append(fields, "backgroundColor")
-	}
-	if strings.TrimSpace(f.link) != "" && f.noLink {
-		return nil, false, usage("--link and --no-link cannot be combined")
-	}
-	if link := strings.TrimSpace(f.link); link != "" {
-		resolved := f.resolvedLink
-		if resolved == nil {
-			var err error
-			resolved, err = docsFormatLink(link)
-			if err != nil {
-				return nil, false, err
-			}
-		}
-		style.Link = resolved
-		fields = append(fields, "link")
-	}
-	if f.noLink {
-		style.NullFields = append(style.NullFields, "Link")
-		fields = append(fields, "link")
-	}
-	addBoolStyle := func(set, unset bool, field, forceField string, apply func(bool)) error {
-		if set && unset {
-			return usage(fmt.Sprintf("--%s and --no-%s cannot be combined", field, field))
-		}
-		if set || unset {
-			apply(set)
-			fields = append(fields, field)
-			if unset {
-				style.ForceSendFields = append(style.ForceSendFields, forceField)
-			}
-		}
-		return nil
-	}
-	if err := addBoolStyle(f.Bold, f.NoBold, "bold", "Bold", func(v bool) { style.Bold = v }); err != nil {
-		return nil, false, err
-	}
-	if err := addBoolStyle(f.Italic, f.NoItalic, "italic", "Italic", func(v bool) { style.Italic = v }); err != nil {
-		return nil, false, err
-	}
-	if err := addBoolStyle(f.Underline, f.NoUnderline, "underline", "Underline", func(v bool) { style.Underline = v }); err != nil {
-		return nil, false, err
-	}
-	if err := addBoolStyle(f.Strikethrough, f.NoStrike, "strikethrough", "Strikethrough", func(v bool) { style.Strikethrough = v }); err != nil {
-		return nil, false, err
-	}
-
-	if len(fields) == 0 {
-		return nil, false, nil
-	}
-	return &docs.Request{UpdateTextStyle: &docs.UpdateTextStyleRequest{
-		Range:     &docs.Range{StartIndex: start, EndIndex: end, TabId: tabID},
-		TextStyle: style,
-		Fields:    strings.Join(fields, ","),
-	}}, true, nil
+	return color, nil
 }
 
 func (f DocsFormatFlags) withLinkFlags(link string, noLink bool) DocsFormatFlags {
@@ -409,21 +315,6 @@ func (f DocsFormatFlags) withResolvedLink(ctx context.Context, svc *docs.Service
 	return f, nil
 }
 
-func docsFormatLink(value string) (*docs.Link, error) {
-	link := strings.TrimSpace(value)
-	if link == "" {
-		return nil, usage("--link target cannot be empty")
-	}
-	if target, ok := strings.CutPrefix(link, "#"); ok {
-		target = strings.TrimSpace(target)
-		if target == "" {
-			return nil, usage("--link target cannot be empty")
-		}
-		return &docs.Link{BookmarkId: target}, nil
-	}
-	return &docs.Link{Url: link}, nil
-}
-
 func docsFormatInternalLink(doc *docs.Document, tab, target string) *docs.Link {
 	content, resolvedTabID, err := markdownHeadingLinkContent(doc, tab)
 	if err == nil && len(content) > 0 {
@@ -446,92 +337,4 @@ func docsFormatHeadingLink(target markdownHeadingTarget) *docs.Link {
 		return &docs.Link{Heading: &docs.HeadingLink{Id: target.headingID, TabId: target.tabID}}
 	}
 	return &docs.Link{HeadingId: target.headingID}
-}
-
-func (f DocsFormatFlags) buildParagraphStyleRequest(start, end int64, tabID string) (*docs.Request, bool, error) {
-	style := &docs.ParagraphStyle{}
-	var fields []string
-
-	if align := strings.TrimSpace(f.Alignment); align != "" {
-		resolved, err := docsFormatAlignment(align)
-		if err != nil {
-			return nil, false, err
-		}
-		style.Alignment = resolved
-		fields = append(fields, "alignment")
-	}
-	if f.LineSpacing < 0 {
-		return nil, false, usage("--line-spacing must be positive")
-	}
-	if f.LineSpacing > 0 {
-		style.LineSpacing = f.LineSpacing
-		fields = append(fields, "lineSpacing")
-	}
-	namedStyle, err := docsFormatNamedStyle(f.HeadingLevel, f.NamedStyle)
-	if err != nil {
-		return nil, false, err
-	}
-	if namedStyle != "" {
-		style.NamedStyleType = namedStyle
-		fields = append(fields, "namedStyleType")
-	}
-	if len(fields) == 0 {
-		return nil, false, nil
-	}
-	return &docs.Request{UpdateParagraphStyle: &docs.UpdateParagraphStyleRequest{
-		Range:          &docs.Range{StartIndex: start, EndIndex: end, TabId: tabID},
-		ParagraphStyle: style,
-		Fields:         strings.Join(fields, ","),
-	}}, true, nil
-}
-
-// docsFormatNamedStyle resolves the named paragraph style requested via
-// --heading-level (1..6 shortcut) and/or --named-style (full enum). The two
-// are mutually exclusive — supplying both is a usage error. Returns "" when
-// neither was supplied.
-func docsFormatNamedStyle(headingLevel *int, namedStyle string) (string, error) {
-	trimmed := strings.ToUpper(strings.TrimSpace(namedStyle))
-	if headingLevel != nil && trimmed != "" {
-		return "", usage("--heading-level and --named-style cannot be combined")
-	}
-	if headingLevel != nil {
-		if *headingLevel < 1 || *headingLevel > 6 {
-			return "", usage("--heading-level must be between 1 and 6")
-		}
-		return fmt.Sprintf("HEADING_%d", *headingLevel), nil
-	}
-	if trimmed == "" {
-		return "", nil
-	}
-	switch trimmed {
-	case docsNamedStyleNormalText, docsNamedStyleTitle, docsNamedStyleSubtitle,
-		docsNamedStyleHeading1, docsNamedStyleHeading2, docsNamedStyleHeading3,
-		docsNamedStyleHeading4, docsNamedStyleHeading5, docsNamedStyleHeading6:
-		return trimmed, nil
-	default:
-		return "", usage("--named-style must be one of NORMAL_TEXT, TITLE, SUBTITLE, HEADING_1..HEADING_6")
-	}
-}
-
-func docsFormatColor(hex, flag string) (*docs.OptionalColor, error) {
-	r, g, b, ok := parseHexColor(hex)
-	if !ok {
-		return nil, usage(fmt.Sprintf("%s must be #RRGGBB or #RGB", flag))
-	}
-	return &docs.OptionalColor{Color: &docs.Color{RgbColor: &docs.RgbColor{Red: r, Green: g, Blue: b}}}, nil
-}
-
-func docsFormatAlignment(value string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "left", "start":
-		return "START", nil
-	case "center", "centre":
-		return "CENTER", nil
-	case "right", "end":
-		return "END", nil
-	case "justify", "justified":
-		return "JUSTIFIED", nil
-	default:
-		return "", usage("--alignment must be left, center, right, justify, start, end, or justified")
-	}
 }

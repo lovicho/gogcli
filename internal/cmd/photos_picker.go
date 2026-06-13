@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	appconfig "github.com/steipete/gogcli/internal/config"
 	"github.com/steipete/gogcli/internal/googleapi"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/ui"
@@ -217,7 +218,15 @@ func (c *PhotosPickerDownloadCmd) Run(ctx context.Context, flags *RootFlags) err
 	if item.MediaFile != nil {
 		filename = item.MediaFile.Filename
 	}
-	dest, err := resolvePhotosDownloadDestPathParts(item.ID, filename, c.Out)
+	defaultDir := ""
+	if strings.TrimSpace(c.Out) == "" {
+		layout, layoutErr := commandLayout(ctx, appconfig.PathKindConfig)
+		if layoutErr != nil {
+			return layoutErr
+		}
+		defaultDir = layout.DriveDownloadsDir()
+	}
+	dest, err := resolvePhotosDownloadDestPathParts(item.ID, filename, c.Out, defaultDir)
 	if err != nil {
 		return err
 	}

@@ -11,8 +11,6 @@ import (
 	"testing"
 
 	"google.golang.org/api/drive/v3"
-
-	"github.com/steipete/gogcli/internal/config"
 )
 
 func TestExecute_DriveGet_JSON(t *testing.T) {
@@ -102,11 +100,6 @@ func TestExecute_DriveDownload_JSON(t *testing.T) {
 	}
 	if b, err := os.ReadFile(dest); err != nil || string(b) != "abc" {
 		t.Fatalf("file mismatch: err=%v body=%q", err, string(b))
-	}
-
-	// Sanity: downloads dir is still creatable (but we passed dest explicitly).
-	if _, err := config.EnsureDriveDownloadsDir(); err != nil {
-		t.Fatalf("EnsureDriveDownloadsDir: %v", err)
 	}
 }
 

@@ -83,15 +83,13 @@ func (c *GmailDraftsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return failEmptyExit(c.FailEmpty)
 	}
 
-	w, flush := tableWriter(ctx)
-	defer flush()
-	fmt.Fprintln(w, "ID\tMESSAGE_ID")
-	for _, d := range drafts {
-		msgID := ""
-		if d.Message != nil {
-			msgID = d.Message.Id
-		}
-		fmt.Fprintf(w, "%s\t%s\n", d.Id, msgID)
+	if err := outfmt.WriteTable(
+		ctx,
+		stdoutWriter(ctx),
+		compactGmailRows(drafts),
+		gmailDraftColumns(),
+	); err != nil {
+		return err
 	}
 	printNextPageHint(u, nextPageToken)
 	return nil
@@ -127,16 +125,24 @@ func (c *GmailDraftsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	msg := draft.Message
+	attachments := collectAttachments(msg.Payload)
+	attachDir := ""
+	if c.Download && msg.Id != "" && len(attachments) > 0 {
+		layout, layoutErr := commandLayout(ctx, config.PathKindConfig)
+		if layoutErr != nil {
+			return layoutErr
+		}
+		attachDir = layout.GmailAttachmentsDir()
+	}
 	if outfmt.IsJSON(ctx) {
 		out := map[string]any{"draft": draft}
 		if c.Download {
-			attachDir, err := config.EnsureGmailAttachmentsDir()
-			if err != nil {
-				return err
-			}
-			downloads, err := downloadAttachmentOutputs(ctx, svc, msg.Id, collectAttachments(msg.Payload), attachDir)
-			if err != nil {
-				return err
+			var downloads []attachmentDownloadOutput
+			if attachDir != "" {
+				downloads, err = downloadAttachmentOutputs(ctx, svc, msg.Id, attachments, attachDir)
+				if err != nil {
+					return err
+				}
 			}
 			out["downloaded"] = attachmentDownloadDraftOutputs(downloads)
 		}
@@ -157,14 +163,9 @@ func (c *GmailDraftsGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 		u.Out().Println("")
 	}
 
-	attachments := collectAttachments(msg.Payload)
 	printAttachmentSection(u.Out(), attachments)
 
-	if c.Download && msg.Id != "" && len(attachments) > 0 {
-		attachDir, err := config.EnsureGmailAttachmentsDir()
-		if err != nil {
-			return err
-		}
+	if attachDir != "" {
 		downloads, err := downloadAttachmentOutputs(ctx, svc, msg.Id, attachments, attachDir)
 		if err != nil {
 			return err

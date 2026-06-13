@@ -35,24 +35,6 @@ func TestPaths_CreateDirs(t *testing.T) {
 		t.Fatalf("expected keyring dir: %v", statErr)
 	}
 
-	downloadsDir, err := EnsureDriveDownloadsDir()
-	if err != nil {
-		t.Fatalf("EnsureDriveDownloadsDir: %v", err)
-	}
-
-	if _, statErr := os.Stat(downloadsDir); statErr != nil {
-		t.Fatalf("expected downloads dir: %v", statErr)
-	}
-
-	attachmentsDir, err := EnsureGmailAttachmentsDir()
-	if err != nil {
-		t.Fatalf("EnsureGmailAttachmentsDir: %v", err)
-	}
-
-	if _, statErr := os.Stat(attachmentsDir); statErr != nil {
-		t.Fatalf("expected attachments dir: %v", statErr)
-	}
-
 	watchDir, err := EnsureGmailWatchDir()
 	if err != nil {
 		t.Fatalf("EnsureGmailWatchDir: %v", err)
