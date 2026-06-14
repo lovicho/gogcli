@@ -117,11 +117,11 @@ func (c *GmailWatchStatusCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
-	store, err := loadGmailWatchStore(ctx, account)
+	state, err := readGmailWatchState(ctx, account)
 	if err != nil {
 		return err
 	}
-	return writeWatchState(ctx, store.Get(), c.ShowSecrets)
+	return writeWatchState(ctx, state, c.ShowSecrets)
 }
 
 type GmailWatchRenewCmd struct {
@@ -353,11 +353,7 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		hook = nil
 	}
 	if c.SaveHook && hook != nil {
-		if updateErr := store.Update(func(s *gmailWatchState) error {
-			s.Hook = hook
-			s.UpdatedAtMs = time.Now().UnixMilli()
-			return nil
-		}); updateErr != nil {
+		if updateErr := store.SetHook(hook, time.Now()); updateErr != nil {
 			return updateErr
 		}
 	}

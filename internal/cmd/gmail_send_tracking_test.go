@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/steipete/gogcli/internal/mailmime"
 	"github.com/steipete/gogcli/internal/outfmt"
 	"github.com/steipete/gogcli/internal/tracking"
 	"github.com/steipete/gogcli/internal/ui"
@@ -31,11 +32,15 @@ func TestResolveTrackingConfig(t *testing.T) {
 	cmd.BodyHTML = ""
 	if _, err := cmd.resolveTrackingConfig(ctx, "a@b.com", []string{"a@b.com"}, nil, nil, cmd.BodyHTML); err == nil {
 		t.Fatalf("expected error for missing body html")
+	} else if ExitCode(err) != 2 {
+		t.Fatalf("missing HTML exit = %d, want 2: %v", ExitCode(err), err)
 	}
 
 	cmd.BodyHTML = "<html></html>"
 	if _, err := cmd.resolveTrackingConfig(ctx, "a@b.com", []string{"a@b.com"}, nil, nil, cmd.BodyHTML); err == nil {
 		t.Fatalf("expected error for unconfigured tracking")
+	} else if ExitCode(err) != exitCodeConfig {
+		t.Fatalf("unconfigured tracking exit = %d, want %d: %v", ExitCode(err), exitCodeConfig, err)
 	}
 
 	key, err := tracking.GenerateKey()
@@ -82,13 +87,13 @@ func TestWriteSendResults_JSONMultiple(t *testing.T) {
 		if err := writeSendResults(ctx, u, "from@example.com", []sendResult{
 			{MessageID: "m1", ThreadID: "t1", To: "a@example.com"},
 			{MessageID: "m2", ThreadID: "t2", To: "b@example.com"},
-		}, []mailAttachmentMetadata{{Filename: "report.pdf", Size: 42}}); err != nil {
+		}, []mailmime.AttachmentMetadata{{Filename: "report.pdf", Size: 42}}); err != nil {
 			t.Fatalf("writeSendResults: %v", err)
 		}
 	})
 	var parsed struct {
 		Messages []struct {
-			Attachments []mailAttachmentMetadata `json:"attachments"`
+			Attachments []mailmime.AttachmentMetadata `json:"attachments"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal([]byte(out), &parsed); err != nil {

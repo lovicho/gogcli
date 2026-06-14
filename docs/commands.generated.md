@@ -217,7 +217,6 @@ Generated from `gog schema --json`.
     - [`gog contacts (contact) get (info,show) <resourceName>`](commands/gog-contacts-get.md) - Get a contact
     - [`gog contacts (contact) list (ls) [flags]`](commands/gog-contacts-list.md) - List contacts
     - [`gog contacts (contact) other <command>`](commands/gog-contacts-other.md) - Other contacts
-      - [`gog contacts (contact) other delete <resourceName>`](commands/gog-contacts-other-delete.md) - Delete an other contact
       - [`gog contacts (contact) other list [flags]`](commands/gog-contacts-other-list.md) - List other contacts
       - [`gog contacts (contact) other search <query> ... [flags]`](commands/gog-contacts-other-search.md) - Search other contacts
     - [`gog contacts (contact) raw <identifier> [flags]`](commands/gog-contacts-raw.md) - Dump raw People API response as JSON (People.Get; lossless; for scripting and LLM consumption)
@@ -631,6 +630,8 @@ Generated from `gog schema --json`.
       - [`gog youtube (yt) playlists (playlist) add --playlist-id=STRING --video-id=STRING [flags]`](commands/gog-youtube-playlists-add.md) - Add a video to a playlist
       - [`gog youtube (yt) playlists (playlist) create --title=STRING [flags]`](commands/gog-youtube-playlists-create.md) - Create a new playlist
       - [`gog youtube (yt) playlists (playlist) delete (del) <playlist-id>`](commands/gog-youtube-playlists-delete.md) - Delete a playlist
+      - [`gog youtube (yt) playlists (playlist) items (item) <command>`](commands/gog-youtube-playlists-items.md) - List the videos inside a playlist
+        - [`gog youtube (yt) playlists (playlist) items (item) list (ls) [flags]`](commands/gog-youtube-playlists-items-list.md) - List the videos inside a playlist
       - [`gog youtube (yt) playlists (playlist) list (ls) [flags]`](commands/gog-youtube-playlists-list.md) - List playlists by channel or authenticated user
       - [`gog youtube (yt) playlists (playlist) remove (rm) [flags]`](commands/gog-youtube-playlists-remove.md) - Remove a video from a playlist
     - [`gog youtube (yt) search (find) <command>`](commands/gog-youtube-search.md) - Search YouTube for videos, channels, or playlists
@@ -640,7 +641,7 @@ Generated from `gog schema --json`.
       - [`gog youtube (yt) subscriptions (subscription) subscribe [flags]`](commands/gog-youtube-subscriptions-subscribe.md) - Subscribe to a channel
       - [`gog youtube (yt) subscriptions (subscription) unsubscribe [flags]`](commands/gog-youtube-subscriptions-unsubscribe.md) - Unsubscribe from a channel
     - [`gog youtube (yt) videos (video) <command>`](commands/gog-youtube-videos.md) - List or get videos
-      - [`gog youtube (yt) videos (video) list (ls) [flags]`](commands/gog-youtube-videos-list.md) - List videos by ID or chart
+      - [`gog youtube (yt) videos (video) list (ls) [flags]`](commands/gog-youtube-videos-list.md) - List videos by ID, chart, or your rating
   - [`gog zoom <command> [flags]`](commands/gog-zoom.md) - Zoom
     - [`gog zoom auth <command>`](commands/gog-zoom-auth.md) - Manage Zoom Server-to-Server OAuth credentials
       - [`gog zoom auth doctor [flags]`](commands/gog-zoom-auth-doctor.md) - Validate Zoom credentials

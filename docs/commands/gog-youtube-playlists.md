@@ -19,6 +19,7 @@ gog youtube (yt) playlists (playlist) <command>
 - [gog youtube playlists add](gog-youtube-playlists-add.md) - Add a video to a playlist
 - [gog youtube playlists create](gog-youtube-playlists-create.md) - Create a new playlist
 - [gog youtube playlists delete](gog-youtube-playlists-delete.md) - Delete a playlist
+- [gog youtube playlists items](gog-youtube-playlists-items.md) - List the videos inside a playlist
 - [gog youtube playlists list](gog-youtube-playlists-list.md) - List playlists by channel or authenticated user
 - [gog youtube playlists remove](gog-youtube-playlists-remove.md) - Remove a video from a playlist
 

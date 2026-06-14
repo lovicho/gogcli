@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.25.1 - Unreleased
+## 0.26.1 - Unreleased
+
+### Added
+
+- YouTube: add `playlists items list` for public and private playlist contents with pagination, and `videos list --my-rating like|dislike` for authenticated rating history. (#787) — thanks @coeur-de-loup.
+
+### Fixed
+
+- Docs: reject ambiguous `docs cat --tab ... --all-tabs` and MCP `docs_get` requests before contacting the Docs API. (#801) — thanks @kiranmagic7.
+
+## 0.26.0 - 2026-06-14
 
 ### Added
 
@@ -9,6 +19,14 @@
 
 ### Fixed
 
+- Contacts: remove the nonfunctional `contacts other delete` command; the public People API has no delete operation for Other Contacts, and its copy-then-delete workaround reported success without removing the source. Existing invocations now return unknown-command usage.
+- Meet: return empty history and participant collections as JSON arrays, and make `participants --fail-empty` control the no-conference exit instead of misclassifying it as invalid usage.
+- MCP: validate typed tool calls against their closed schemas before command execution, rejecting unknown fields, wrong types, and missing required fields.
+- CLI: classify malformed OAuth token imports as usage errors and missing Gmail tracking setup as configuration errors.
+- CLI: classify invalid Docs batch IDs and incomplete Gmail filter definitions as usage errors with exit code 2.
+- Docs: keep batch list/show, batch target validation, and batch end dry-runs read-only without creating state directories or lock files.
+- Docs: persist successful split and individual batch submissions before reporting a missing response revision, preventing retries from submitting already-applied requests again.
+- Gmail: make `watch status` read atomic watch state without creating state directories or lock files.
 - Gmail: make `watch serve --dry-run` return a secret-free daemon plan without creating/locking/updating watch state, saving hook settings, creating clients, or opening a socket.
 - Backup: make status, verify, cat, and export use read-only repository setup and file-free dry-run plans, support pre-created empty repository directories, keep failed clones clean, disable Git credential prompts under `--no-input`, redact credentials from Git errors, preserve clone failures instead of initializing a new repository, and give status/verify the existing `--no-pull` flags while retaining hidden compatibility for legacy write-only options.
 - Auth: make `auth manage --dry-run` preview the browser flow without touching the keyring or server, and fail fast when real execution uses `--no-input`.
@@ -16,6 +34,10 @@
 - Docs: make positional `docs sed` image selectors deterministic by ordering anchored positioned images with document content and unanchored positioned images by object ID.
 - Docs: make addressed `docs sed` substitutions honor nth-match flags, use UTF-16 document indices, and ignore table or table-of-contents preview text instead of producing invalid mutation ranges.
 - Docs: keep `docs sed` formatting, footnote, break, and structural targets aligned when earlier image or text replacements change document length.
+- Docs: avoid overlapping deletes when a `docs sed` addressed range includes the final paragraph.
+- Docs: make `docs sed` table-cell substitutions use UTF-16 indices, honor nth-match flags, expand captures independently per wildcard cell, refetch before repeated same-cell expressions, and report the exact replacement count.
+- Docs: make `docs sed` table-creation placeholders use UTF-16 indices and share cell-fill Markdown range planning with table-cell replacement.
+- Docs: validate unaddressed `docs sed` delete/insert/append regexes before fetching and keep their top-level paragraph selection and reverse mutation ordering consistent with addressed commands.
 - Auth: clarify that `auth import` always requires a refresh-token source and only optionally accepts a current access token plus expiry.
 - Calendar: make alias set/unset dry-runs preview config changes without writing `config.json`.
 - Dry-run safety: keep Drive, Contacts, Slides thumbnail, backup plaintext, OAuth token, Gmail filter, Photos, and Photos Picker downloads/exports offline and prevent local file or secret output.

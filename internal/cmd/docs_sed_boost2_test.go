@@ -101,63 +101,6 @@ func TestProcessCellExprs_TableRef(t *testing.T) {
 }
 
 // =============================================================================
-// applyDeferredBullets coverage
-// =============================================================================
-
-func TestApplyDeferredBullets_NoBullets(t *testing.T) {
-	doc := &docs.Document{
-		DocumentId: "test-doc",
-		Body: &docs.Body{Content: []*docs.StructuralElement{
-			{Paragraph: &docs.Paragraph{
-				Elements: []*docs.ParagraphElement{
-					{TextRun: &docs.TextRun{Content: "no bullets\n"}, StartIndex: 1, EndIndex: 12},
-				},
-			}, StartIndex: 1, EndIndex: 12},
-		}},
-	}
-	svc, cleanup := newSedTestServer(t, doc)
-	defer cleanup()
-
-	cmd := &DocsSedCmd{}
-	err := cmd.applyDeferredBullets(context.Background(), svc, "test-doc")
-	assert.NoError(t, err)
-}
-
-func TestApplyDeferredBullets_WithTabs(t *testing.T) {
-	doc := &docs.Document{
-		DocumentId: "test-doc",
-		Body: &docs.Body{Content: []*docs.StructuralElement{
-			{Paragraph: &docs.Paragraph{
-				Elements: []*docs.ParagraphElement{
-					{TextRun: &docs.TextRun{Content: "- Item 1\n"}, StartIndex: 1, EndIndex: 10},
-				},
-			}, StartIndex: 1, EndIndex: 10},
-			{Paragraph: &docs.Paragraph{
-				Elements: []*docs.ParagraphElement{
-					{TextRun: &docs.TextRun{Content: "\t- Sub item\n"}, StartIndex: 10, EndIndex: 22},
-				},
-			}, StartIndex: 10, EndIndex: 22},
-		}},
-	}
-	svc, cleanup := newSedTestServer(t, doc)
-	defer cleanup()
-
-	cmd := &DocsSedCmd{}
-	err := cmd.applyDeferredBullets(context.Background(), svc, "test-doc")
-	assert.NoError(t, err)
-}
-
-func TestApplyDeferredBullets_NilBody(t *testing.T) {
-	doc := &docs.Document{DocumentId: "test-doc"}
-	svc, cleanup := newSedTestServer(t, doc)
-	defer cleanup()
-
-	cmd := &DocsSedCmd{}
-	err := cmd.applyDeferredBullets(context.Background(), svc, "test-doc")
-	assert.NoError(t, err)
-}
-
-// =============================================================================
 // runManualInner coverage — more paths
 // =============================================================================
 

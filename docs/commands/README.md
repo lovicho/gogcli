@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 643.
+Generated pages: 644.
 
 ## Top-level Commands
 
@@ -268,7 +268,6 @@ Generated pages: 643.
     - [gog contacts get](gog-contacts-get.md) - Get a contact
     - [gog contacts list](gog-contacts-list.md) - List contacts
     - [gog contacts other](gog-contacts-other.md) - Other contacts
-      - [gog contacts other delete](gog-contacts-other-delete.md) - Delete an other contact
       - [gog contacts other list](gog-contacts-other-list.md) - List other contacts
       - [gog contacts other search](gog-contacts-other-search.md) - Search other contacts
     - [gog contacts raw](gog-contacts-raw.md) - Dump raw People API response as JSON (People.Get; lossless; for scripting and LLM consumption)
@@ -682,6 +681,8 @@ Generated pages: 643.
       - [gog youtube playlists add](gog-youtube-playlists-add.md) - Add a video to a playlist
       - [gog youtube playlists create](gog-youtube-playlists-create.md) - Create a new playlist
       - [gog youtube playlists delete](gog-youtube-playlists-delete.md) - Delete a playlist
+      - [gog youtube playlists items](gog-youtube-playlists-items.md) - List the videos inside a playlist
+        - [gog youtube playlists items list](gog-youtube-playlists-items-list.md) - List the videos inside a playlist
       - [gog youtube playlists list](gog-youtube-playlists-list.md) - List playlists by channel or authenticated user
       - [gog youtube playlists remove](gog-youtube-playlists-remove.md) - Remove a video from a playlist
     - [gog youtube search](gog-youtube-search.md) - Search YouTube for videos, channels, or playlists
@@ -691,7 +692,7 @@ Generated pages: 643.
       - [gog youtube subscriptions subscribe](gog-youtube-subscriptions-subscribe.md) - Subscribe to a channel
       - [gog youtube subscriptions unsubscribe](gog-youtube-subscriptions-unsubscribe.md) - Unsubscribe from a channel
     - [gog youtube videos](gog-youtube-videos.md) - List or get videos
-      - [gog youtube videos list](gog-youtube-videos-list.md) - List videos by ID or chart
+      - [gog youtube videos list](gog-youtube-videos-list.md) - List videos by ID, chart, or your rating
   - [gog zoom](gog-zoom.md) - Zoom
     - [gog zoom auth](gog-zoom-auth.md) - Manage Zoom Server-to-Server OAuth credentials
       - [gog zoom auth doctor](gog-zoom-auth-doctor.md) - Validate Zoom credentials

@@ -283,40 +283,6 @@ func TestRunBatch_ImageExpressions(t *testing.T) {
 }
 
 // =============================================================================
-// applyDeferredBullets — with existing bullets
-// =============================================================================
-
-func TestApplyDeferredBullets_ExistingBullets(t *testing.T) {
-	doc := &docs.Document{
-		DocumentId: "test-doc",
-		Body: &docs.Body{Content: []*docs.StructuralElement{
-			{Paragraph: &docs.Paragraph{
-				Bullet: &docs.Bullet{ListId: "list1"},
-				Elements: []*docs.ParagraphElement{
-					{TextRun: &docs.TextRun{Content: "- Item 1\n"}, StartIndex: 1, EndIndex: 10},
-				},
-			}, StartIndex: 1, EndIndex: 10},
-			{Paragraph: &docs.Paragraph{
-				Elements: []*docs.ParagraphElement{
-					{TextRun: &docs.TextRun{Content: "\t- Sub item\n"}, StartIndex: 10, EndIndex: 22},
-				},
-			}, StartIndex: 10, EndIndex: 22},
-			{Paragraph: &docs.Paragraph{
-				Elements: []*docs.ParagraphElement{
-					{TextRun: &docs.TextRun{Content: "- Item 2\n"}, StartIndex: 22, EndIndex: 31},
-				},
-			}, StartIndex: 22, EndIndex: 31},
-		}},
-	}
-	svc, cleanup := newSedTestServer(t, doc)
-	defer cleanup()
-
-	cmd := &DocsSedCmd{}
-	err := cmd.applyDeferredBullets(context.Background(), svc, "test-doc")
-	assert.NoError(t, err)
-}
-
-// =============================================================================
 // processFootnotes coverage
 // =============================================================================
 

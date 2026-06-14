@@ -23,7 +23,7 @@ func (c *DocsSedCmd) runManual(ctx context.Context, u *ui.UI, account, id string
 
 	// Apply deferred bullet requests via re-fetch to get current positions
 	if len(bulletReqs) > 0 {
-		if err := c.applyDeferredBullets(ctx, docsSvc, id); err != nil {
+		if err := docssed.NewServiceExecutor(docsSvc).ApplyDeferredBullets(ctx, id); err != nil {
 			return fmt.Errorf("apply bullets: %w", err)
 		}
 	}
