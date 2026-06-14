@@ -8,55 +8,37 @@ import (
 	"strings"
 
 	"google.golang.org/api/gmail/v1"
+
+	"github.com/steipete/gogcli/internal/gmailcontent"
+	"github.com/steipete/gogcli/internal/mailmime"
 )
 
 // buildReplyAllRecipients constructs To and Cc lists for a reply-all.
 // Per RFC 5322: if Reply-To header is present, use it instead of From.
 func buildReplyAllRecipients(info *replyInfo, selfEmail string) (to, cc []string) {
-	toAddrs := make([]string, 0, 1+len(info.ToAddrs))
-
-	replyAddress := info.ReplyToAddr
-	if replyAddress == "" {
-		replyAddress = info.FromAddr
+	recipients, err := buildReplyRecipients(info, []string{selfEmail}, true, nil, nil, nil, nil)
+	if err != nil {
+		return []string{}, []string{}
 	}
-	if replyAddrs := parseEmailAddresses(replyAddress); len(replyAddrs) > 0 {
-		toAddrs = append(toAddrs, replyAddrs...)
-	}
-	toAddrs = append(toAddrs, info.ToAddrs...)
-
-	toAddrs = filterOutSelf(toAddrs, selfEmail)
-	toAddrs = deduplicateAddresses(toAddrs)
-
-	ccAddrs := filterOutSelf(info.CcAddrs, selfEmail)
-	ccAddrs = deduplicateAddresses(ccAddrs)
-
-	toSet := make(map[string]bool)
-	for _, addr := range toAddrs {
-		toSet[strings.ToLower(addr)] = true
-	}
-	filteredCc := make([]string, 0, len(ccAddrs))
-	for _, addr := range ccAddrs {
-		if !toSet[strings.ToLower(addr)] {
-			filteredCc = append(filteredCc, addr)
-		}
-	}
-
-	return toAddrs, filteredCc
+	return formatMailboxes(recipients.To), formatMailboxes(recipients.Cc)
 }
 
 // replyInfo contains all information extracted from the original message for replying.
 type replyInfo struct {
-	InReplyTo   string
-	References  string
-	ThreadID    string
-	FromAddr    string
-	ReplyToAddr string
-	ToAddrs     []string
-	CcAddrs     []string
-	Date        string
-	Subject     string
-	Body        string
-	BodyHTML    string
+	InReplyTo       string
+	References      string
+	ThreadID        string
+	FromAddr        string
+	ReplyToAddr     string
+	ToHeader        string
+	CcHeader        string
+	ToAddrs         []string
+	CcAddrs         []string
+	Date            string
+	Subject         string
+	Body            string
+	BodyHTML        string
+	InlineResources []mailmime.Attachment
 }
 
 func replyHeaders(ctx context.Context, svc *gmail.Service, replyToMessageID string) (inReplyTo string, references string, threadID string, err error) {
@@ -80,6 +62,12 @@ func fetchReplyInfo(ctx context.Context, svc *gmail.Service, replyToMessageID st
 			return nil, err
 		}
 		info := replyInfoFromMessage(msg, includeQuoteBodies)
+		if includeQuoteBodies {
+			info.InlineResources, err = preserveReferencedInlineResources(ctx, svc, msg.Id, msg.Payload, info.BodyHTML)
+			if err != nil {
+				return nil, fmt.Errorf("preserve quoted inline images: %w", err)
+			}
+		}
 		if info.InReplyTo == "" {
 			return nil, fmt.Errorf("reply target message %s has no Message-ID header; cannot set In-Reply-To/References", replyToMessageID)
 		}
@@ -106,6 +94,12 @@ func fetchReplyInfo(ctx context.Context, svc *gmail.Service, replyToMessageID st
 	}
 
 	info := replyInfoFromMessage(msg, includeQuoteBodies)
+	if includeQuoteBodies {
+		info.InlineResources, err = preserveReferencedInlineResources(ctx, svc, msg.Id, msg.Payload, info.BodyHTML)
+		if err != nil {
+			return nil, fmt.Errorf("preserve quoted inline images: %w", err)
+		}
+	}
 	if info.ThreadID == "" {
 		info.ThreadID = thread.Id
 	}
@@ -138,19 +132,21 @@ func replyInfoFromMessage(msg *gmail.Message, includeQuoteBodies bool) *replyInf
 		ThreadID:    msg.ThreadId,
 		FromAddr:    headerValue(msg.Payload, "From"),
 		ReplyToAddr: headerValue(msg.Payload, "Reply-To"),
-		ToAddrs:     parseEmailAddresses(headerValue(msg.Payload, "To")),
-		CcAddrs:     parseEmailAddresses(headerValue(msg.Payload, "Cc")),
+		ToHeader:    headerValue(msg.Payload, "To"),
+		CcHeader:    headerValue(msg.Payload, "Cc"),
 		Date:        headerValue(msg.Payload, "Date"),
 		Subject:     headerValue(msg.Payload, "Subject"),
 	}
+	info.ToAddrs = parseEmailAddresses(info.ToHeader)
+	info.CcAddrs = parseEmailAddresses(info.CcHeader)
 
 	if includeQuoteBodies {
-		plain := findPartBody(msg.Payload, "text/plain")
+		plain := gmailcontent.FindPartBody(msg.Payload, "text/plain")
 		// Some messages put HTML into text/plain; never dump raw HTML into the plain quote.
-		if plain != "" && !looksLikeHTML(plain) {
+		if plain != "" && !gmailcontent.LooksLikeHTML(plain) {
 			info.Body = plain
 		}
-		info.BodyHTML = findPartBody(msg.Payload, "text/html")
+		info.BodyHTML = gmailcontent.FindPartBody(msg.Payload, "text/html")
 	}
 
 	messageID := headerValue(msg.Payload, "Message-ID")
@@ -270,9 +266,19 @@ func applyQuoteToBodies(plainBody string, htmlBody string, quote bool, info *rep
 	}
 
 	userPlain := plainBody
-	outPlain := plainBody
-	if info.Body != "" {
-		outPlain += formatQuotedMessage(info.FromAddr, info.Date, info.Body)
+	hasHTMLReply := strings.TrimSpace(htmlBody) != ""
+	if strings.TrimSpace(userPlain) == "" && hasHTMLReply {
+		userPlain = htmlToPlainText(htmlBody)
+	}
+
+	quotedPlain := info.Body
+	if strings.TrimSpace(quotedPlain) == "" && strings.TrimSpace(info.BodyHTML) != "" {
+		quotedPlain = htmlToPlainText(info.BodyHTML)
+	}
+
+	outPlain := userPlain
+	if quotedPlain != "" && (!hasHTMLReply || strings.TrimSpace(userPlain) != "") {
+		outPlain += formatQuotedMessage(info.FromAddr, info.Date, quotedPlain)
 	}
 
 	quoteContent := info.BodyHTML

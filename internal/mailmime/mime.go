@@ -24,15 +24,19 @@ var (
 	errRandomSourceRequired     = errors.New("random source is required")
 	errAttachmentReaderRequired = errors.New("attachment file reader is required")
 	errHeaderValueNewline       = errors.New("header value contains newline")
+	errInlineContentIDRequired  = errors.New("inline attachment missing Content-ID")
 )
 
 // Attachment describes an RFC822 attachment from bytes or a file path.
 type Attachment struct {
-	Path     string
-	Filename string
-	MIMEType string
-	Data     []byte
-	DataSet  bool
+	Path            string
+	Filename        string
+	MIMEType        string
+	Data            []byte
+	DataSet         bool
+	Inline          bool
+	ContentID       string
+	ContentLocation string
 }
 
 // AttachmentMetadata describes a prepared attachment.
@@ -179,85 +183,168 @@ func BuildRFC822(opts Options, cfg Config) ([]byte, error) {
 	if prepareErr != nil {
 		return nil, prepareErr
 	}
-
-	if len(opts.Attachments) == 0 {
-		switch {
-		case hasPlain && hasHTML:
-			altBoundary, err := randomBoundary(cfg.Random)
-			if err != nil {
-				return nil, err
-			}
-
-			writeHeader(&b, "Content-Type", fmt.Sprintf("multipart/alternative; boundary=%q", altBoundary))
-			b.WriteString("\r\n")
-
-			writeTextPart(&b, altBoundary, "text/plain; charset=\"utf-8\"", plainBody)
-			writeTextPart(&b, altBoundary, "text/html; charset=\"utf-8\"", htmlBody)
-			fmt.Fprintf(&b, "--%s--\r\n", altBoundary)
-
-			return b.Bytes(), nil
-		case hasHTML && !hasPlain:
-			writeHeader(&b, "Content-Type", "text/html; charset=\"utf-8\"")
-			writeHeader(&b, "Content-Transfer-Encoding", textTransferEncoding(htmlBody))
-			b.WriteString("\r\n")
-			writeBodyWithTrailingCRLF(&b, htmlBody)
-
-			return b.Bytes(), nil
-		default:
-			writeHeader(&b, "Content-Type", "text/plain; charset=\"utf-8\"")
-			writeHeader(&b, "Content-Transfer-Encoding", "quoted-printable")
-			b.WriteString("\r\n")
-			writeQuotedPrintableBody(&b, plainBody)
-
-			return b.Bytes(), nil
-		}
-	}
-
-	mixedBoundary, err := randomBoundary(cfg.Random)
-	if err != nil {
-		return nil, err
-	}
-
-	writeHeader(&b, "Content-Type", fmt.Sprintf("multipart/mixed; boundary=%q", mixedBoundary))
-	b.WriteString("\r\n")
-
-	// Body part
-	fmt.Fprintf(&b, "--%s\r\n", mixedBoundary)
+	inlineAttachments, regularAttachments := splitInlineAttachments(attachments)
 
 	switch {
-	case hasPlain && hasHTML:
-		altBoundary, err := randomBoundary(cfg.Random)
+	case len(inlineAttachments) == 0 && len(regularAttachments) == 0:
+		if err := writeBodyEntity(&b, plainBody, htmlBody, hasPlain, hasHTML, cfg.Random); err != nil {
+			return nil, err
+		}
+	case len(regularAttachments) == 0:
+		if err := writeRelatedEntity(&b, plainBody, htmlBody, hasPlain, hasHTML, inlineAttachments, cfg.Random); err != nil {
+			return nil, err
+		}
+	default:
+		mixedBoundary, err := randomBoundary(cfg.Random)
 		if err != nil {
 			return nil, err
 		}
 
-		fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", altBoundary)
-		writeTextPart(&b, altBoundary, "text/plain; charset=\"utf-8\"", plainBody)
-		writeTextPart(&b, altBoundary, "text/html; charset=\"utf-8\"", htmlBody)
-		fmt.Fprintf(&b, "--%s--\r\n", altBoundary)
-	case hasHTML && !hasPlain:
+		writeHeader(&b, "Content-Type", fmt.Sprintf("multipart/mixed; boundary=%q", mixedBoundary))
+		b.WriteString("\r\n")
+
+		fmt.Fprintf(&b, "--%s\r\n", mixedBoundary)
+
+		if len(inlineAttachments) > 0 {
+			if err := writeRelatedEntity(&b, plainBody, htmlBody, hasPlain, hasHTML, inlineAttachments, cfg.Random); err != nil {
+				return nil, err
+			}
+		} else if err := writeBodyEntity(&b, plainBody, htmlBody, hasPlain, hasHTML, cfg.Random); err != nil {
+			return nil, err
+		}
+
+		for _, attachment := range regularAttachments {
+			fmt.Fprintf(&b, "\r\n--%s\r\n", mixedBoundary)
+
+			if err := writeAttachmentEntity(&b, attachment); err != nil {
+				return nil, err
+			}
+		}
+
+		fmt.Fprintf(&b, "--%s--\r\n", mixedBoundary)
+	}
+
+	return b.Bytes(), nil
+}
+
+func splitInlineAttachments(attachments []Attachment) (inline, regular []Attachment) {
+	for _, attachment := range attachments {
+		if attachment.Inline {
+			inline = append(inline, attachment)
+		} else {
+			regular = append(regular, attachment)
+		}
+	}
+
+	return inline, regular
+}
+
+func writeBodyEntity(b *bytes.Buffer, plainBody, htmlBody string, hasPlain, hasHTML bool, random io.Reader) error {
+	switch {
+	case hasPlain && hasHTML:
+		altBoundary, err := randomBoundary(random)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(b, "Content-Type: multipart/alternative; boundary=%q\r\n\r\n", altBoundary)
+		writeTextPart(b, altBoundary, "text/plain; charset=\"utf-8\"", plainBody)
+		writeTextPart(b, altBoundary, "text/html; charset=\"utf-8\"", htmlBody)
+		fmt.Fprintf(b, "--%s--\r\n", altBoundary)
+	case hasHTML:
 		b.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n")
-		fmt.Fprintf(&b, "Content-Transfer-Encoding: %s\r\n\r\n", textTransferEncoding(htmlBody))
-		writeBodyWithTrailingCRLF(&b, htmlBody)
+		fmt.Fprintf(b, "Content-Transfer-Encoding: %s\r\n\r\n", textTransferEncoding(htmlBody))
+		writeBodyWithTrailingCRLF(b, htmlBody)
 	default:
 		b.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 		b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
-		writeQuotedPrintableBody(&b, plainBody)
+		writeQuotedPrintableBody(b, plainBody)
 	}
 
-	// Attachments
-	for _, a := range attachments {
-		fmt.Fprintf(&b, "\r\n--%s\r\n", mixedBoundary)
-		fmt.Fprintf(&b, "Content-Type: %s\r\n", a.MIMEType)
-		b.WriteString("Content-Transfer-Encoding: base64\r\n")
-		fmt.Fprintf(&b, "Content-Disposition: attachment; %s\r\n\r\n", contentDispositionFilename(a.Filename))
-		b.WriteString(wrapBase64(a.Data))
-		b.WriteString("\r\n")
+	return nil
+}
+
+func writeRelatedEntity(b *bytes.Buffer, plainBody, htmlBody string, hasPlain, hasHTML bool, inline []Attachment, random io.Reader) error {
+	relatedBoundary, err := randomBoundary(random)
+	if err != nil {
+		return err
 	}
 
-	fmt.Fprintf(&b, "--%s--\r\n", mixedBoundary)
+	fmt.Fprintf(
+		b,
+		"Content-Type: multipart/related; boundary=%q; type=%q\r\n\r\n",
+		relatedBoundary,
+		relatedRootMIMEType(hasPlain, hasHTML),
+	)
+	fmt.Fprintf(b, "--%s\r\n", relatedBoundary)
 
-	return b.Bytes(), nil
+	if err := writeBodyEntity(b, plainBody, htmlBody, hasPlain, hasHTML, random); err != nil {
+		return err
+	}
+
+	for _, attachment := range inline {
+		fmt.Fprintf(b, "\r\n--%s\r\n", relatedBoundary)
+
+		if err := writeAttachmentEntity(b, attachment); err != nil {
+			return err
+		}
+	}
+
+	fmt.Fprintf(b, "--%s--\r\n", relatedBoundary)
+
+	return nil
+}
+
+func relatedRootMIMEType(hasPlain, hasHTML bool) string {
+	if hasPlain && hasHTML {
+		return "multipart/alternative"
+	}
+
+	if hasHTML {
+		return "text/html"
+	}
+
+	return "text/plain"
+}
+
+func writeAttachmentEntity(b *bytes.Buffer, attachment Attachment) error {
+	fmt.Fprintf(b, "Content-Type: %s\r\n", attachment.MIMEType)
+	b.WriteString("Content-Transfer-Encoding: base64\r\n")
+
+	if attachment.Inline {
+		contentID := normalizeContentID(attachment.ContentID)
+
+		if contentID == "" {
+			return errInlineContentIDRequired
+		}
+
+		if err := ValidateHeaderValue(contentID); err != nil {
+			return fmt.Errorf("invalid Content-ID: %w", err)
+		}
+
+		fmt.Fprintf(b, "Content-ID: <%s>\r\n", contentID)
+
+		if location := strings.TrimSpace(attachment.ContentLocation); location != "" {
+			if err := ValidateHeaderValue(location); err != nil {
+				return fmt.Errorf("invalid Content-Location: %w", err)
+			}
+
+			fmt.Fprintf(b, "Content-Location: %s\r\n", location)
+		}
+
+		fmt.Fprintf(b, "Content-Disposition: inline; %s\r\n\r\n", contentDispositionFilename(attachment.Filename))
+	} else {
+		fmt.Fprintf(b, "Content-Disposition: attachment; %s\r\n\r\n", contentDispositionFilename(attachment.Filename))
+	}
+
+	b.WriteString(wrapBase64(attachment.Data))
+	b.WriteString("\r\n")
+
+	return nil
+}
+
+func normalizeContentID(value string) string {
+	return strings.Trim(strings.TrimSpace(value), "<>")
 }
 
 // PrepareAttachments resolves filenames, MIME types, bytes, and metadata.

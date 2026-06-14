@@ -7,7 +7,7 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/steipete/gogcli/internal/mailmime"
+	"github.com/steipete/gogcli/internal/gmailcontent"
 	"github.com/steipete/gogcli/internal/ui"
 )
 
@@ -73,8 +73,8 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 	origCc := headerValue(origMsg.Payload, "Cc")
 	origDate := headerValue(origMsg.Payload, "Date")
 	origSubject := headerValue(origMsg.Payload, "Subject")
-	origPlain := findPartBody(origMsg.Payload, "text/plain")
-	origHTML := findPartBody(origMsg.Payload, "text/html")
+	origPlain := gmailcontent.FindPartBody(origMsg.Payload, "text/plain")
+	origHTML := gmailcontent.FindPartBody(origMsg.Payload, "text/html")
 
 	// Build forward subject (avoid stacking prefixes).
 	fwdSubject := buildForwardSubject(origSubject)
@@ -88,26 +88,12 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 		fwdHTML = formatForwardedMessageHTML(note, origFrom, origDate, origSubject, origTo, origCc, origHTML)
 	}
 
-	// Download and re-attach original attachments.
-	var attachments []mailmime.Attachment
-	if !c.SkipAttachments {
-		origAtts := collectAttachments(origMsg.Payload)
-		for _, att := range origAtts {
-			data, dlErr := fetchAttachmentBytes(ctx, svc, messageID, att.AttachmentID)
-			if dlErr != nil {
-				return fmt.Errorf("download attachment %q: %w", att.Filename, dlErr)
-			}
-			attachments = append(attachments, mailmime.Attachment{
-				Filename: att.Filename,
-				MIMEType: att.MimeType,
-				Data:     data,
-				DataSet:  true,
-			})
-		}
+	// Preserve CID-backed inline resources required by the forwarded HTML and,
+	// unless disabled, ordinary attachments.
+	attachments, err := preserveForwardMessageParts(ctx, svc, messageID, origMsg.Payload, origHTML, !c.SkipAttachments)
+	if err != nil {
+		return fmt.Errorf("preserve forwarded message parts: %w", err)
 	}
-
-	// Build threading info to keep the forward in the sender's thread.
-	info := replyInfoFromMessage(origMsg, false)
 
 	ccRecipients := splitCSV(c.Cc)
 	bccRecipients := splitCSV(c.Bcc)
@@ -117,7 +103,6 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 		Subject:     fwdSubject,
 		Body:        fwdPlain,
 		BodyHTML:    fwdHTML,
-		ReplyInfo:   info,
 		Attachments: attachments,
 	}, sendBatch{
 		To:  toRecipients,

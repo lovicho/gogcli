@@ -17,7 +17,7 @@ type GmailSendCmd struct {
 	To               string   `name:"to" help:"Recipients (comma-separated; required unless --reply-all is used)"`
 	Cc               string   `name:"cc" help:"CC recipients (comma-separated)"`
 	Bcc              string   `name:"bcc" help:"BCC recipients (comma-separated)"`
-	Subject          string   `name:"subject" help:"Subject (required)"`
+	Subject          string   `name:"subject" help:"Subject (required unless replying; inherited with Re: for replies)"`
 	Body             string   `name:"body" help:"Body (plain text; required unless --body-html is set)"`
 	BodyFile         string   `name:"body-file" help:"Body file path (plain text; '-' for stdin)"`
 	BodyHTML         string   `name:"body-html" help:"Body (HTML; optional)"`
@@ -68,6 +68,7 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	replyToMessageID := normalizeGmailMessageID(c.ReplyToMessageID)
 	threadID := normalizeGmailThreadID(c.ThreadID)
+	subject := strings.TrimSpace(c.Subject)
 
 	body, htmlBodyInput, err := resolveComposeBodyInputs(ctx, c.Body, c.BodyFile, c.BodyHTML, c.BodyHTMLFile)
 	if err != nil {
@@ -92,7 +93,7 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if strings.TrimSpace(c.To) == "" && !c.ReplyAll {
 		return usage("required: --to (or use --reply-all with --reply-to-message-id or --thread-id)")
 	}
-	if strings.TrimSpace(c.Subject) == "" {
+	if subject == "" && replyToMessageID == "" && threadID == "" {
 		return usage("required: --subject")
 	}
 	if strings.TrimSpace(body) == "" && strings.TrimSpace(htmlBodyInput) == "" {
@@ -120,7 +121,7 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 		"to":                  splitCSV(c.To),
 		"cc":                  splitCSV(c.Cc),
 		"bcc":                 splitCSV(c.Bcc),
-		"subject":             strings.TrimSpace(c.Subject),
+		"subject":             subject,
 		"reply_to_message_id": replyToMessageID,
 		"thread_id":           threadID,
 		"reply_all":           c.ReplyAll,
@@ -162,6 +163,9 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	if subject == "" {
+		subject = autoReplySubject("", replyInfo.Subject)
+	}
 
 	// Determine recipients
 	var toRecipients, ccRecipients []string
@@ -189,6 +193,7 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	atts = append(atts, replyInfo.InlineResources...)
 
 	var trackingCfg *tracking.Config
 	if c.Track {
@@ -202,7 +207,7 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	results, err := sendGmailBatches(ctx, svc, sendMessageOptions{
 		FromAddr:    from.header,
 		ReplyTo:     c.ReplyTo,
-		Subject:     c.Subject,
+		Subject:     subject,
 		Body:        body,
 		BodyHTML:    htmlBody,
 		ReplyInfo:   replyInfo,

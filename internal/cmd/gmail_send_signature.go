@@ -11,6 +11,7 @@ import (
 	"google.golang.org/api/gmail/v1"
 
 	"github.com/steipete/gogcli/internal/config"
+	"github.com/steipete/gogcli/internal/gmailcontent"
 )
 
 const maxComposeSignatureFileBytes = 1 << 20
@@ -55,7 +56,7 @@ func (c *GmailSendCmd) resolveComposeSignature(ctx context.Context, svc *gmail.S
 	}
 	htmlSignature := strings.TrimSpace(sendAs.Signature)
 	return composeSignature{
-		Plain: signatureHTMLToText(htmlSignature),
+		Plain: htmlToPlainText(htmlSignature),
 		HTML:  htmlSignature,
 	}, email, nil
 }
@@ -82,9 +83,9 @@ func readComposeSignatureFile(path string) (composeSignature, error) {
 	if value == "" {
 		return composeSignature{}, nil
 	}
-	if looksLikeHTML(value) {
+	if gmailcontent.LooksLikeHTML(value) {
 		return composeSignature{
-			Plain: signatureHTMLToText(value),
+			Plain: htmlToPlainText(value),
 			HTML:  value,
 		}, nil
 	}
@@ -109,14 +110,14 @@ func appendBodyBlock(body, block string) string {
 	return body + "\n\n" + block
 }
 
-func signatureHTMLToText(value string) string {
+func htmlToPlainText(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return ""
 	}
 	doc, err := nethtml.Parse(strings.NewReader(value))
 	if err != nil {
-		return stripHTMLTags(value)
+		return gmailcontent.StripHTMLTags(value)
 	}
 
 	var out strings.Builder
@@ -129,16 +130,21 @@ func signatureHTMLToText(value string) string {
 		case nethtml.TextNode:
 			out.WriteString(n.Data)
 		case nethtml.ElementNode:
+			if hiddenHTMLElement(n) {
+				return
+			}
 			switch strings.ToLower(n.Data) {
+			case "head", literalStyle, "script", "template", "noscript", literalTitle:
+				return
 			case "br":
-				writeSignatureNewline(&out)
+				writeHTMLNewline(&out)
 				return
 			case "div", "p", "li":
-				writeSignatureNewline(&out)
+				writeHTMLNewline(&out)
 				for child := n.FirstChild; child != nil; child = child.NextSibling {
 					walk(child)
 				}
-				writeSignatureNewline(&out)
+				writeHTMLNewline(&out)
 				return
 			}
 		}
@@ -158,7 +164,51 @@ func signatureHTMLToText(value string) string {
 	return strings.Join(kept, "\n")
 }
 
-func writeSignatureNewline(out *strings.Builder) {
+func hiddenHTMLElement(n *nethtml.Node) bool {
+	for _, attr := range n.Attr {
+		switch strings.ToLower(attr.Key) {
+		case "hidden":
+			return true
+		case "aria-hidden":
+			if strings.EqualFold(strings.TrimSpace(attr.Val), "true") {
+				return true
+			}
+		case "type":
+			if strings.EqualFold(n.Data, "input") && strings.EqualFold(strings.TrimSpace(attr.Val), "hidden") {
+				return true
+			}
+		case literalStyle:
+			if hiddenInlineStyle(attr.Val) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hiddenInlineStyle(value string) bool {
+	for declaration := range strings.SplitSeq(value, ";") {
+		property, setting, ok := strings.Cut(declaration, ":")
+		if !ok {
+			continue
+		}
+		property = strings.ToLower(strings.TrimSpace(property))
+		setting = strings.ToLower(strings.TrimSpace(setting))
+		switch property {
+		case "display", "visibility":
+			if strings.HasPrefix(setting, "none") || strings.HasPrefix(setting, "hidden") {
+				return true
+			}
+		case "mso-hide":
+			if strings.HasPrefix(setting, "all") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func writeHTMLNewline(out *strings.Builder) {
 	if out.Len() == 0 {
 		return
 	}

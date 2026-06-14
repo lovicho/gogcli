@@ -1093,7 +1093,7 @@ func TestBuildReplyAllRecipients(t *testing.T) {
 				CcAddrs:  nil,
 			},
 			selfEmail: "me@example.com",
-			expectTo:  []string{"sender@example.com"},
+			expectTo:  []string{`"Sender Name" <sender@example.com>`},
 			expectCc:  []string{},
 		},
 		{
@@ -1172,7 +1172,7 @@ func TestBuildReplyAllRecipients(t *testing.T) {
 				CcAddrs:     nil,
 			},
 			selfEmail: "me@example.com",
-			expectTo:  []string{"list@example.com", "alice@example.com"},
+			expectTo:  []string{`"Mailing List" <list@example.com>`, "alice@example.com"},
 			expectCc:  []string{},
 		},
 		{
