@@ -12,9 +12,11 @@ import (
 )
 
 type ContactsDedupeCmd struct {
-	Match     string `name:"match" help:"Match fields: email,phone,name" default:"email,phone"`
-	Max       int64  `name:"max" aliases:"limit" help:"Max contacts to scan (0 = all)" default:"0"`
-	FailEmpty bool   `name:"fail-empty" aliases:"non-empty,require-results" help:"Exit with code 3 if no duplicates"`
+	Match     string   `name:"match" help:"Match fields: email,phone,name" default:"email,phone"`
+	Max       int64    `name:"max" aliases:"limit" help:"Max contacts to scan (0 = all)" default:"0"`
+	Resources []string `name:"resource" help:"Limit dedupe to exact contact resource names (people/...); repeatable"`
+	Apply     bool     `name:"apply" aliases:"merge" help:"Merge duplicate groups and delete redundant contacts (requires confirmation)"`
+	FailEmpty bool     `name:"fail-empty" aliases:"non-empty,require-results" help:"Exit with code 3 if no duplicates"`
 }
 
 func (c *ContactsDedupeCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -31,24 +33,57 @@ func (c *ContactsDedupeCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if c.Max < 0 {
 		return usage("--max must be >= 0")
 	}
+	resources, err := normalizeContactsDedupeResources(c.Resources)
+	if err != nil {
+		return err
+	}
+	if len(resources) > 0 && c.Max != 0 {
+		return usage("--max cannot be combined with --resource")
+	}
 
 	svc, err := peopleContactsService(ctx, account)
 	if err != nil {
 		return err
 	}
-	contacts, err := contactsDedupeList(ctx, svc, c.Max)
+	var contacts []*people.Person
+	if len(resources) > 0 {
+		contacts, err = contactsDedupeGetResources(ctx, svc, resources)
+	} else {
+		contacts, err = contactsDedupeList(ctx, svc, c.Max)
+	}
 	if err != nil {
 		return wrapPeopleAPIError(err)
 	}
 
 	groups := buildContactsDedupeGroups(contacts, match)
-	if err := writeContactsDedupe(ctx, u, groups, len(contacts)); err != nil {
-		return err
-	}
 	if len(groups) == 0 {
+		if writeErr := writeContactsDedupe(ctx, u, groups, len(contacts)); writeErr != nil {
+			return writeErr
+		}
 		return failEmptyExit(c.FailEmpty)
 	}
-	return nil
+	if !c.Apply {
+		return writeContactsDedupe(ctx, u, groups, len(contacts))
+	}
+
+	plans, err := prepareContactsDedupeApply(ctx, svc, groups, match)
+	if err != nil {
+		return err
+	}
+	deleteCount := contactsDedupeDeleteCount(plans)
+	if u != nil {
+		u.Err().Linef("Prepared %d duplicate group(s); %d redundant contact(s) will be deleted", len(plans), deleteCount)
+	}
+	if confirmErr := dryRunAndConfirmDestructive(ctx, flags, "contacts.dedupe.apply", contactsDedupeApplyPayload(len(contacts), plans),
+		contactsDedupeApplyAction(len(plans), deleteCount)); confirmErr != nil {
+		return confirmErr
+	}
+
+	result, err := applyContactsDedupePlans(ctx, svc, len(contacts), plans)
+	if err != nil {
+		return err
+	}
+	return writeContactsDedupeApplyResult(ctx, u, result)
 }
 
 type contactsDedupeMatch struct {
@@ -79,6 +114,39 @@ func parseContactsDedupeMatch(value string) (contactsDedupeMatch, error) {
 	return out, nil
 }
 
+func normalizeContactsDedupeResources(values []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		resource := strings.TrimSpace(value)
+		if !strings.HasPrefix(resource, "people/") || len(resource) == len("people/") {
+			return nil, usagef("invalid --resource %q (expected people/...)", value)
+		}
+		if seen[resource] {
+			continue
+		}
+		seen[resource] = true
+		out = append(out, resource)
+	}
+	return out, nil
+}
+
+func contactsDedupeGetResources(ctx context.Context, svc *people.Service, resources []string) ([]*people.Person, error) {
+	contacts := make([]*people.Person, 0, len(resources))
+	for _, resource := range resources {
+		person, err := svc.People.Get(resource).
+			PersonFields(contactsReadMask).
+			Sources(contactsDedupeContactSource).
+			Context(ctx).
+			Do()
+		if err != nil {
+			return nil, err
+		}
+		contacts = append(contacts, person)
+	}
+	return contacts, nil
+}
+
 func contactsDedupeList(ctx context.Context, svc *people.Service, maxResults int64) ([]*people.Person, error) {
 	var out []*people.Person
 	pageToken := ""
@@ -92,6 +160,7 @@ func contactsDedupeList(ctx context.Context, svc *people.Service, maxResults int
 			PageSize(pageSize).
 			PageToken(pageToken).
 			RequestSyncToken(false).
+			Sources("READ_SOURCE_TYPE_CONTACT").
 			Context(ctx).
 			Do()
 		if err != nil {

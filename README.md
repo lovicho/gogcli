@@ -316,9 +316,16 @@ Docs: [contacts dedupe](docs/contacts-dedupe.md),
 gog contacts search alice --json
 gog contacts export --all --out contacts.vcf
 
-# Preview only: no merge/delete/update call is made.
+# Preview by default.
 gog contacts dedupe --json
-gog contacts dedupe --match email,phone,name --dry-run
+gog contacts dedupe --match email,phone,name
+
+# Inspect the mutation plan, then apply with confirmation.
+gog contacts dedupe --apply --dry-run --json
+gog contacts dedupe --apply
+
+# Scope automation to exact reviewed contact resources.
+gog contacts dedupe --resource people/123 --resource people/456 --apply --force --json
 ```
 
 ### Docs
