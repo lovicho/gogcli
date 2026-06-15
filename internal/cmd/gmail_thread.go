@@ -25,7 +25,7 @@ type GmailThreadCmd struct {
 type GmailThreadGetCmd struct {
 	ThreadID        string        `arg:"" name:"threadId" help:"Thread ID"`
 	Download        bool          `name:"download" help:"Download attachments"`
-	Full            bool          `name:"full" help:"Show full message bodies"`
+	Full            bool          `name:"full" help:"Show full message bodies without truncation"`
 	SanitizeContent bool          `name:"sanitize-content" aliases:"sanitize,safe" help:"Emit agent-oriented sanitized content: strip HTML, remove HTTP(S) URLs, and omit raw Gmail payloads from JSON"`
 	OutputDir       OutputDirFlag `embed:""`
 }
@@ -126,11 +126,9 @@ func (c *GmailThreadGetCmd) Run(ctx context.Context, flags *RootFlags) error {
 			} else if isHTML {
 				cleanBody = gmailcontent.StripHTMLTags(body)
 			}
-			// Limit body preview to avoid overwhelming output
-			// Use runes to avoid breaking multi-byte UTF-8 characters
-			runes := []rune(cleanBody)
-			if len(runes) > 500 && !c.Full {
-				cleanBody = string(runes[:500]) + "... [truncated]"
+			// Keep unusually large bodies bounded without turning normal messages into previews.
+			if !c.Full {
+				cleanBody = truncateRunes(cleanBody, gmailDefaultTextBodyLimit)
 			}
 			u.Out().Println(cleanBody)
 			u.Out().Println("")
