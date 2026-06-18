@@ -7,7 +7,7 @@ Read slide content: speaker notes, text elements, and images
 ## Usage
 
 ```bash
-gog slides (slide) read-slide <presentationId> <slideId>
+gog slides (slide) read-slide <presentationId> <slideId> [flags]
 ```
 
 ## Parent
@@ -22,6 +22,7 @@ gog slides (slide) read-slide <presentationId> <slideId>
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
+| `--detail` | `bool` |  | Include normalized element geometry, text runs/styles, paragraphs, and table cells |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
 | `-n`<br>`--dry-run`<br>`--dryrun`<br>`--noop`<br>`--preview` | `bool` |  | Do not make changes; print intended actions and exit successfully |
 | `--enable-commands` | `string` |  | Comma-separated list of enabled command prefixes; dot paths allowed (restricts CLI) |

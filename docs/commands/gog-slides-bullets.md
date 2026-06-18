@@ -1,13 +1,13 @@
-# `gog slides replace-text`
+# `gog slides bullets`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Find-and-replace text in an explicit object, slide, or presentation scope
+Turn paragraph bullets on or off in one page element
 
 ## Usage
 
 ```bash
-gog slides (slide) replace-text <presentationId> <find> <replacement> [flags]
+gog slides (slide) bullets --range=STRING <presentationId> <objectId> [flags]
 ```
 
 ## Parent
@@ -20,7 +20,6 @@ gog slides (slide) replace-text <presentationId> <find> <replacement> [flags]
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
-| `--all` | `bool` |  | Replace matching text across the entire presentation |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
@@ -32,11 +31,12 @@ gog slides (slide) replace-text <presentationId> <find> <replacement> [flags]
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
-| `--match-case` | `bool` |  | Case-sensitive match (default: false) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
-| `--object` | `string` |  | Restrict replacement to a single shape text object ID |
-| `--page` | `[]string` |  | Restrict replacement to specific slide object IDs (repeatable) |
+| `--off` | `bool` |  | Turn bullets off for the selected paragraphs |
+| `--on` | `bool` |  | Turn bullets on for the selected paragraphs |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
+| `--preset` | `string` | BULLET_DISC_CIRCLE_SQUARE | Slides bullet preset when using --on |
+| `--range` | `string` |  | UTF-16 paragraph range as start:end |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |

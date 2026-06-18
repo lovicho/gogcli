@@ -21,6 +21,7 @@ gog slides (slide) insert-text <presentationId> <objectId> <text> [flags]
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
+| `--col` | `*int64` |  | 0-based table column index for cell-targeted text; requires --row |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
 | `-n`<br>`--dry-run`<br>`--dryrun`<br>`--noop`<br>`--preview` | `bool` |  | Do not make changes; print intended actions and exit successfully |
@@ -36,6 +37,7 @@ gog slides (slide) insert-text <presentationId> <objectId> <text> [flags]
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--replace` | `bool` |  | Clear existing text in the element before inserting (emits DeleteText + InsertText in the same batch) |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
+| `--row` | `*int64` |  | 0-based table row index for cell-targeted text; requires --col |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--version` | `kong.VersionFlag` |  | Print version and exit |

@@ -5,10 +5,16 @@
 ### Added
 
 - Slides: allow `insert-image` and `replace-slide` to use public HTTPS image URLs without temporary Drive sharing. (#825) — thanks @sebsnyk.
+- Slides: add structured element geometry, styled text runs, table-cell content, image source URLs, native presentation metadata, and read-only text location with exact UTF-16 ranges. (#822) — thanks @sebsnyk.
+- Slides: add range-scoped styling, links, bullets, and object-scoped replacement; `replace-text` now requires explicit `--object`, `--page`, or `--all` scope instead of silently changing the whole deck. (#823, #835) — thanks @sebsnyk.
+- Slides: add native table creation and zero-based table-cell targeting for `insert-text`, including atomic cell replacement. (#824, #834) — thanks @sebsnyk.
+- Slides: add native themed slide creation, duplication, and reordering with predefined or exact custom layouts and explicit zero-based positions. (#826, #833) — thanks @sebsnyk.
 
 ### Fixed
 
+- Docs: preserve the matched paragraph's list or heading structure on the first plain paragraph of a block Markdown replacement. (#838) — thanks @sebsnyk.
 - Calendar: report multi-calendar event truncation on stderr for text output and as per-calendar page tokens in JSON. (#831) — thanks @TurboTheTurtle.
+- Downloads: protect Drive downloads, Docs/Sheets/Slides exports, Docs tab exports, and Slides thumbnails from replacing existing files unless `--overwrite` is passed. (#827, #829) — thanks @WadydX.
 - Docs: update the Docker authentication example to persist file-keyring tokens with `GOG_HOME`. (#828, #830) — thanks @WadydX.
 
 ## 0.28.0 - 2026-06-15

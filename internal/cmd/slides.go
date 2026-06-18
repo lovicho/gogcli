@@ -22,15 +22,23 @@ type SlidesCmd struct {
 	CreateFromTemplate SlidesCreateFromTemplateCmd `cmd:"" name:"create-from-template" help:"Create a presentation from template with text replacements"`
 	Copy               SlidesCopyCmd               `cmd:"" name:"copy" aliases:"cp,duplicate" help:"Copy a Google Slides presentation"`
 	AddSlide           SlidesAddSlideCmd           `cmd:"" name:"add-slide" help:"Add a slide with a full-bleed image and optional speaker notes"`
+	NewSlide           SlidesNewSlideCmd           `cmd:"" name:"new-slide" help:"Create a native themed slide"`
+	DuplicateSlide     SlidesDuplicateSlideCmd     `cmd:"" name:"duplicate-slide" help:"Duplicate a slide by object ID"`
+	MoveSlide          SlidesMoveSlideCmd          `cmd:"" name:"move-slide" help:"Move a slide to a zero-based insertion index"`
 	ListSlides         SlidesListSlidesCmd         `cmd:"" name:"list-slides" help:"List all slides with their object IDs"`
 	DeleteSlide        SlidesDeleteSlideCmd        `cmd:"" name:"delete-slide" help:"Delete a slide by object ID"`
 	ReadSlide          SlidesReadSlideCmd          `cmd:"" name:"read-slide" help:"Read slide content: speaker notes, text elements, and images"`
+	Locate             SlidesLocateCmd             `cmd:"" name:"locate" aliases:"find-element" help:"Locate text in shapes and table cells with object IDs and UTF-16 ranges"`
 	Thumbnail          SlidesThumbnailCmd          `cmd:"" name:"thumbnail" aliases:"thumb" help:"Get or download a rendered thumbnail for a slide"`
 	UpdateNotes        SlidesUpdateNotesCmd        `cmd:"" name:"update-notes" help:"Update speaker notes on an existing slide"`
 	ReplaceSlide       SlidesReplaceSlideCmd       `cmd:"" name:"replace-slide" help:"Replace an existing slide image from a local file or public URL"`
 	InsertImage        SlidesInsertImageCmd        `cmd:"" name:"insert-image" help:"Insert a local or public image at a position and size"`
 	InsertText         SlidesInsertTextCmd         `cmd:"" name:"insert-text" help:"Insert text into an existing page element (shape or table) by objectId"`
-	ReplaceText        SlidesReplaceTextCmd        `cmd:"" name:"replace-text" help:"Find-and-replace text across a presentation"`
+	Table              SlidesTableCmd              `cmd:"" name:"table" help:"Create and update native tables"`
+	StyleText          SlidesStyleTextCmd          `cmd:"" name:"style-text" help:"Apply range-scoped text styling to one page element"`
+	Link               SlidesLinkCmd               `cmd:"" name:"link" help:"Apply a hyperlink to a text range in one page element"`
+	Bullets            SlidesBulletsCmd            `cmd:"" name:"bullets" help:"Turn paragraph bullets on or off in one page element"`
+	ReplaceText        SlidesReplaceTextCmd        `cmd:"" name:"replace-text" help:"Find-and-replace text in an explicit object, slide, or presentation scope"`
 	Raw                SlidesRawCmd                `cmd:"" name:"raw" help:"Dump raw Google Slides API response as JSON (Presentations.Get; lossless; for scripting and LLM consumption)"`
 }
 
@@ -77,6 +85,7 @@ type SlidesExportCmd struct {
 	PresentationID string         `arg:"" name:"presentationId" help:"Presentation ID"`
 	Output         OutputPathFlag `embed:""`
 	Format         string         `name:"format" help:"Export format: pdf|pptx" default:"pptx"`
+	Overwrite      bool           `name:"overwrite" help:"Overwrite an existing output file"`
 }
 
 func (c *SlidesExportCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -85,19 +94,11 @@ func (c *SlidesExportCmd) Run(ctx context.Context, flags *RootFlags) error {
 		ExpectedMime:  "application/vnd.google-apps.presentation",
 		KindLabel:     "Google Slides presentation",
 		DefaultFormat: "pptx",
-	}, c.PresentationID, c.Output.Path, c.Format)
+	}, c.PresentationID, c.Output.Path, c.Format, c.Overwrite)
 }
 
 type SlidesInfoCmd struct {
 	PresentationID string `arg:"" name:"presentationId" help:"Presentation ID"`
-}
-
-func (c *SlidesInfoCmd) Run(ctx context.Context, flags *RootFlags) error {
-	return infoViaDrive(ctx, flags, infoViaDriveOptions{
-		ArgName:      "presentationId",
-		ExpectedMime: "application/vnd.google-apps.presentation",
-		KindLabel:    "Google Slides presentation",
-	}, c.PresentationID)
 }
 
 type SlidesCreateCmd struct {
