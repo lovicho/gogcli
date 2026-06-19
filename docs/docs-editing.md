@@ -67,6 +67,28 @@ gog docs format <docId> --match "Status" --heading-level 2
 gog docs format <docId> --match "Overview" --named-style title --alignment center
 ```
 
+Create or remove native lists, optionally choosing an exact Docs glyph preset:
+
+```bash
+gog docs format <docId> --match "Action item" --bullets
+gog docs format <docId> --match "Step one" --ordered
+gog docs format <docId> --match "Task" --bullet-preset BULLET_CHECKBOX
+gog docs format <docId> --match "Action item" --no-bullets
+```
+
+Paragraph layout controls use points and accept explicit zero values. Boolean
+keep controls have matching `--no-...` forms:
+
+```bash
+gog docs format <docId> --match "Summary" --indent-start 24 --indent-first-line 12
+gog docs format <docId> --match "Summary" --space-above 6 --space-below 12 --keep-with-next
+gog docs format <docId> --match "Summary" --no-keep-with-next --keep-lines-together
+```
+
+Plain-text `docs write` accepts the same list and paragraph flags while
+replacing content. For `--append`, create the list and apply paragraph layout
+in a following `docs format` call so Docs can resolve post-insertion indexes.
+
 Use `--match-all` when every occurrence should be formatted.
 
 Command page:
@@ -110,6 +132,15 @@ gog docs insert-page-break <docId> --at "Appendix"
 Use `--occurrence N` when an anchor is ambiguous and `--match-case` when case
 must be exact. `docs comments locate` applies the same matching rules to a
 comment's quoted text and reports its tab plus UTF-16 range.
+
+`insert` and `update` both accept `--markdown` to convert the content (headings,
+fenced code blocks, lists, tables, images) before placing it at the resolved
+position. `insert --markdown` adds the block without deleting anything; `update
+--markdown` with `--at`/`--replace-range` replaces the matched range.
+
+```bash
+gog docs insert <docId> --markdown --at "## Section" --file block.md
+```
 
 Command pages:
 
@@ -182,9 +213,21 @@ Both modes accept `--tab`, `--width`, and `--height`. Omit anchor flags or use
 `--at end` to append. `--at <text>` deletes and replaces the first literal text
 match; use `--before <text>` or `--after <text>` to preserve the anchor text.
 
-Command page:
+Replace an existing image without changing its position or rendered bounds:
+
+```bash
+gog docs replace-image <docId> --object-id <imageObjectId> --url https://example.com/chart.png
+gog docs replace-image <docId> --match-alt "Quarterly chart" --file chart.png
+```
+
+Get image object IDs and alt text from `docs images list`. When the selected tab
+contains exactly one image, omit both selector flags. Local replacement files
+use the same temporary Drive sharing and permission cleanup as `insert-image`.
+
+Command pages:
 
 - [`gog docs insert-image`](commands/gog-docs-insert-image.md)
+- [`gog docs replace-image`](commands/gog-docs-replace-image.md)
 
 ## Page Breaks
 

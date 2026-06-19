@@ -2,6 +2,12 @@
 
 ## 0.29.1 - Unreleased
 
+### Added
+
+- Docs: add paragraph bullet and numbering creation/removal plus indentation, spacing, and keep controls to `docs format` and plain-text `docs write`. (#852) — thanks @sebsnyk.
+- Docs: add `replace-image` with exact object-ID, alt-text, single-image, tab, public-URL, and local-file targeting while preserving the original image position and bounds. (#853) — thanks @sebsnyk.
+- Docs: add `insert --markdown` to convert markdown to Google Docs formatting and place the converted block at a position resolved by `--index`/`--at`/`--occurrence`, giving `insert` parity with the existing `update --markdown` and `write --markdown` paths. (#851, #854) — thanks @sebsnyk.
+
 ## 0.29.0 - 2026-06-19
 
 ### Added
