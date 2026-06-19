@@ -1,28 +1,22 @@
-# `gog slides table`
+# `gog slides table cell`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Style table cells
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) table cell <command>
 ```
 
 ## Parent
 
-- [gog slides](gog-slides.md)
+- [gog slides table](gog-slides-table.md)
 
 ## Subcommands
 
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides table cell style](gog-slides-table-cell-style.md) - Style one zero-based table cell
 
 ## Flags
 
@@ -51,5 +45,5 @@ gog slides (slide) table <command>
 
 ## See Also
 
-- [gog slides](gog-slides.md)
+- [gog slides table](gog-slides-table.md)
 - [Command index](README.md)

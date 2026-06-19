@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 655.
+Generated pages: 679.
 
 ## Top-level Commands
 
@@ -644,6 +644,16 @@ Generated pages: 655.
     - [gog slides create-from-template](gog-slides-create-from-template.md) - Create a presentation from template with text replacements
     - [gog slides delete-slide](gog-slides-delete-slide.md) - Delete a slide by object ID
     - [gog slides duplicate-slide](gog-slides-duplicate-slide.md) - Duplicate a slide by object ID
+    - [gog slides element](gog-slides-element.md) - Create and manipulate native page elements
+      - [gog slides element alt-text](gog-slides-element-alt-text.md) - Set or clear element accessibility text
+      - [gog slides element create-line](gog-slides-element-create-line.md) - Create a native line on a slide
+      - [gog slides element create-shape](gog-slides-element-create-shape.md) - Create a native shape on a slide
+      - [gog slides element delete](gog-slides-element-delete.md) - Delete one page element
+      - [gog slides element group](gog-slides-element-group.md) - Group two or more elements
+      - [gog slides element style](gog-slides-element-style.md) - Style a shape fill/outline or a line
+      - [gog slides element transform](gog-slides-element-transform.md) - Move, resize, rotate, or replace an element transform
+      - [gog slides element ungroup](gog-slides-element-ungroup.md) - Ungroup one or more element groups
+      - [gog slides element z-order](gog-slides-element-z-order.md) - Change element stacking order
     - [gog slides export](gog-slides-export.md) - Export a Google Slides deck (pdf|pptx)
     - [gog slides info](gog-slides-info.md) - Get Google Slides presentation metadata
     - [gog slides insert-image](gog-slides-insert-image.md) - Insert a local or public image at a position and size
@@ -659,7 +669,21 @@ Generated pages: 655.
     - [gog slides replace-text](gog-slides-replace-text.md) - Find-and-replace text in an explicit object, slide, or presentation scope
     - [gog slides style-text](gog-slides-style-text.md) - Apply range-scoped text styling to one page element
     - [gog slides table](gog-slides-table.md) - Create and update native tables
+      - [gog slides table border](gog-slides-table-border.md) - Style table borders
+        - [gog slides table border style](gog-slides-table-border-style.md) - Style borders around or within a table cell range
+      - [gog slides table cell](gog-slides-table-cell.md) - Style table cells
+        - [gog slides table cell style](gog-slides-table-cell-style.md) - Style one zero-based table cell
+      - [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
+        - [gog slides table column delete](gog-slides-table-column-delete.md) - Delete the column containing a zero-based table cell
+        - [gog slides table column insert](gog-slides-table-column-insert.md) - Insert columns left or right of a zero-based column
+        - [gog slides table column size](gog-slides-table-column-size.md) - Set a column's width
       - [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
+      - [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
+      - [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
+        - [gog slides table row delete](gog-slides-table-row-delete.md) - Delete the row containing a zero-based table cell
+        - [gog slides table row insert](gog-slides-table-row-insert.md) - Insert rows above or below a zero-based row
+        - [gog slides table row size](gog-slides-table-row-size.md) - Set a row's minimum height
+      - [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
     - [gog slides thumbnail](gog-slides-thumbnail.md) - Get or download a rendered thumbnail for a slide
     - [gog slides update-notes](gog-slides-update-notes.md) - Update speaker notes on an existing slide
   - [gog status](gog-status.md) - Show auth/config status (alias for 'auth status')

@@ -16,6 +16,7 @@ const (
 	keyringPasswordEnv    = "GOG_KEYRING_PASSWORD" //nolint:gosec // env var name, not a credential
 	keyringBackendEnv     = "GOG_KEYRING_BACKEND"  //nolint:gosec // env var name, not a credential
 	keyringServiceNameEnv = "GOG_KEYRING_SERVICE_NAME"
+	keyringOpenTimeoutEnv = "GOG_KEYRING_OPEN_TIMEOUT"
 )
 
 var (
@@ -68,6 +69,7 @@ func OpenOptionsFromLookup(
 	password, passwordSet := lookup(keyringPasswordEnv)
 	serviceName, _ := lookup(keyringServiceNameEnv)
 	dbusAddress, _ := lookup("DBUS_SESSION_BUS_ADDRESS")
+	openTimeoutRaw, _ := lookup(keyringOpenTimeoutEnv)
 	lockTimeoutRaw, _ := lookup(keyringLockTimeoutEnv)
 
 	return OpenOptions{
@@ -80,7 +82,7 @@ func OpenOptionsFromLookup(
 		GOOS:        goos,
 		DBusAddress: dbusAddress,
 		IsTTY:       isTTY,
-		OpenTimeout: keyringOpenTimeout,
+		OpenTimeout: parseKeyringOpenTimeout(openTimeoutRaw, goos),
 		LockTimeout: parseKeyringLockTimeout(lockTimeoutRaw),
 	}
 }
@@ -161,14 +163,38 @@ func serviceNameFor(options OpenOptions) string {
 	return config.AppName
 }
 
-// keyringOpenTimeout is the maximum time to wait for keyring.Open() to complete.
-// On headless Linux, D-Bus SecretService can hang indefinitely if gnome-keyring
-// is installed but not running.
+// Keyring timeouts guard against unresponsive backends. macOS gets longer for
+// interactive permission prompts; other platforms retain the existing limit.
 const (
-	keyringOpenTimeout = 10 * time.Second
-	goosDarwin         = "darwin"
-	goosLinux          = "linux"
+	keyringOpenTimeout       = 10 * time.Second
+	darwinKeyringOpenTimeout = 30 * time.Second
+	goosDarwin               = "darwin"
+	goosLinux                = "linux"
 )
+
+func defaultKeyringOpenTimeout(goos string) time.Duration {
+	if goos == goosDarwin {
+		return darwinKeyringOpenTimeout
+	}
+
+	return keyringOpenTimeout
+}
+
+// parseKeyringOpenTimeout resolves GOG_KEYRING_OPEN_TIMEOUT, falling back to
+// the platform default when unset, unparseable, or non-positive.
+func parseKeyringOpenTimeout(raw, goos string) time.Duration {
+	fallback := defaultKeyringOpenTimeout(goos)
+	if raw == "" {
+		return fallback
+	}
+
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return fallback
+	}
+
+	return timeout
+}
 
 func shouldForceFileBackend(goos string, backendInfo KeyringBackendInfo, dbusAddr string) bool {
 	return goos == goosLinux && backendInfo.Value == keyringBackendAuto && dbusAddr == ""
@@ -249,7 +275,7 @@ func openKeyringWithOptions(options OpenOptions) (keyring.Keyring, error) {
 
 	openTimeout := options.OpenTimeout
 	if openTimeout <= 0 {
-		openTimeout = keyringOpenTimeout
+		openTimeout = defaultKeyringOpenTimeout(options.GOOS)
 	}
 
 	open := options.openKeyringFn
@@ -295,7 +321,7 @@ func prepareKeyring(
 	if shouldUseKeyringOperationTimeout(options.GOOS, backendInfo, options.DBusAddress) {
 		timeout := options.OpenTimeout
 		if timeout <= 0 {
-			timeout = keyringOpenTimeout
+			timeout = defaultKeyringOpenTimeout(options.GOOS)
 		}
 		ring = newTimeoutKeyring(ring, timeout, keyringTimeoutHint(options.GOOS))
 	}

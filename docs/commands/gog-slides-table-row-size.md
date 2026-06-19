@@ -1,28 +1,18 @@
-# `gog slides table`
+# `gog slides table row size`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Set a row's minimum height
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) table row size --row=INT-64 --height=FLOAT-64 <presentationId> <tableObjectId>
 ```
 
 ## Parent
 
-- [gog slides](gog-slides.md)
-
-## Subcommands
-
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides table row](gog-slides-table-row.md)
 
 ## Flags
 
@@ -38,12 +28,14 @@ gog slides (slide) table <command>
 | `--enable-commands-exact` | `string` |  | Comma-separated list of exact enabled commands; dot paths allowed and parent commands do not enable children |
 | `-y`<br>`--force`<br>`--assume-yes`<br>`--yes` | `bool` |  | Skip confirmations for destructive commands |
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
+| `--height` | `float64` |  | Minimum row height in points (>=0) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
+| `--row` | `int64` |  | Zero-based row |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--version` | `kong.VersionFlag` |  | Print version and exit |
@@ -51,5 +43,5 @@ gog slides (slide) table <command>
 
 ## See Also
 
-- [gog slides](gog-slides.md)
+- [gog slides table row](gog-slides-table-row.md)
 - [Command index](README.md)

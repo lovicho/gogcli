@@ -1,28 +1,18 @@
-# `gog slides table`
+# `gog slides element style`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Style a shape fill/outline or a line
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) element style <presentationId> <objectId> [flags]
 ```
 
 ## Parent
 
-- [gog slides](gog-slides.md)
-
-## Subcommands
-
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides element](gog-slides-element.md)
 
 ## Flags
 
@@ -36,12 +26,19 @@ gog slides (slide) table <command>
 | `-n`<br>`--dry-run`<br>`--dryrun`<br>`--noop`<br>`--preview` | `bool` |  | Do not make changes; print intended actions and exit successfully |
 | `--enable-commands` | `string` |  | Comma-separated list of enabled command prefixes; dot paths allowed (restricts CLI) |
 | `--enable-commands-exact` | `string` |  | Comma-separated list of exact enabled commands; dot paths allowed and parent commands do not enable children |
+| `--fill-color` | `string` |  | Shape fill as #RGB or #RRGGBB |
+| `--fill-transparent` | `bool` |  | Remove the shape fill |
 | `-y`<br>`--force`<br>`--assume-yes`<br>`--yes` | `bool` |  | Skip confirmations for destructive commands |
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
+| `--kind` | `string` | shape | Element kind |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
+| `--outline-color` | `string` |  | Shape outline or line color as #RGB or #RRGGBB |
+| `--outline-dash` | `*string` |  | Shape outline or line dash style |
+| `--outline-transparent` | `bool` |  | Remove the shape outline or make the line transparent |
+| `--outline-weight` | `*float64` |  | Shape outline or line weight in points |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
@@ -51,5 +48,5 @@ gog slides (slide) table <command>
 
 ## See Also
 
-- [gog slides](gog-slides.md)
+- [gog slides element](gog-slides-element.md)
 - [Command index](README.md)

@@ -31,6 +31,10 @@ const requiredFeatureDocs = [
   "sheets-formatting.md",
   "slides-markdown.md",
   "slides-template-replacement.md",
+  "slides-introspection.md",
+  "slides-text-editing.md",
+  "slides-tables.md",
+  "slides-structure.md",
   "backup.md",
   "dates.md",
 ];

@@ -1,15 +1,24 @@
 # Changelog
 
-## 0.28.1 - Unreleased
+## 0.29.0 - 2026-06-19
 
 ### Added
 
+- Auth: make keyring open/operation timeouts configurable with `GOG_KEYRING_OPEN_TIMEOUT`, using a `30s` macOS default for permission prompts while retaining `10s` elsewhere. (#845) — thanks @malob.
+- Calendar: add `create --timezone`/`--tz` to apply one IANA timezone to both event endpoints while retaining granular start/end timezone flags. (#844) — thanks @malob.
 - Docs: add non-destructive `insert-image --before` and `--after` anchors while clarifying that `--at` replaces its placeholder. (#839) — thanks @sebsnyk.
 - Slides: allow `insert-image` and `replace-slide` to use public HTTPS image URLs without temporary Drive sharing. (#825) — thanks @sebsnyk.
 - Slides: add structured element geometry, styled text runs, table-cell content, image source URLs, native presentation metadata, and read-only text location with exact UTF-16 ranges. (#822) — thanks @sebsnyk.
 - Slides: add range-scoped styling, links, bullets, and object-scoped replacement; `replace-text` now requires explicit `--object`, `--page`, or `--all` scope instead of silently changing the whole deck. (#823, #835) — thanks @sebsnyk.
 - Slides: add native table creation and zero-based table-cell targeting for `insert-text`, including atomic cell replacement. (#824, #834) — thanks @sebsnyk.
+- Slides: add revision-locked native table row/column insertion and deletion plus merge/unmerge operations with provider bounds checks. (#824, #847) — thanks @sebsnyk.
+- Slides: add revision-locked table row/column sizing, cell fill/alignment/text styling, and range-scoped border styling. (#824, #848) — thanks @sebsnyk.
 - Slides: add native themed slide creation, duplication, and reordering with predefined or exact custom layouts and explicit zero-based positions. (#826, #833) — thanks @sebsnyk.
+- Slides: add native shape and line creation plus element transforms, fill/outline styling, z-order, grouping, alt text, and guarded deletion. (#826) — thanks @sebsnyk.
+
+### Changed
+
+- Docs: expose all current Slides feature guides in the documentation site, enforce their coverage, and document table sizing and styling constraints.
 
 ### Fixed
 

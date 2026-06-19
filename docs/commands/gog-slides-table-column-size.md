@@ -1,28 +1,18 @@
-# `gog slides table`
+# `gog slides table column size`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Set a column's width
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) table column (col) size --col=INT-64 --width=FLOAT-64 <presentationId> <tableObjectId>
 ```
 
 ## Parent
 
-- [gog slides](gog-slides.md)
-
-## Subcommands
-
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides table column](gog-slides-table-column.md)
 
 ## Flags
 
@@ -31,6 +21,7 @@ gog slides (slide) table <command>
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
+| `--col` | `int64` |  | Zero-based column |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
 | `-n`<br>`--dry-run`<br>`--dryrun`<br>`--noop`<br>`--preview` | `bool` |  | Do not make changes; print intended actions and exit successfully |
@@ -47,9 +38,10 @@ gog slides (slide) table <command>
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--version` | `kong.VersionFlag` |  | Print version and exit |
+| `--width` | `float64` |  | Column width in points (>=32) |
 | `--wrap-untrusted` | `bool` | false | In JSON/raw output, wrap fetched text fields in external untrusted-content markers |
 
 ## See Also
 
-- [gog slides](gog-slides.md)
+- [gog slides table column](gog-slides-table-column.md)
 - [Command index](README.md)

@@ -1,13 +1,13 @@
-# `gog slides table`
+# `gog slides element`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Create and manipulate native page elements
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) element <command>
 ```
 
 ## Parent
@@ -16,13 +16,15 @@ gog slides (slide) table <command>
 
 ## Subcommands
 
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides element alt-text](gog-slides-element-alt-text.md) - Set or clear element accessibility text
+- [gog slides element create-line](gog-slides-element-create-line.md) - Create a native line on a slide
+- [gog slides element create-shape](gog-slides-element-create-shape.md) - Create a native shape on a slide
+- [gog slides element delete](gog-slides-element-delete.md) - Delete one page element
+- [gog slides element group](gog-slides-element-group.md) - Group two or more elements
+- [gog slides element style](gog-slides-element-style.md) - Style a shape fill/outline or a line
+- [gog slides element transform](gog-slides-element-transform.md) - Move, resize, rotate, or replace an element transform
+- [gog slides element ungroup](gog-slides-element-ungroup.md) - Ungroup one or more element groups
+- [gog slides element z-order](gog-slides-element-z-order.md) - Change element stacking order
 
 ## Flags
 

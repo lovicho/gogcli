@@ -593,6 +593,16 @@ Generated from `gog schema --json`.
     - [`gog slides (slide) create-from-template <templateId> <title> [flags]`](commands/gog-slides-create-from-template.md) - Create a presentation from template with text replacements
     - [`gog slides (slide) delete-slide <presentationId> <slideId>`](commands/gog-slides-delete-slide.md) - Delete a slide by object ID
     - [`gog slides (slide) duplicate-slide <presentationId> <slideId> [flags]`](commands/gog-slides-duplicate-slide.md) - Duplicate a slide by object ID
+    - [`gog slides (slide) element <command>`](commands/gog-slides-element.md) - Create and manipulate native page elements
+      - [`gog slides (slide) element alt-text <presentationId> <objectId> [flags]`](commands/gog-slides-element-alt-text.md) - Set or clear element accessibility text
+      - [`gog slides (slide) element create-line <presentationId> <slideId> [flags]`](commands/gog-slides-element-create-line.md) - Create a native line on a slide
+      - [`gog slides (slide) element create-shape <presentationId> <slideId> [flags]`](commands/gog-slides-element-create-shape.md) - Create a native shape on a slide
+      - [`gog slides (slide) element delete (rm) <presentationId> <objectId>`](commands/gog-slides-element-delete.md) - Delete one page element
+      - [`gog slides (slide) element group <presentationId> <objectId> ... [flags]`](commands/gog-slides-element-group.md) - Group two or more elements
+      - [`gog slides (slide) element style <presentationId> <objectId> [flags]`](commands/gog-slides-element-style.md) - Style a shape fill/outline or a line
+      - [`gog slides (slide) element transform (move,resize,rotate) <presentationId> <objectId> [flags]`](commands/gog-slides-element-transform.md) - Move, resize, rotate, or replace an element transform
+      - [`gog slides (slide) element ungroup <presentationId> <groupId> ...`](commands/gog-slides-element-ungroup.md) - Ungroup one or more element groups
+      - [`gog slides (slide) element z-order --operation=STRING <presentationId> <objectId> ...`](commands/gog-slides-element-z-order.md) - Change element stacking order
     - [`gog slides (slide) export (download,dl) <presentationId> [flags]`](commands/gog-slides-export.md) - Export a Google Slides deck (pdf|pptx)
     - [`gog slides (slide) info (get,show) <presentationId>`](commands/gog-slides-info.md) - Get Google Slides presentation metadata
     - [`gog slides (slide) insert-image --width=FLOAT-64 <presentationId> <slideId> [<image>] [flags]`](commands/gog-slides-insert-image.md) - Insert a local or public image at a position and size
@@ -608,7 +618,21 @@ Generated from `gog schema --json`.
     - [`gog slides (slide) replace-text <presentationId> <find> <replacement> [flags]`](commands/gog-slides-replace-text.md) - Find-and-replace text in an explicit object, slide, or presentation scope
     - [`gog slides (slide) style-text --range=STRING <presentationId> <objectId> [flags]`](commands/gog-slides-style-text.md) - Apply range-scoped text styling to one page element
     - [`gog slides (slide) table <command>`](commands/gog-slides-table.md) - Create and update native tables
+      - [`gog slides (slide) table border <command>`](commands/gog-slides-table-border.md) - Style table borders
+        - [`gog slides (slide) table border style --row=INT-64 --col=INT-64 <presentationId> <tableObjectId> [flags]`](commands/gog-slides-table-border-style.md) - Style borders around or within a table cell range
+      - [`gog slides (slide) table cell <command>`](commands/gog-slides-table-cell.md) - Style table cells
+        - [`gog slides (slide) table cell style --row=INT-64 --col=INT-64 <presentationId> <tableObjectId> [flags]`](commands/gog-slides-table-cell-style.md) - Style one zero-based table cell
+      - [`gog slides (slide) table column (col) <command>`](commands/gog-slides-table-column.md) - Insert, delete, or size table columns
+        - [`gog slides (slide) table column (col) delete (rm,remove,del) --col=INT-64 <presentationId> <tableObjectId>`](commands/gog-slides-table-column-delete.md) - Delete the column containing a zero-based table cell
+        - [`gog slides (slide) table column (col) insert (add) --col=INT-64 <presentationId> <tableObjectId> [flags]`](commands/gog-slides-table-column-insert.md) - Insert columns left or right of a zero-based column
+        - [`gog slides (slide) table column (col) size --col=INT-64 --width=FLOAT-64 <presentationId> <tableObjectId>`](commands/gog-slides-table-column-size.md) - Set a column's width
       - [`gog slides (slide) table create (add) --rows=INT-64 --cols=INT-64 <presentationId> <slideId> [flags]`](commands/gog-slides-table-create.md) - Create an auto-sized native table on a slide
+      - [`gog slides (slide) table merge --row=INT-64 --col=INT-64 <presentationId> <tableObjectId> [flags]`](commands/gog-slides-table-merge.md) - Merge a rectangular table cell range
+      - [`gog slides (slide) table row <command>`](commands/gog-slides-table-row.md) - Insert, delete, or size table rows
+        - [`gog slides (slide) table row delete (rm,remove,del) --row=INT-64 <presentationId> <tableObjectId>`](commands/gog-slides-table-row-delete.md) - Delete the row containing a zero-based table cell
+        - [`gog slides (slide) table row insert (add) --row=INT-64 <presentationId> <tableObjectId> [flags]`](commands/gog-slides-table-row-insert.md) - Insert rows above or below a zero-based row
+        - [`gog slides (slide) table row size --row=INT-64 --height=FLOAT-64 <presentationId> <tableObjectId>`](commands/gog-slides-table-row-size.md) - Set a row's minimum height
+      - [`gog slides (slide) table unmerge (split) --row=INT-64 --col=INT-64 <presentationId> <tableObjectId> [flags]`](commands/gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
     - [`gog slides (slide) thumbnail (thumb) <presentationId> <slideId> [flags]`](commands/gog-slides-thumbnail.md) - Get or download a rendered thumbnail for a slide
     - [`gog slides (slide) update-notes <presentationId> <slideId> [flags]`](commands/gog-slides-update-notes.md) - Update speaker notes on an existing slide
   - [`gog status (st) [flags]`](commands/gog-status.md) - Show auth/config status (alias for 'auth status')

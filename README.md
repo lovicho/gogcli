@@ -397,6 +397,8 @@ gog slides style-text <presentationId> <objectId> --range 0:12 --bold --size 24
 gog slides replace-text <presentationId> old new --object <objectId>
 gog slides table create <presentationId> <slideId> --rows 2 --cols 3
 gog slides insert-text <presentationId> <tableId> "Revenue" --row 0 --col 0 --replace
+gog slides table row size <presentationId> <tableId> --row 0 --height 48
+gog slides table cell style <presentationId> <tableId> --row 0 --col 0 --bold --fill-color '#3367d6'
 gog slides new-slide <presentationId> --layout TITLE_AND_BODY --index 1
 gog slides duplicate-slide <presentationId> <slideId> --to-index 2
 gog slides move-slide <presentationId> <slideId> --to-index 0

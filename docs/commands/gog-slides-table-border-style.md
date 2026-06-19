@@ -1,28 +1,18 @@
-# `gog slides table`
+# `gog slides table border style`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Style borders around or within a table cell range
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) table border style --row=INT-64 --col=INT-64 <presentationId> <tableObjectId> [flags]
 ```
 
 ## Parent
 
-- [gog slides](gog-slides.md)
-
-## Subcommands
-
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides table border](gog-slides-table-border.md)
 
 ## Flags
 
@@ -30,8 +20,12 @@ gog slides (slide) table <command>
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
+| `--border-color` | `string` |  | Border color as #RGB or #RRGGBB |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
+| `--col` | `int64` |  | Zero-based starting column |
+| `--col-span` | `int64` | 1 | Number of columns in the range |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
+| `--dash` | `*string` |  | Border dash style |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
 | `-n`<br>`--dry-run`<br>`--dryrun`<br>`--noop`<br>`--preview` | `bool` |  | Do not make changes; print intended actions and exit successfully |
 | `--enable-commands` | `string` |  | Comma-separated list of enabled command prefixes; dot paths allowed (restricts CLI) |
@@ -43,13 +37,18 @@ gog slides (slide) table <command>
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
+| `--position` | `string` | ALL | Borders within the selected range to update |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
+| `--row` | `int64` |  | Zero-based starting row |
+| `--row-span` | `int64` | 1 | Number of rows in the range |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
+| `--transparent` | `bool` |  | Make selected borders transparent |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
 | `--version` | `kong.VersionFlag` |  | Print version and exit |
+| `--weight` | `*float64` |  | Border weight in points |
 | `--wrap-untrusted` | `bool` | false | In JSON/raw output, wrap fetched text fields in external untrusted-content markers |
 
 ## See Also
 
-- [gog slides](gog-slides.md)
+- [gog slides table border](gog-slides-table-border.md)
 - [Command index](README.md)

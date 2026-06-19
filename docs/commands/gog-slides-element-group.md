@@ -1,28 +1,18 @@
-# `gog slides table`
+# `gog slides element group`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Create and update native tables
+Group two or more elements
 
 ## Usage
 
 ```bash
-gog slides (slide) table <command>
+gog slides (slide) element group <presentationId> <objectId> ... [flags]
 ```
 
 ## Parent
 
-- [gog slides](gog-slides.md)
-
-## Subcommands
-
-- [gog slides table border](gog-slides-table-border.md) - Style table borders
-- [gog slides table cell](gog-slides-table-cell.md) - Style table cells
-- [gog slides table column](gog-slides-table-column.md) - Insert, delete, or size table columns
-- [gog slides table create](gog-slides-table-create.md) - Create an auto-sized native table on a slide
-- [gog slides table merge](gog-slides-table-merge.md) - Merge a rectangular table cell range
-- [gog slides table row](gog-slides-table-row.md) - Insert, delete, or size table rows
-- [gog slides table unmerge](gog-slides-table-unmerge.md) - Unmerge cells in a rectangular table range
+- [gog slides element](gog-slides-element.md)
 
 ## Flags
 
@@ -38,6 +28,7 @@ gog slides (slide) table <command>
 | `--enable-commands-exact` | `string` |  | Comma-separated list of exact enabled commands; dot paths allowed and parent commands do not enable children |
 | `-y`<br>`--force`<br>`--assume-yes`<br>`--yes` | `bool` |  | Skip confirmations for destructive commands |
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
+| `--group-id` | `string` |  | Optional stable group object ID |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
@@ -51,5 +42,5 @@ gog slides (slide) table <command>
 
 ## See Also
 
-- [gog slides](gog-slides.md)
+- [gog slides element](gog-slides-element.md)
 - [Command index](README.md)
