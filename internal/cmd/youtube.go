@@ -38,29 +38,11 @@ type YouTubeActivitiesListCmd struct {
 }
 
 func (c *YouTubeActivitiesListCmd) Run(ctx context.Context, flags *RootFlags) error {
-	u := ui.FromContext(ctx)
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
 	channelID := strings.TrimSpace(c.ChannelID)
-	if channelID == "" && !c.Mine {
-		return usage("set --channel-id ID or --mine (--mine requires -a account)")
-	}
-	if channelID != "" && c.Mine {
-		return usage("use either --channel-id or --mine, not both")
-	}
-
-	var svc *youtube.Service
-	var err error
-	if c.Mine {
-		account, accErr := requireAccount(flags)
-		if accErr != nil {
-			return accErr
-		}
-		svc, err = getYouTubeServiceForAccount(ctx, account)
-	} else {
-		svc, err = getYouTubeReadService(ctx, flags)
-	}
+	svc, err := getYouTubeChannelListService(ctx, flags, channelID, c.Mine)
 	if err != nil {
 		return err
 	}
@@ -78,26 +60,7 @@ func (c *YouTubeActivitiesListCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
-			"items":         youtubeItemsOrEmpty(resp.Items),
-			"nextPageToken": resp.NextPageToken,
-		})
-	}
-	if len(resp.Items) == 0 {
-		u.Err().Println("No activities")
-		return nil
-	}
-	if err := outfmt.WriteTable(
-		ctx,
-		stdoutWriter(ctx),
-		compactYouTubeRows(resp.Items),
-		youtubeActivityColumns(),
-	); err != nil {
-		return err
-	}
-	printNextPageHint(u, resp.NextPageToken)
-	return nil
+	return writeYouTubeList(ctx, resp.Items, resp.NextPageToken, "No activities", youtubeActivityColumns())
 }
 
 type YouTubeVideosCmd struct {
@@ -114,7 +77,6 @@ type YouTubeVideosListCmd struct {
 }
 
 func (c *YouTubeVideosListCmd) Run(ctx context.Context, flags *RootFlags) error {
-	u := ui.FromContext(ctx)
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
@@ -181,26 +143,7 @@ func (c *YouTubeVideosListCmd) Run(ctx context.Context, flags *RootFlags) error 
 		return err
 	}
 
-	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
-			"items":         youtubeItemsOrEmpty(resp.Items),
-			"nextPageToken": resp.NextPageToken,
-		})
-	}
-	if len(resp.Items) == 0 {
-		u.Err().Println("No videos")
-		return nil
-	}
-	if err := outfmt.WriteTable(
-		ctx,
-		stdoutWriter(ctx),
-		compactYouTubeRows(resp.Items),
-		youtubeVideoColumns(),
-	); err != nil {
-		return err
-	}
-	printNextPageHint(u, resp.NextPageToken)
-	return nil
+	return writeYouTubeList(ctx, resp.Items, resp.NextPageToken, "No videos", youtubeVideoColumns())
 }
 
 type YouTubePlaylistsCmd struct {
@@ -220,29 +163,11 @@ type YouTubePlaylistsListCmd struct {
 }
 
 func (c *YouTubePlaylistsListCmd) Run(ctx context.Context, flags *RootFlags) error {
-	u := ui.FromContext(ctx)
 	if err := validateYouTubeMax(c.Max); err != nil {
 		return err
 	}
 	channelID := strings.TrimSpace(c.ChannelID)
-	if channelID == "" && !c.Mine {
-		return usage("set --channel-id ID or --mine (--mine requires -a account)")
-	}
-	if channelID != "" && c.Mine {
-		return usage("use either --channel-id or --mine, not both")
-	}
-
-	var svc *youtube.Service
-	var err error
-	if c.Mine {
-		account, accErr := requireAccount(flags)
-		if accErr != nil {
-			return accErr
-		}
-		svc, err = getYouTubeServiceForAccount(ctx, account)
-	} else {
-		svc, err = getYouTubeReadService(ctx, flags)
-	}
+	svc, err := getYouTubeChannelListService(ctx, flags, channelID, c.Mine)
 	if err != nil {
 		return err
 	}
@@ -260,26 +185,7 @@ func (c *YouTubePlaylistsListCmd) Run(ctx context.Context, flags *RootFlags) err
 		return err
 	}
 
-	if outfmt.IsJSON(ctx) {
-		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
-			"items":         youtubeItemsOrEmpty(resp.Items),
-			"nextPageToken": resp.NextPageToken,
-		})
-	}
-	if len(resp.Items) == 0 {
-		u.Err().Println("No playlists")
-		return nil
-	}
-	if err := outfmt.WriteTable(
-		ctx,
-		stdoutWriter(ctx),
-		compactYouTubeRows(resp.Items),
-		youtubePlaylistColumns(),
-	); err != nil {
-		return err
-	}
-	printNextPageHint(u, resp.NextPageToken)
-	return nil
+	return writeYouTubeList(ctx, resp.Items, resp.NextPageToken, "No playlists", youtubePlaylistColumns())
 }
 
 type YouTubePlaylistsItemsCmd struct {
@@ -1013,6 +919,42 @@ func validateYouTubeMax(limit int64) error {
 	if limit < 1 || limit > 50 {
 		return usage("--max must be between 1 and 50")
 	}
+	return nil
+}
+
+func getYouTubeChannelListService(ctx context.Context, flags *RootFlags, channelID string, mine bool) (*youtube.Service, error) {
+	if channelID == "" && !mine {
+		return nil, usage("set --channel-id ID or --mine (--mine requires -a account)")
+	}
+	if channelID != "" && mine {
+		return nil, usage("use either --channel-id or --mine, not both")
+	}
+	if !mine {
+		return getYouTubeReadService(ctx, flags)
+	}
+	account, err := requireAccount(flags)
+	if err != nil {
+		return nil, err
+	}
+	return getYouTubeServiceForAccount(ctx, account)
+}
+
+func writeYouTubeList[T any](ctx context.Context, items []*T, nextPageToken, emptyMessage string, columns []outfmt.Column[*T]) error {
+	if outfmt.IsJSON(ctx) {
+		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
+			"items":         youtubeItemsOrEmpty(items),
+			"nextPageToken": nextPageToken,
+		})
+	}
+	u := ui.FromContext(ctx)
+	if len(items) == 0 {
+		u.Err().Println(emptyMessage)
+		return nil
+	}
+	if err := outfmt.WriteTable(ctx, stdoutWriter(ctx), compactYouTubeRows(items), columns); err != nil {
+		return err
+	}
+	printNextPageHint(u, nextPageToken)
 	return nil
 }
 

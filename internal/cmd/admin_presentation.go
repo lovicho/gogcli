@@ -61,21 +61,11 @@ func adminMemberColumns() []outfmt.Column[*admin.Member] {
 
 func adminOrgUnitColumns() []outfmt.Column[*admin.OrgUnit] {
 	return []outfmt.Column[*admin.OrgUnit]{
-		{Header: "PATH", Value: func(unit *admin.OrgUnit) string {
-			return sanitizeTab(unit.OrgUnitPath)
-		}},
-		{Header: "NAME", Value: func(unit *admin.OrgUnit) string {
-			return sanitizeTab(unit.Name)
-		}},
-		{Header: "ID", Value: func(unit *admin.OrgUnit) string {
-			return sanitizeTab(unit.OrgUnitId)
-		}},
-		{Header: "PARENT", Value: func(unit *admin.OrgUnit) string {
-			return sanitizeTab(unit.ParentOrgUnitPath)
-		}},
-		{Header: "DESCRIPTION", Value: func(unit *admin.OrgUnit) string {
-			return sanitizeTab(unit.Description)
-		}},
+		sanitizedColumn("PATH", func(unit *admin.OrgUnit) string { return unit.OrgUnitPath }),
+		sanitizedColumn("NAME", func(unit *admin.OrgUnit) string { return unit.Name }),
+		sanitizedColumn("ID", func(unit *admin.OrgUnit) string { return unit.OrgUnitId }),
+		sanitizedColumn("PARENT", func(unit *admin.OrgUnit) string { return unit.ParentOrgUnitPath }),
+		sanitizedColumn("DESCRIPTION", func(unit *admin.OrgUnit) string { return unit.Description }),
 	}
 }
 

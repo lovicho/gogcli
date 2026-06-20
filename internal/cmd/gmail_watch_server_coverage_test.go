@@ -77,6 +77,30 @@ func TestGmailWatchServer_ServeHTTP_HandlePushError(t *testing.T) {
 	}
 }
 
+func newGmailWatchPushTestService(t *testing.T) *gmail.Service {
+	t.Helper()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/history"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"historyId": "200",
+				"history":   []map[string]any{{"messagesAdded": []map[string]any{{"message": map[string]any{"id": "m1"}}}}},
+			})
+		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/messages/m1"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": "m1", "threadId": "t1", "payload": map[string]any{"headers": []map[string]any{}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	svc, closeServer := newGoogleTestService(t, handler, gmail.NewService)
+	t.Cleanup(closeServer)
+	return svc
+}
+
 func TestGmailWatchServer_ServeHTTP_NoHook_Accepted(t *testing.T) {
 	setWatchTestConfigHome(t)
 
@@ -87,39 +111,7 @@ func TestGmailWatchServer_ServeHTTP_NoHook_Accepted(t *testing.T) {
 		return nil
 	})
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/history"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"historyId": "200",
-				"history": []map[string]any{
-					{"messagesAdded": []map[string]any{{"message": map[string]any{"id": "m1"}}}},
-				},
-			})
-			return
-		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/messages/m1"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":       "m1",
-				"threadId": "t1",
-				"payload":  map[string]any{"headers": []map[string]any{}},
-			})
-			return
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	gsvc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
+	gsvc := newGmailWatchPushTestService(t)
 
 	server := &gmailWatchServer{
 		cfg: gmailWatchServeConfig{
@@ -130,7 +122,7 @@ func TestGmailWatchServer_ServeHTTP_NoHook_Accepted(t *testing.T) {
 		},
 		store:      store,
 		newService: func(context.Context, string) (*gmail.Service, error) { return gsvc, nil },
-		hookClient: srv.Client(),
+		hookClient: http.DefaultClient,
 		logf:       func(string, ...any) {},
 		warnf:      func(string, ...any) {},
 	}
@@ -157,39 +149,7 @@ func TestGmailWatchServer_ServeHTTP_HookSuccess(t *testing.T) {
 		return nil
 	})
 
-	gmailSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/history"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"historyId": "200",
-				"history": []map[string]any{
-					{"messagesAdded": []map[string]any{{"message": map[string]any{"id": "m1"}}}},
-				},
-			})
-			return
-		case strings.Contains(r.URL.Path, "/gmail/v1/users/me/messages/m1"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":       "m1",
-				"threadId": "t1",
-				"payload":  map[string]any{"headers": []map[string]any{}},
-			})
-			return
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer gmailSrv.Close()
-
-	gsvc, err := gmail.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(gmailSrv.Client()),
-		option.WithEndpoint(gmailSrv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
+	gsvc := newGmailWatchPushTestService(t)
 
 	hookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

@@ -225,43 +225,15 @@ type DriveCommentReplyCmd struct {
 }
 
 func (c *DriveCommentReplyCmd) Run(ctx context.Context, flags *RootFlags) error {
-	u := ui.FromContext(ctx)
-	fileID := normalizeGoogleID(strings.TrimSpace(c.FileID))
-	commentID := strings.TrimSpace(c.CommentID)
-	content := strings.TrimSpace(c.Content)
-	if fileID == "" {
-		return usage("empty fileId")
-	}
-	if commentID == "" {
-		return usage("empty commentId")
-	}
-	if content == "" {
-		return usage("empty content")
-	}
-	action, err := validateDriveReplyAction(c.Action)
-	if err != nil {
-		return usage(err.Error())
-	}
-
-	if dryRunErr := dryRunExit(ctx, flags, "drive.comments.reply", map[string]any{
-		"file_id":    fileID,
-		"comment_id": commentID,
-		"content":    content,
-		"action":     action,
-	}); dryRunErr != nil {
-		return dryRunErr
-	}
-
-	_, svc, err := requireDriveService(ctx, flags)
-	if err != nil {
-		return err
-	}
-	created, err := createDriveReplyWithAction(ctx, svc, fileID, commentID, content, action)
-	if err != nil {
-		return err
-	}
-	resolved := action == driveReplyActionResolve || action == driveReplyActionReopen
-	return writeDriveReplyMutationWithAction(ctx, u, created, resolved, action, "fileId", fileID, commentID)
+	return runDriveCommentReply(ctx, flags, driveCommentReplyCommand{
+		op:            "drive.comments.reply",
+		resourceKey:   "fileId",
+		payloadKey:    "file_id",
+		rawResourceID: c.FileID,
+		commentID:     c.CommentID,
+		content:       c.Content,
+		action:        c.Action,
+	})
 }
 
 // DriveCommentsResolveCmd resolves a comment by posting an action="resolve" reply.

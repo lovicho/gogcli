@@ -10,42 +10,10 @@ import (
 	"google.golang.org/api/docs/v1"
 )
 
-func pageBreakDocWithEndIndex(end int64) map[string]any {
-	return map[string]any{
-		"documentId": "doc1",
-		"body": map[string]any{
-			"content": []any{
-				map[string]any{"startIndex": 0, "endIndex": end},
-			},
-		},
-	}
-}
-
 func TestDocsInsertPageBreakCmd_ExplicitIndex(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	var getCalls int
-
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			getCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(pageBreakDocWithEndIndex(50))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithEndIndex(50))
 
 	flags := &RootFlags{Account: "a@b.com"}
 	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
@@ -54,15 +22,15 @@ func TestDocsInsertPageBreakCmd_ExplicitIndex(t *testing.T) {
 		t.Fatalf("insert-page-break: %v", err)
 	}
 
-	if getCalls != 0 {
-		t.Fatalf("explicit --index should not GET the doc, got %d GET calls", getCalls)
+	if capture.GetCalls != 0 {
+		t.Fatalf("explicit --index should not GET the doc, got %d GET calls", capture.GetCalls)
 	}
-	if len(batchRequests) != 1 || len(batchRequests[0]) != 1 {
-		t.Fatalf("unexpected requests: %#v", batchRequests)
+	if len(capture.Requests) != 1 || len(capture.Requests[0]) != 1 {
+		t.Fatalf("unexpected requests: %#v", capture.Requests)
 	}
-	pb := batchRequests[0][0].InsertPageBreak
+	pb := capture.Requests[0][0].InsertPageBreak
 	if pb == nil {
-		t.Fatalf("expected InsertPageBreak, got %#v", batchRequests[0][0])
+		t.Fatalf("expected InsertPageBreak, got %#v", capture.Requests[0][0])
 	}
 	if pb.Location == nil || pb.Location.Index != 7 {
 		t.Fatalf("expected page break at index 7, got %#v", pb.Location)
@@ -72,28 +40,7 @@ func TestDocsInsertPageBreakCmd_ExplicitIndex(t *testing.T) {
 func TestDocsInsertPageBreakCmd_DefaultsToEndOfDoc(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	var getCalls int
-
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			getCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(pageBreakDocWithEndIndex(42))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithEndIndex(42))
 
 	flags := &RootFlags{Account: "a@b.com"}
 	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
@@ -102,12 +49,12 @@ func TestDocsInsertPageBreakCmd_DefaultsToEndOfDoc(t *testing.T) {
 		t.Fatalf("insert-page-break: %v", err)
 	}
 
-	if getCalls != 1 {
-		t.Fatalf("expected 1 GET to resolve end, got %d", getCalls)
+	if capture.GetCalls != 1 {
+		t.Fatalf("expected 1 GET to resolve end, got %d", capture.GetCalls)
 	}
-	pb := batchRequests[0][0].InsertPageBreak
+	pb := capture.Requests[0][0].InsertPageBreak
 	if pb == nil || pb.Location == nil {
-		t.Fatalf("expected InsertPageBreak with Location, got %#v", batchRequests[0][0])
+		t.Fatalf("expected InsertPageBreak with Location, got %#v", capture.Requests[0][0])
 	}
 	if pb.Location.Index != 41 {
 		t.Fatalf("expected page break at end-1 (41), got %d", pb.Location.Index)
@@ -117,28 +64,7 @@ func TestDocsInsertPageBreakCmd_DefaultsToEndOfDoc(t *testing.T) {
 func TestDocsInsertPageBreakCmd_AtEndFlag(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	var getCalls int
-
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			getCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(pageBreakDocWithEndIndex(100))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithEndIndex(100))
 
 	flags := &RootFlags{Account: "a@b.com"}
 	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
@@ -147,10 +73,10 @@ func TestDocsInsertPageBreakCmd_AtEndFlag(t *testing.T) {
 		t.Fatalf("insert-page-break: %v", err)
 	}
 
-	if getCalls != 1 {
-		t.Fatalf("expected 1 GET to resolve end, got %d", getCalls)
+	if capture.GetCalls != 1 {
+		t.Fatalf("expected 1 GET to resolve end, got %d", capture.GetCalls)
 	}
-	if got := batchRequests[0][0].InsertPageBreak.Location.Index; got != 99 {
+	if got := capture.Requests[0][0].InsertPageBreak.Location.Index; got != 99 {
 		t.Fatalf("expected end-1 (99), got %d", got)
 	}
 }

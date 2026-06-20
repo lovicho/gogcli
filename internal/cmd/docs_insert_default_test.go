@@ -1,13 +1,10 @@
 package cmd
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
-
-	"google.golang.org/api/docs/v1"
 )
 
 // docBodyWithEndIndex returns a Get-response payload whose body endIndex matches
@@ -27,28 +24,7 @@ func docBodyWithEndIndex(end int64) map[string]any {
 func TestDocsInsertCmd_DefaultsToEndOfDoc(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	var getCalls int
-
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			getCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(docBodyWithEndIndex(42))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithEndIndex(42))
 
 	flags := &RootFlags{Account: "a@b.com"}
 	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
@@ -57,13 +33,13 @@ func TestDocsInsertCmd_DefaultsToEndOfDoc(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 
-	if getCalls != 1 {
-		t.Fatalf("expected 1 GET to resolve end-index, got %d", getCalls)
+	if capture.GetCalls != 1 {
+		t.Fatalf("expected 1 GET to resolve end-index, got %d", capture.GetCalls)
 	}
-	if len(batchRequests) != 1 || len(batchRequests[0]) != 1 || batchRequests[0][0].InsertText == nil {
-		t.Fatalf("unexpected requests: %#v", batchRequests)
+	if len(capture.Requests) != 1 || len(capture.Requests[0]) != 1 || capture.Requests[0][0].InsertText == nil {
+		t.Fatalf("unexpected requests: %#v", capture.Requests)
 	}
-	loc := batchRequests[0][0].InsertText.Location
+	loc := capture.Requests[0][0].InsertText.Location
 	if loc == nil {
 		t.Fatalf("expected Location, got nil")
 	}
@@ -76,28 +52,7 @@ func TestDocsInsertCmd_DefaultsToEndOfDoc(t *testing.T) {
 func TestDocsInsertCmd_ExplicitIndexSkipsGet(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	var getCalls int
-
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			getCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(docBodyWithEndIndex(42))
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithEndIndex(42))
 
 	flags := &RootFlags{Account: "a@b.com"}
 	ctx := withDocsTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), docSvc)
@@ -106,10 +61,10 @@ func TestDocsInsertCmd_ExplicitIndexSkipsGet(t *testing.T) {
 		t.Fatalf("insert: %v", err)
 	}
 
-	if getCalls != 0 {
-		t.Fatalf("explicit --index should not GET the doc, but GET was called %d times", getCalls)
+	if capture.GetCalls != 0 {
+		t.Fatalf("explicit --index should not GET the doc, but GET was called %d times", capture.GetCalls)
 	}
-	if got := batchRequests[0][0].InsertText.Location; got.Index != 7 {
+	if got := capture.Requests[0][0].InsertText.Location; got.Index != 7 {
 		t.Fatalf("expected explicit index 7, got %d", got.Index)
 	}
 }

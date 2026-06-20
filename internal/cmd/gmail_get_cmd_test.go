@@ -230,9 +230,9 @@ func TestGmailGetCmd_JSON_Metadata_WithAttachments(t *testing.T) {
 	}
 }
 
-func TestGmailGetCmd_Text_Full_WithAttachments(t *testing.T) {
-	bodyData := base64.RawURLEncoding.EncodeToString([]byte("hello"))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func gmailGetAttachmentHandler(subject, body string) http.Handler {
+	bodyData := base64.RawURLEncoding.EncodeToString([]byte(body))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "/gmail/v1/users/me/messages/") {
 			http.NotFound(w, r)
 			return
@@ -249,7 +249,7 @@ func TestGmailGetCmd_Text_Full_WithAttachments(t *testing.T) {
 					{"name": "To", "value": "b@example.com"},
 					{"name": "Cc", "value": "c@example.com"},
 					{"name": "Bcc", "value": "d@example.com"},
-					{"name": "Subject", "value": "Test"},
+					{"name": "Subject", "value": subject},
 					{"name": "Date", "value": "Fri, 26 Dec 2025 10:00:00 +0000"},
 				},
 				"parts": []map[string]any{
@@ -268,7 +268,11 @@ func TestGmailGetCmd_Text_Full_WithAttachments(t *testing.T) {
 				},
 			},
 		})
-	}))
+	})
+}
+
+func TestGmailGetCmd_Text_Full_WithAttachments(t *testing.T) {
+	srv := httptest.NewServer(gmailGetAttachmentHandler("Test", "hello"))
 	defer srv.Close()
 
 	result := executeWithGmailTestService(
@@ -292,44 +296,7 @@ func TestGmailGetCmd_Text_Full_WithAttachments(t *testing.T) {
 }
 
 func TestGmailGetCmd_Text_Metadata_WithAttachments(t *testing.T) {
-	bodyData := base64.RawURLEncoding.EncodeToString([]byte("metadata body"))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "/gmail/v1/users/me/messages/") {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":       "m1",
-			"threadId": "t1",
-			"labelIds": []string{"INBOX"},
-			"payload": map[string]any{
-				"mimeType": "multipart/mixed",
-				"headers": []map[string]any{
-					{"name": "From", "value": "a@example.com"},
-					{"name": "To", "value": "b@example.com"},
-					{"name": "Cc", "value": "c@example.com"},
-					{"name": "Bcc", "value": "d@example.com"},
-					{"name": "Subject", "value": "Metadata"},
-					{"name": "Date", "value": "Fri, 26 Dec 2025 10:00:00 +0000"},
-				},
-				"parts": []map[string]any{
-					{
-						"mimeType": "text/plain",
-						"body":     map[string]any{"data": bodyData},
-					},
-					{
-						"mimeType": "application/pdf",
-						"filename": "report.pdf",
-						"body": map[string]any{
-							"attachmentId": "ANGjdJ-xyz789",
-							"size":         54321,
-						},
-					},
-				},
-			},
-		})
-	}))
+	srv := httptest.NewServer(gmailGetAttachmentHandler("Metadata", "metadata body"))
 	defer srv.Close()
 
 	result := executeWithGmailTestService(

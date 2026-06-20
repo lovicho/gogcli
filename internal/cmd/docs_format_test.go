@@ -297,31 +297,14 @@ func TestDocsWriteFormatsInsertedRangeOnly(t *testing.T) {
 func TestDocsFormatCmdMatchAll(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode request: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(docBodyWithText("Alpha Beta Alpha\n"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithText("Alpha Beta Alpha\n"))
 
 	ctx := withDocsTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), docSvc)
 	flags := &RootFlags{Account: "a@b.com"}
 	if err := runKong(t, &DocsFormatCmd{}, []string{"doc1", "--match", "Alpha", "--match-all", "--underline", "--bg-color", "#fff"}, ctx, flags); err != nil {
 		t.Fatalf("format: %v", err)
 	}
+	batchRequests := capture.Requests
 	if len(batchRequests) != 1 {
 		t.Fatalf("expected one batch, got %d", len(batchRequests))
 	}
@@ -340,25 +323,7 @@ func TestDocsFormatCmdMatchAll(t *testing.T) {
 func TestDocsFormatCmdParagraphControls(t *testing.T) {
 	t.Parallel()
 
-	var batchRequests [][]*docs.Request
-	docSvc, cleanup := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
-			var req docs.BatchUpdateDocumentRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode request: %v", err)
-			}
-			batchRequests = append(batchRequests, req.Requests)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"documentId": "doc1"})
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(docBodyWithText("Alpha Beta Alpha\n"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer cleanup()
+	docSvc, capture := newDocsBatchUpdateTestService(t, docBodyWithText("Alpha Beta Alpha\n"))
 
 	ctx := withDocsTestService(newCmdRuntimeJSONOutputContext(t, io.Discard, io.Discard), docSvc)
 	flags := &RootFlags{Account: "a@b.com"}
@@ -370,6 +335,7 @@ func TestDocsFormatCmdParagraphControls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("format: %v", err)
 	}
+	batchRequests := capture.Requests
 	if len(batchRequests) != 1 || len(batchRequests[0]) != 4 {
 		t.Fatalf("unexpected requests: %#v", batchRequests)
 	}

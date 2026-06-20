@@ -285,42 +285,15 @@ func TestGmailWatchServeCmd_DefaultMaxBytes(t *testing.T) {
 }
 
 func TestGmailWatchServeCmd_FetchDelaySeconds(t *testing.T) {
-	origListen := listenAndServe
-	t.Cleanup(func() { listenAndServe = origListen })
-
-	setWatchTestConfigHome(t)
-
-	store := newGmailWatchTestStore(t, "a@b.com")
-	updateErr := store.Update(func(s *gmailWatchState) error {
-		s.Account = "a@b.com"
-		return nil
-	})
-	if updateErr != nil {
-		t.Fatalf("seed: %v", updateErr)
-	}
-
-	flags := &RootFlags{Account: "a@b.com"}
-	var got *gmailWatchServer
-	listenAndServe = func(srv *http.Server) error {
-		if gs, ok := srv.Handler.(*gmailWatchServer); ok {
-			got = gs
-		}
-		return nil
-	}
-
-	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), &gmail.Service{})
-	if execErr := runKong(t, &GmailWatchServeCmd{}, []string{"--port", "9999", "--path", "/hook", "--fetch-delay", "5"}, ctx, flags); execErr != nil {
-		t.Fatalf("execute: %v", execErr)
-	}
-	if got == nil {
-		t.Fatalf("expected server")
-	}
-	if got.cfg.FetchDelay != 5*time.Second {
-		t.Fatalf("expected fetch delay 5s, got %v", got.cfg.FetchDelay)
-	}
+	assertGmailWatchFetchDelay(t, "5", 5*time.Second)
 }
 
 func TestGmailWatchServeCmd_FetchDelayDuration(t *testing.T) {
+	assertGmailWatchFetchDelay(t, "750ms", 750*time.Millisecond)
+}
+
+func assertGmailWatchFetchDelay(t *testing.T, value string, want time.Duration) {
+	t.Helper()
 	origListen := listenAndServe
 	t.Cleanup(func() { listenAndServe = origListen })
 
@@ -345,14 +318,14 @@ func TestGmailWatchServeCmd_FetchDelayDuration(t *testing.T) {
 	}
 
 	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), &gmail.Service{})
-	if execErr := runKong(t, &GmailWatchServeCmd{}, []string{"--port", "9999", "--path", "/hook", "--fetch-delay", "750ms"}, ctx, flags); execErr != nil {
+	if execErr := runKong(t, &GmailWatchServeCmd{}, []string{"--port", "9999", "--path", "/hook", "--fetch-delay", value}, ctx, flags); execErr != nil {
 		t.Fatalf("execute: %v", execErr)
 	}
 	if got == nil {
 		t.Fatalf("expected server")
 	}
-	if got.cfg.FetchDelay != 750*time.Millisecond {
-		t.Fatalf("expected fetch delay 750ms, got %v", got.cfg.FetchDelay)
+	if got.cfg.FetchDelay != want {
+		t.Fatalf("expected fetch delay %v, got %v", want, got.cfg.FetchDelay)
 	}
 }
 

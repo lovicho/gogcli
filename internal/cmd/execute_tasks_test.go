@@ -139,8 +139,9 @@ func TestExecute_TasksList_JSON(t *testing.T) {
 	}
 }
 
-func TestExecute_TasksAdd_JSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func tasksMutationHandler(t *testing.T, path string, method string, wantKey string, wantValue string, response map[string]any) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/tasks/v1/users/@me/lists" && r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -150,7 +151,7 @@ func TestExecute_TasksAdd_JSON(t *testing.T) {
 			})
 			return
 		}
-		if !(r.URL.Path == "/tasks/v1/lists/l1/tasks" && r.Method == http.MethodPost) {
+		if r.URL.Path != path || r.Method != method {
 			http.NotFound(w, r)
 			return
 		}
@@ -159,17 +160,20 @@ func TestExecute_TasksAdd_JSON(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if body["title"] != "Hello" {
-			http.Error(w, "expected title Hello", http.StatusBadRequest)
+		if body[wantKey] != wantValue {
+			http.Error(w, "unexpected mutation body", http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":     "t1",
-			"title":  "Hello",
-			"status": "needsAction",
-		})
-	}))
+		_ = json.NewEncoder(w).Encode(response)
+	})
+}
+
+func TestExecute_TasksAdd_JSON(t *testing.T) {
+	srv := httptest.NewServer(tasksMutationHandler(t,
+		"/tasks/v1/lists/l1/tasks", http.MethodPost, "title", "Hello",
+		map[string]any{"id": "t1", "title": "Hello", "status": "needsAction"},
+	))
 	defer srv.Close()
 
 	result := executeWithTasksTestService(t,
@@ -241,36 +245,10 @@ func TestExecute_TasksGet_JSON(t *testing.T) {
 }
 
 func TestExecute_TasksDone_JSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/tasks/v1/users/@me/lists" && r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items": []map[string]any{
-					{"id": "l1", "title": "One"},
-				},
-			})
-			return
-		}
-		if !(r.URL.Path == "/tasks/v1/lists/l1/tasks/t1" && r.Method == http.MethodPatch) {
-			http.NotFound(w, r)
-			return
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if body["status"] != "completed" {
-			http.Error(w, "expected status completed", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":     "t1",
-			"title":  "Hello",
-			"status": "completed",
-		})
-	}))
+	srv := httptest.NewServer(tasksMutationHandler(t,
+		"/tasks/v1/lists/l1/tasks/t1", http.MethodPatch, "status", "completed",
+		map[string]any{"id": "t1", "title": "Hello", "status": "completed"},
+	))
 	defer srv.Close()
 
 	result := executeWithTasksTestService(t,
@@ -335,36 +313,10 @@ func TestExecute_TasksDelete_JSON(t *testing.T) {
 }
 
 func TestExecute_TasksUpdate_JSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/tasks/v1/users/@me/lists" && r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"items": []map[string]any{
-					{"id": "l1", "title": "One"},
-				},
-			})
-			return
-		}
-		if !(r.URL.Path == "/tasks/v1/lists/l1/tasks/t1" && r.Method == http.MethodPatch) {
-			http.NotFound(w, r)
-			return
-		}
-		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if body["title"] != "New title" {
-			http.Error(w, "expected title New title", http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":     "t1",
-			"title":  "New title",
-			"status": "needsAction",
-		})
-	}))
+	srv := httptest.NewServer(tasksMutationHandler(t,
+		"/tasks/v1/lists/l1/tasks/t1", http.MethodPatch, "title", "New title",
+		map[string]any{"id": "t1", "title": "New title", "status": "needsAction"},
+	))
 	defer srv.Close()
 
 	result := executeWithTasksTestService(t,

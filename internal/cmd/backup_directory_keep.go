@@ -249,24 +249,13 @@ func fetchBackupAdminGroupMembers(ctx context.Context, svc *admin.Service, group
 		if group == nil || strings.TrimSpace(group.Email) == "" {
 			continue
 		}
-		pageToken := ""
-		for {
-			call := svc.Members.List(group.Email).MaxResults(200).Context(ctx)
-			if pageToken != "" {
-				call = call.PageToken(pageToken)
-			}
-			resp, err := call.Do()
-			if err != nil {
-				out = append(out, adminBackupMember{GroupEmail: group.Email, Error: err.Error()})
-				break
-			}
-			for _, member := range resp.Members {
-				out = append(out, adminBackupMember{GroupEmail: group.Email, Member: member})
-			}
-			if resp.NextPageToken == "" {
-				break
-			}
-			pageToken = resp.NextPageToken
+		members, err := fetchAllBackupAdminGroupMembers(ctx, svc, group.Email)
+		if err != nil {
+			out = append(out, adminBackupMember{GroupEmail: group.Email, Error: err.Error()})
+			continue
+		}
+		for _, member := range members {
+			out = append(out, adminBackupMember{GroupEmail: group.Email, Member: member})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -276,6 +265,24 @@ func fetchBackupAdminGroupMembers(ctx context.Context, svc *admin.Service, group
 		return out[i].GroupEmail < out[j].GroupEmail
 	})
 	return out
+}
+
+func fetchAllBackupAdminGroupMembers(ctx context.Context, svc *admin.Service, groupEmail string) ([]*admin.Member, error) {
+	items, _, err := loadPagedItems("", true, func(pageToken string) ([]*admin.Member, string, error) {
+		call := svc.Members.List(groupEmail).MaxResults(200).Context(ctx)
+		if pageToken != "" {
+			call = call.PageToken(pageToken)
+		}
+		resp, err := call.Do()
+		if err != nil {
+			return nil, "", err
+		}
+		return resp.Members, resp.NextPageToken, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func fetchBackupKeepNotes(ctx context.Context, svc *keepapi.Service) ([]*keepapi.Note, error) {

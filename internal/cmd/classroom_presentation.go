@@ -16,11 +16,11 @@ type classroomRosterRow struct {
 
 func classroomCourseColumns() []outfmt.Column[*classroom.Course] {
 	return []outfmt.Column[*classroom.Course]{
-		{Header: "ID", Value: func(course *classroom.Course) string { return sanitizeTab(course.Id) }},
-		{Header: "NAME", Value: func(course *classroom.Course) string { return sanitizeTab(course.Name) }},
-		{Header: "SECTION", Value: func(course *classroom.Course) string { return sanitizeTab(course.Section) }},
-		{Header: "STATE", Value: func(course *classroom.Course) string { return sanitizeTab(course.CourseState) }},
-		{Header: "OWNER", Value: func(course *classroom.Course) string { return sanitizeTab(course.OwnerId) }},
+		sanitizedColumn("ID", func(course *classroom.Course) string { return course.Id }),
+		sanitizedColumn("NAME", func(course *classroom.Course) string { return course.Name }),
+		sanitizedColumn("SECTION", func(course *classroom.Course) string { return course.Section }),
+		sanitizedColumn("STATE", func(course *classroom.Course) string { return course.CourseState }),
+		sanitizedColumn("OWNER", func(course *classroom.Course) string { return course.OwnerId }),
 	}
 }
 

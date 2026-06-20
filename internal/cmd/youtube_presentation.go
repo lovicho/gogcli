@@ -34,63 +34,72 @@ func youtubeActivityColumns() []outfmt.Column[*youtube.Activity] {
 }
 
 func youtubeVideoColumns() []outfmt.Column[*youtube.Video] {
-	return []outfmt.Column[*youtube.Video]{
-		{Header: "ID", Value: func(video *youtube.Video) string { return video.Id }},
-		{Header: "TITLE", Value: func(video *youtube.Video) string {
-			if video.Snippet == nil {
-				return ""
-			}
-			return sanitizeTab(video.Snippet.Title)
-		}},
-		{Header: "CHANNEL", Value: func(video *youtube.Video) string {
-			if video.Snippet == nil {
-				return ""
-			}
-			return sanitizeTab(video.Snippet.ChannelTitle)
-		}},
-		{Header: "VIEWS", Value: func(video *youtube.Video) string {
-			if video.Statistics == nil {
-				return ""
-			}
-			return fmt.Sprintf("%d", video.Statistics.ViewCount)
-		}},
-		{Header: "PUBLISHED_AT", Value: func(video *youtube.Video) string {
-			if video.Snippet == nil {
-				return ""
-			}
-			return sanitizeTab(video.Snippet.PublishedAt)
-		}},
-	}
+	return youtubeResourceColumns(youtubeResourcePresentation[*youtube.Video]{
+		id: func(video *youtube.Video) string { return video.Id },
+		title: func(video *youtube.Video) string {
+			return valueFrom(video.Snippet, func(snippet *youtube.VideoSnippet) string { return snippet.Title })
+		},
+		channel: func(video *youtube.Video) string {
+			return valueFrom(video.Snippet, func(snippet *youtube.VideoSnippet) string { return snippet.ChannelTitle })
+		},
+		metricName: "VIEWS",
+		metric: func(video *youtube.Video) string {
+			return valueFrom(video.Statistics, func(statistics *youtube.VideoStatistics) string {
+				return fmt.Sprintf("%d", statistics.ViewCount)
+			})
+		},
+		published: func(video *youtube.Video) string {
+			return valueFrom(video.Snippet, func(snippet *youtube.VideoSnippet) string { return snippet.PublishedAt })
+		},
+	})
 }
 
 func youtubePlaylistColumns() []outfmt.Column[*youtube.Playlist] {
-	return []outfmt.Column[*youtube.Playlist]{
-		{Header: "ID", Value: func(playlist *youtube.Playlist) string { return playlist.Id }},
-		{Header: "TITLE", Value: func(playlist *youtube.Playlist) string {
-			if playlist.Snippet == nil {
-				return ""
-			}
-			return sanitizeTab(playlist.Snippet.Title)
-		}},
-		{Header: "CHANNEL", Value: func(playlist *youtube.Playlist) string {
-			if playlist.Snippet == nil {
-				return ""
-			}
-			return sanitizeTab(playlist.Snippet.ChannelTitle)
-		}},
-		{Header: "VIDEO_COUNT", Value: func(playlist *youtube.Playlist) string {
+	return youtubeResourceColumns(youtubeResourcePresentation[*youtube.Playlist]{
+		id: func(playlist *youtube.Playlist) string { return playlist.Id },
+		title: func(playlist *youtube.Playlist) string {
+			return valueFrom(playlist.Snippet, func(snippet *youtube.PlaylistSnippet) string { return snippet.Title })
+		},
+		channel: func(playlist *youtube.Playlist) string {
+			return valueFrom(playlist.Snippet, func(snippet *youtube.PlaylistSnippet) string { return snippet.ChannelTitle })
+		},
+		metricName: "VIDEO_COUNT",
+		metric: func(playlist *youtube.Playlist) string {
 			if playlist.ContentDetails == nil {
 				return "0"
 			}
 			return fmt.Sprintf("%d", playlist.ContentDetails.ItemCount)
-		}},
-		{Header: "PUBLISHED_AT", Value: func(playlist *youtube.Playlist) string {
-			if playlist.Snippet == nil {
-				return ""
-			}
-			return sanitizeTab(playlist.Snippet.PublishedAt)
-		}},
+		},
+		published: func(playlist *youtube.Playlist) string {
+			return valueFrom(playlist.Snippet, func(snippet *youtube.PlaylistSnippet) string { return snippet.PublishedAt })
+		},
+	})
+}
+
+type youtubeResourcePresentation[T any] struct {
+	id         func(T) string
+	title      func(T) string
+	channel    func(T) string
+	metricName string
+	metric     func(T) string
+	published  func(T) string
+}
+
+func youtubeResourceColumns[T any](presentation youtubeResourcePresentation[T]) []outfmt.Column[T] {
+	return []outfmt.Column[T]{
+		{Header: "ID", Value: presentation.id},
+		sanitizedColumn("TITLE", presentation.title),
+		sanitizedColumn("CHANNEL", presentation.channel),
+		{Header: presentation.metricName, Value: presentation.metric},
+		sanitizedColumn("PUBLISHED_AT", presentation.published),
 	}
+}
+
+func valueFrom[T any](value *T, extract func(*T) string) string {
+	if value == nil {
+		return ""
+	}
+	return extract(value)
 }
 
 func youtubePlaylistItemColumns() []outfmt.Column[*youtube.PlaylistItem] {

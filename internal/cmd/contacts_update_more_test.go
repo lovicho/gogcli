@@ -151,66 +151,70 @@ func primaryValue(m map[string]any, key string) string {
 	}
 }
 
-func TestContactsUpdate_Relation_Set(t *testing.T) {
-	var gotGetFields string
-	var gotUpdateFields string
-	var gotRelations []map[string]any
+type contactUpdateFieldCapture struct {
+	getFields    string
+	updateFields string
+	items        []map[string]any
+}
 
-	svc, closeSrv := newPeopleService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func newContactUpdateFieldTestContext(t *testing.T, field string) (context.Context, *contactUpdateFieldCapture) {
+	t.Helper()
+	capture := &contactUpdateFieldCapture{}
+	svc, closeServer := newPeopleService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "people/c1") && r.Method == http.MethodGet && !strings.Contains(r.URL.Path, ":"):
-			gotGetFields = r.URL.Query().Get("personFields")
+			capture.getFields = r.URL.Query().Get("personFields")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"resourceName": "people/c1",
 				"names":        []map[string]any{{"givenName": "Ada", "familyName": "Lovelace"}},
 			})
-			return
 		case strings.Contains(r.URL.Path, ":updateContact") && (r.Method == http.MethodPatch || r.Method == http.MethodPost):
-			gotUpdateFields = r.URL.Query().Get("updatePersonFields")
+			capture.updateFields = r.URL.Query().Get("updatePersonFields")
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode body: %v", err)
+				t.Errorf("decode body: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
-			if rels, ok := body["relations"].([]any); ok {
-				for _, rel := range rels {
-					if m, ok := rel.(map[string]any); ok {
-						gotRelations = append(gotRelations, m)
-					}
-				}
+			for _, item := range body[field].([]any) {
+				capture.items = append(capture.items, item.(map[string]any))
 			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"resourceName": "people/c1"})
-			return
+			_, _ = w.Write([]byte(`{"resourceName":"people/c1"}`))
 		default:
 			http.NotFound(w, r)
 		}
 	}))
-	t.Cleanup(closeSrv)
+	t.Cleanup(closeServer)
 	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
 	if err != nil {
 		t.Fatalf("ui.New: %v", err)
 	}
-	ctx := withStubPeopleServices(ui.WithUI(context.Background(), u), svc)
+	return withStubPeopleServices(ui.WithUI(context.Background(), u), svc), capture
+}
+
+func TestContactsUpdate_Relation_Set(t *testing.T) {
+	ctx, capture := newContactUpdateFieldTestContext(t, "relations")
 
 	if err := runKong(t, &ContactsUpdateCmd{}, []string{"people/c1", "--relation", "spouse=Jane", "--relation", "friend=Bob"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
 
-	if !strings.Contains(gotGetFields, "relations") {
-		t.Fatalf("missing relations in people.get fields: %q", gotGetFields)
+	if !strings.Contains(capture.getFields, "relations") {
+		t.Fatalf("missing relations in people.get fields: %q", capture.getFields)
 	}
-	if !strings.Contains(gotUpdateFields, "relations") {
-		t.Fatalf("missing relations in update fields: %q", gotUpdateFields)
+	if !strings.Contains(capture.updateFields, "relations") {
+		t.Fatalf("missing relations in update fields: %q", capture.updateFields)
 	}
-	if len(gotRelations) != 2 {
-		t.Fatalf("expected 2 relations, got %d", len(gotRelations))
+	if len(capture.items) != 2 {
+		t.Fatalf("expected 2 relations, got %d", len(capture.items))
 	}
-	if gotRelations[0]["type"] != "spouse" || gotRelations[0]["person"] != "Jane" {
-		t.Fatalf("unexpected first relation: %v", gotRelations[0])
+	if capture.items[0]["type"] != "spouse" || capture.items[0]["person"] != "Jane" {
+		t.Fatalf("unexpected first relation: %v", capture.items[0])
 	}
-	if gotRelations[1]["type"] != "friend" || gotRelations[1]["person"] != "Bob" {
-		t.Fatalf("unexpected second relation: %v", gotRelations[1])
+	if capture.items[1]["type"] != "friend" || capture.items[1]["person"] != "Bob" {
+		t.Fatalf("unexpected second relation: %v", capture.items[1])
 	}
 }
 
@@ -298,65 +302,26 @@ func TestContactsCreate_Relation_Set(t *testing.T) {
 }
 
 func TestContactsUpdate_Address_Set(t *testing.T) {
-	var gotGetFields string
-	var gotUpdateFields string
-	var gotAddresses []map[string]any
-
-	svc, closeSrv := newPeopleService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.Contains(r.URL.Path, "people/c1") && r.Method == http.MethodGet && !strings.Contains(r.URL.Path, ":"):
-			gotGetFields = r.URL.Query().Get("personFields")
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"resourceName": "people/c1",
-				"names":        []map[string]any{{"givenName": "Ada", "familyName": "Lovelace"}},
-			})
-			return
-		case strings.Contains(r.URL.Path, ":updateContact") && (r.Method == http.MethodPatch || r.Method == http.MethodPost):
-			gotUpdateFields = r.URL.Query().Get("updatePersonFields")
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode body: %v", err)
-			}
-			if addrs, ok := body["addresses"].([]any); ok {
-				for _, addr := range addrs {
-					if m, ok := addr.(map[string]any); ok {
-						gotAddresses = append(gotAddresses, m)
-					}
-				}
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"resourceName": "people/c1"})
-			return
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(closeSrv)
-	u, err := ui.New(ui.Options{Stdout: io.Discard, Stderr: io.Discard, Color: "never"})
-	if err != nil {
-		t.Fatalf("ui.New: %v", err)
-	}
-	ctx := withStubPeopleServices(ui.WithUI(context.Background(), u), svc)
+	ctx, capture := newContactUpdateFieldTestContext(t, "addresses")
 
 	if err := runKong(t, &ContactsUpdateCmd{}, []string{"people/c1", "--address", "123 Main St", "--address", "456 Side St"}, ctx, &RootFlags{Account: "a@b.com"}); err != nil {
 		t.Fatalf("runKong: %v", err)
 	}
 
-	if !strings.Contains(gotGetFields, "addresses") {
-		t.Fatalf("missing addresses in people.get fields: %q", gotGetFields)
+	if !strings.Contains(capture.getFields, "addresses") {
+		t.Fatalf("missing addresses in people.get fields: %q", capture.getFields)
 	}
-	if !strings.Contains(gotUpdateFields, "addresses") {
-		t.Fatalf("missing addresses in update fields: %q", gotUpdateFields)
+	if !strings.Contains(capture.updateFields, "addresses") {
+		t.Fatalf("missing addresses in update fields: %q", capture.updateFields)
 	}
-	if len(gotAddresses) != 2 {
-		t.Fatalf("expected 2 addresses, got %d", len(gotAddresses))
+	if len(capture.items) != 2 {
+		t.Fatalf("expected 2 addresses, got %d", len(capture.items))
 	}
-	if gotAddresses[0]["streetAddress"] != "123 Main St" {
-		t.Fatalf("unexpected first address: %v", gotAddresses[0])
+	if capture.items[0]["streetAddress"] != "123 Main St" {
+		t.Fatalf("unexpected first address: %v", capture.items[0])
 	}
-	if gotAddresses[1]["streetAddress"] != "456 Side St" {
-		t.Fatalf("unexpected second address: %v", gotAddresses[1])
+	if capture.items[1]["streetAddress"] != "456 Side St" {
+		t.Fatalf("unexpected second address: %v", capture.items[1])
 	}
 }
 

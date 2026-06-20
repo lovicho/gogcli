@@ -47,6 +47,55 @@ func validateDriveReplyAction(action string) (string, error) {
 	}
 }
 
+type driveCommentReplyCommand struct {
+	op            string
+	resourceKey   string
+	payloadKey    string
+	rawResourceID string
+	commentID     string
+	content       string
+	action        string
+}
+
+func runDriveCommentReply(ctx context.Context, flags *RootFlags, command driveCommentReplyCommand) error {
+	resourceID := normalizeGoogleID(strings.TrimSpace(command.rawResourceID))
+	commentID := strings.TrimSpace(command.commentID)
+	content := strings.TrimSpace(command.content)
+	if resourceID == "" {
+		return usage("empty " + command.resourceKey)
+	}
+	if commentID == "" {
+		return usage("empty commentId")
+	}
+	if content == "" {
+		return usage("empty content")
+	}
+	action, err := validateDriveReplyAction(command.action)
+	if err != nil {
+		return usage(err.Error())
+	}
+
+	if dryErr := dryRunExit(ctx, flags, command.op, map[string]any{
+		command.payloadKey: resourceID,
+		"comment_id":       commentID,
+		"content":          content,
+		"action":           action,
+	}); dryErr != nil {
+		return dryErr
+	}
+
+	_, svc, err := requireDriveService(ctx, flags)
+	if err != nil {
+		return err
+	}
+	created, err := createDriveReplyWithAction(ctx, svc, resourceID, commentID, content, action)
+	if err != nil {
+		return err
+	}
+	resolved := action == driveReplyActionResolve || action == driveReplyActionReopen
+	return writeDriveReplyMutationWithAction(ctx, ui.FromContext(ctx), created, resolved, action, command.resourceKey, resourceID, commentID)
+}
+
 type driveCommentListMode int
 
 const (

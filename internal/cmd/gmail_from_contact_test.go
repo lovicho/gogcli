@@ -2,13 +2,9 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 )
 
@@ -45,42 +41,7 @@ func TestAllContactEmailsDedupes(t *testing.T) {
 
 func TestGmailFromContactQuery_WarmsContactsSearchCache(t *testing.T) {
 	var queries []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "people:searchContacts") {
-			http.NotFound(w, r)
-			return
-		}
-		query := r.URL.Query().Get("query")
-		queries = append(queries, query)
-		w.Header().Set("Content-Type", "application/json")
-		if query == "" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{}})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"results": []map[string]any{
-				{
-					"person": map[string]any{
-						"resourceName": "people/c1",
-						"names":        []map[string]any{{"displayName": "Alice"}},
-						"emailAddresses": []map[string]any{
-							{"value": "alice@example.com"},
-						},
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	svc, err := people.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
+	svc := newPeopleSearchTestService(t, "people:searchContacts", "people/c1", "Alice", "alice@example.com", &queries)
 
 	got, err := gmailFromContactQuery(withPeopleContactsTestService(context.Background(), svc), "a@b.com", "Alice")
 	if err != nil {

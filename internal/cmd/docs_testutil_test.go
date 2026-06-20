@@ -3,10 +3,12 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"google.golang.org/api/docs/v1"
@@ -16,6 +18,116 @@ import (
 	"github.com/steipete/gogcli/internal/app"
 	"github.com/steipete/gogcli/internal/ui"
 )
+
+type docsBatchUpdateCapture struct {
+	GetCalls         int
+	IncludeTabsCalls int
+	Requests         [][]*docs.Request
+}
+
+func newDocsBatchUpdateTestService(t *testing.T, document any) (*docs.Service, *docsBatchUpdateCapture) {
+	t.Helper()
+	capture := &docsBatchUpdateCapture{}
+	svc := newDocsBatchUpdateRecordingTestService(
+		t, document, &capture.Requests, &capture.GetCalls, &capture.IncludeTabsCalls,
+	)
+	return svc, capture
+}
+
+func newDocsBatchUpdateRecordingTestService(
+	t *testing.T,
+	document any,
+	requests *[][]*docs.Request,
+	getCalls, includeTabsCalls *int,
+) *docs.Service {
+	t.Helper()
+	svc, _ := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/documents/"):
+			if getCalls != nil {
+				*getCalls++
+			}
+			if includeTabsCalls != nil && r.URL.Query().Get("includeTabsContent") == "true" {
+				*includeTabsCalls++
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(document)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, ":batchUpdate"):
+			var request docs.BatchUpdateDocumentRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode batchUpdate: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if requests != nil {
+				*requests = append(*requests, request.Requests)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"documentId":"doc1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	return svc
+}
+
+func docsBodyWithEndIndex(endIndex int64) map[string]any {
+	return map[string]any{
+		"documentId": "doc1",
+		"body": map[string]any{"content": []any{
+			map[string]any{"startIndex": 1, "endIndex": endIndex},
+		}},
+	}
+}
+
+func docsHeadingLinkTestDocument(elements ...*docs.StructuralElement) *docs.Document {
+	return &docs.Document{DocumentId: "doc1", Body: &docs.Body{Content: elements}}
+}
+
+func docsHeadingTestParagraph(start int64, headingID, text string) *docs.StructuralElement {
+	end := start + utf16Len(text)
+	return &docs.StructuralElement{
+		StartIndex: start,
+		EndIndex:   end,
+		Paragraph: &docs.Paragraph{
+			ParagraphStyle: &docs.ParagraphStyle{NamedStyleType: "HEADING_1", HeadingId: headingID},
+			Elements: []*docs.ParagraphElement{{
+				StartIndex: start, EndIndex: end, TextRun: &docs.TextRun{Content: text},
+			}},
+		},
+	}
+}
+
+func docsLinkTestParagraph(start int64, url, text string) *docs.StructuralElement {
+	end := start + utf16Len(text)
+	return &docs.StructuralElement{
+		StartIndex: start,
+		EndIndex:   end + 1,
+		Paragraph: &docs.Paragraph{Elements: []*docs.ParagraphElement{{
+			StartIndex: start,
+			EndIndex:   end,
+			TextRun: &docs.TextRun{
+				Content: text, TextStyle: &docs.TextStyle{Link: &docs.Link{Url: url}},
+			},
+		}}},
+	}
+}
+
+func newDocsDocumentTestService(t *testing.T, document any, includeTabs *string) *docs.Service {
+	t.Helper()
+	svc, _ := newDocsServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, "/v1/documents/") {
+			http.NotFound(w, r)
+			return
+		}
+		if includeTabs != nil {
+			*includeTabs = r.URL.Query().Get("includeTabsContent")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(document)
+	}))
+	return svc
+}
 
 func newDocsServiceForTest(t *testing.T, h http.HandlerFunc) (*docs.Service, func()) {
 	t.Helper()

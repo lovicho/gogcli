@@ -163,42 +163,7 @@ func TestExecute_ContactsGet_ByEmail_JSON(t *testing.T) {
 
 func TestExecute_ContactsSearch_WarmsCache(t *testing.T) {
 	var queries []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "people:searchContacts") {
-			http.NotFound(w, r)
-			return
-		}
-		query := r.URL.Query().Get("query")
-		queries = append(queries, query)
-		w.Header().Set("Content-Type", "application/json")
-		if query == "" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{}})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"results": []map[string]any{
-				{
-					"person": map[string]any{
-						"resourceName": "people/c1",
-						"names":        []map[string]any{{"displayName": "Ada Lovelace"}},
-						"emailAddresses": []map[string]any{
-							{"value": "ada@example.com"},
-						},
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	svc, err := people.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
+	svc := newPeopleSearchTestService(t, "people:searchContacts", "people/c1", "Ada Lovelace", "ada@example.com", &queries)
 
 	result := executeWithPeopleContactsTestService(t, []string{"--json", "--account", "a@b.com", "contacts", "search", "Ada"}, svc)
 	if result.err != nil {
@@ -224,42 +189,7 @@ func TestExecute_ContactsSearch_WarmsCache(t *testing.T) {
 
 func TestExecute_ContactsOtherSearch_WarmsCache(t *testing.T) {
 	var queries []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.Path, "otherContacts:search") {
-			http.NotFound(w, r)
-			return
-		}
-		query := r.URL.Query().Get("query")
-		queries = append(queries, query)
-		w.Header().Set("Content-Type", "application/json")
-		if query == "" {
-			_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{}})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"results": []map[string]any{
-				{
-					"person": map[string]any{
-						"resourceName": "otherContacts/c1",
-						"names":        []map[string]any{{"displayName": "Other Ada"}},
-						"emailAddresses": []map[string]any{
-							{"value": "other@example.com"},
-						},
-					},
-				},
-			},
-		})
-	}))
-	defer srv.Close()
-
-	svc, err := people.NewService(context.Background(),
-		option.WithoutAuthentication(),
-		option.WithHTTPClient(srv.Client()),
-		option.WithEndpoint(srv.URL+"/"),
-	)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
+	svc := newPeopleSearchTestService(t, "otherContacts:search", "otherContacts/c1", "Other Ada", "other@example.com", &queries)
 
 	result := executeWithPeopleOtherTestService(t, []string{"--json", "--account", "a@b.com", "contacts", "other", "search", "Other"}, svc)
 	if result.err != nil {

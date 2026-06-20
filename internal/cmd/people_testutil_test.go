@@ -2,13 +2,50 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"google.golang.org/api/people/v1"
 
 	"github.com/steipete/gogcli/internal/app"
 )
+
+func newPeopleSearchTestService(
+	t *testing.T,
+	path string,
+	resourceName string,
+	displayName string,
+	email string,
+	queries *[]string,
+) *people.Service {
+	t.Helper()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, path) {
+			http.NotFound(w, r)
+			return
+		}
+		query := r.URL.Query().Get("query")
+		*queries = append(*queries, query)
+		w.Header().Set("Content-Type", "application/json")
+		if query == "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"results": []map[string]any{{"person": map[string]any{
+			"resourceName": resourceName,
+			"names":        []map[string]any{{"displayName": displayName}},
+			"emailAddresses": []map[string]any{
+				{"value": email},
+			},
+		}}}})
+	})
+	svc, closeServer := newGoogleTestService(t, handler, people.NewService)
+	t.Cleanup(closeServer)
+	return svc
+}
 
 func newPeopleServiceFromServer(t *testing.T, srv *httptest.Server) *people.Service {
 	t.Helper()

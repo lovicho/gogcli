@@ -13,6 +13,33 @@ import (
 	"google.golang.org/api/slides/v1"
 )
 
+func assertSlidesTableDimensionRequest(t *testing.T, requests []*slides.Request, dimension string, index int64, size float64) {
+	t.Helper()
+	if len(requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(requests))
+	}
+	switch dimension {
+	case "row":
+		got := requests[0].UpdateTableRowProperties
+		if got == nil || got.ObjectId != "table1" || len(got.RowIndices) != 1 || got.RowIndices[0] != index || got.Fields != "minRowHeight" {
+			t.Fatalf("unexpected row size request: %+v", got)
+		}
+		if got.TableRowProperties.MinRowHeight.Magnitude != size || got.TableRowProperties.MinRowHeight.Unit != "PT" {
+			t.Fatalf("unexpected row height: %+v", got.TableRowProperties.MinRowHeight)
+		}
+	case "column":
+		got := requests[0].UpdateTableColumnProperties
+		if got == nil || got.ObjectId != "table1" || len(got.ColumnIndices) != 1 || got.ColumnIndices[0] != index || got.Fields != "columnWidth" {
+			t.Fatalf("unexpected column size request: %+v", got)
+		}
+		if got.TableColumnProperties.ColumnWidth.Magnitude != size || got.TableColumnProperties.ColumnWidth.Unit != "PT" {
+			t.Fatalf("unexpected column width: %+v", got.TableColumnProperties.ColumnWidth)
+		}
+	default:
+		t.Fatalf("unknown dimension %q", dimension)
+	}
+}
+
 func TestSlidesTableStyle_DryRunRequests(t *testing.T) {
 	middle := "MIDDLE"
 	dash := "DASH"
@@ -31,16 +58,7 @@ func TestSlidesTableStyle_DryRunRequests(t *testing.T) {
 			},
 			want: func(t *testing.T, requests []*slides.Request) {
 				t.Helper()
-				if len(requests) != 1 || requests[0].UpdateTableRowProperties == nil {
-					t.Fatalf("unexpected requests: %+v", requests)
-				}
-				got := requests[0].UpdateTableRowProperties
-				if got.ObjectId != "table1" || len(got.RowIndices) != 1 || got.RowIndices[0] != 2 || got.Fields != "minRowHeight" {
-					t.Fatalf("unexpected row size request: %+v", got)
-				}
-				if got.TableRowProperties.MinRowHeight.Magnitude != 48 || got.TableRowProperties.MinRowHeight.Unit != "PT" {
-					t.Fatalf("unexpected row height: %+v", got.TableRowProperties.MinRowHeight)
-				}
+				assertSlidesTableDimensionRequest(t, requests, "row", 2, 48)
 			},
 		},
 		{
@@ -51,16 +69,7 @@ func TestSlidesTableStyle_DryRunRequests(t *testing.T) {
 			},
 			want: func(t *testing.T, requests []*slides.Request) {
 				t.Helper()
-				if len(requests) != 1 || requests[0].UpdateTableColumnProperties == nil {
-					t.Fatalf("unexpected requests: %+v", requests)
-				}
-				got := requests[0].UpdateTableColumnProperties
-				if got.ObjectId != "table1" || len(got.ColumnIndices) != 1 || got.ColumnIndices[0] != 1 || got.Fields != "columnWidth" {
-					t.Fatalf("unexpected column size request: %+v", got)
-				}
-				if got.TableColumnProperties.ColumnWidth.Magnitude != 120 || got.TableColumnProperties.ColumnWidth.Unit != "PT" {
-					t.Fatalf("unexpected column width: %+v", got.TableColumnProperties.ColumnWidth)
-				}
+				assertSlidesTableDimensionRequest(t, requests, "column", 1, 120)
 			},
 		},
 		{
