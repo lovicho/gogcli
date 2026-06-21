@@ -18,7 +18,7 @@ gog docs (doc) <command> [flags]
 
 - [gog docs add-tab](gog-docs-add-tab.md) - Add a tab to a Google Doc
 - [gog docs cat](gog-docs-cat.md) - Print a Google Doc as plain text
-- [gog docs cell-style](gog-docs-cell-style.md) - Apply table cell background and text styling
+- [gog docs cell-style](gog-docs-cell-style.md) - Apply table cell, border, padding, alignment, and text styling
 - [gog docs cell-update](gog-docs-cell-update.md) - Replace or append content inside a specific table cell
 - [gog docs clear](gog-docs-clear.md) - Clear all content from a Google Doc
 - [gog docs comments](gog-docs-comments.md) - Manage comments on files
@@ -53,7 +53,7 @@ gog docs (doc) <command> [flags]
 - [gog docs table-column](gog-docs-table-column.md) - Insert or delete native table columns
 - [gog docs table-column-width](gog-docs-table-column-width.md) - Set or reset native table column widths
 - [gog docs table-merge](gog-docs-table-merge.md) - Merge a native table cell range
-- [gog docs table-row](gog-docs-table-row.md) - Insert or delete native table rows
+- [gog docs table-row](gog-docs-table-row.md) - Insert, delete, style, or pin native table rows
 - [gog docs table-unmerge](gog-docs-table-unmerge.md) - Unmerge the region containing a native table cell
 - [gog docs tables](gog-docs-tables.md) - List native tables
 - [gog docs tabs](gog-docs-tabs.md) - Manage Google Doc tabs

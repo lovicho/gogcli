@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 680.
+Generated pages: 682.
 
 ## Top-level Commands
 
@@ -276,7 +276,7 @@ Generated pages: 680.
   - [gog docs](gog-docs.md) - Google Docs (export via Drive)
     - [gog docs add-tab](gog-docs-add-tab.md) - Add a tab to a Google Doc
     - [gog docs cat](gog-docs-cat.md) - Print a Google Doc as plain text
-    - [gog docs cell-style](gog-docs-cell-style.md) - Apply table cell background and text styling
+    - [gog docs cell-style](gog-docs-cell-style.md) - Apply table cell, border, padding, alignment, and text styling
     - [gog docs cell-update](gog-docs-cell-update.md) - Replace or append content inside a specific table cell
     - [gog docs clear](gog-docs-clear.md) - Clear all content from a Google Doc
     - [gog docs comments](gog-docs-comments.md) - Manage comments on files
@@ -329,9 +329,11 @@ Generated pages: 680.
       - [gog docs table-column insert](gog-docs-table-column-insert.md) - Insert a native table column
     - [gog docs table-column-width](gog-docs-table-column-width.md) - Set or reset native table column widths
     - [gog docs table-merge](gog-docs-table-merge.md) - Merge a native table cell range
-    - [gog docs table-row](gog-docs-table-row.md) - Insert or delete native table rows
+    - [gog docs table-row](gog-docs-table-row.md) - Insert, delete, style, or pin native table rows
       - [gog docs table-row delete](gog-docs-table-row-delete.md) - Delete a native table row
       - [gog docs table-row insert](gog-docs-table-row-insert.md) - Insert a native table row
+      - [gog docs table-row pin-header](gog-docs-table-row-pin-header.md) - Pin or unpin leading table header rows
+      - [gog docs table-row style](gog-docs-table-row-style.md) - Set native table row height and overflow styles
     - [gog docs table-unmerge](gog-docs-table-unmerge.md) - Unmerge the region containing a native table cell
     - [gog docs tables](gog-docs-tables.md) - List native tables
       - [gog docs tables list](gog-docs-tables-list.md) - List native tables in document order
