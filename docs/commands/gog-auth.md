@@ -28,6 +28,7 @@ gog auth <command> [flags]
 - [gog auth remove](gog-auth-remove.md) - Remove a stored refresh token
 - [gog auth service-account](gog-auth-service-account.md) - Configure service account (Workspace only; domain-wide delegation)
 - [gog auth services](gog-auth-services.md) - List supported auth services and scopes
+- [gog auth setup](gog-auth-setup.md) - Guide Google Cloud, OAuth client, and account setup
 - [gog auth status](gog-auth-status.md) - Show auth configuration and keyring backend
 - [gog auth tokens](gog-auth-tokens.md) - Manage stored refresh tokens
 
@@ -50,6 +51,7 @@ gog auth <command> [flags]
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
+| `--readonly` | `bool` | false | Block mutating API requests at runtime; auth add also requests read-only OAuth scopes |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |

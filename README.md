@@ -1,33 +1,49 @@
-# gogcli
+# gog — Google Workspace from the terminal
 
 ![gogcli banner](docs/assets/readme-banner.jpg)
 
-`gog` is a script-friendly Google CLI for Gmail, Calendar, Drive, Docs, Sheets,
-Sites, Slides, Forms, Meet, Apps Script, Analytics, Search Console, Contacts,
-Tasks, People, Classroom, Chat, YouTube, and Workspace admin flows.
+One binary. Task-first commands. Predictable automation.
 
-It is built for terminals, shell scripts, CI, and coding agents:
+`gog` gives people, scripts, CI, and coding agents one CLI for Gmail, Calendar,
+Drive, Docs, Sheets, Slides, Forms, Meet, Apps Script, Analytics, Search
+Console, Contacts, Tasks, Classroom, Chat, YouTube, and Workspace admin.
 
-- predictable `--json` and `--plain` output on stdout
-- human hints and progress on stderr
-- multiple Google accounts and OAuth clients
-- OAuth, direct access tokens, ADC, and Workspace service accounts
-- runtime command allowlists/denylists and baked safety-profile binaries
-- typed [MCP server](docs/mcp.md) for agent clients, read-only by default and
-  without a generic command runner
-- read-only audit/reporting commands for risky surfaces like Drive and Contacts
-- [generated docs](docs/commands/README.md) for every command
+```bash
+# Find mail, inspect today's calendar, and audit a Drive folder.
+gog --account you@gmail.com --readonly gmail search 'is:unread newer_than:7d' --max 10
+gog --account you@gmail.com --readonly calendar events --today
+gog --account you@gmail.com --readonly drive audit sharing --parent <folderId> --json
 
-Rendered docs: <https://gogcli.sh/>
+# Make automation parseable, non-interactive, read-only, and unable to send Gmail.
+gog --readonly --gmail-no-send --no-input --json gmail search 'label:inbox'
+```
 
-Start here:
+## Why gog
 
-- [Install](docs/install.md)
-- [Quickstart](docs/quickstart.md)
-- [Auth clients and service accounts](docs/auth-clients.md)
-- [MCP server](docs/mcp.md)
-- [Command index](docs/commands/README.md)
-- [Gmail watch / Pub/Sub push](docs/watch.md) (<https://gogcli.sh/watch.html>)
+Google APIs expose resources and methods. Real work crosses them. `gog` keeps
+the raw capability, then adds the workflow and operational contracts a durable
+CLI needs:
+
+- **Task-first workflows:** search and sanitize mail, resolve calendar names,
+  audit Drive sharing, edit Docs, append Sheet tables, build Slides, manage
+  Workspace users, and back up accounts.
+- **Automation that composes:** stable `--json` and `--plain` stdout; prompts,
+  progress, and warnings on stderr; documented exit codes; `--no-input` for CI.
+- **Many identities, one install:** account aliases, named OAuth clients, direct
+  access tokens, ADC, OS/encrypted-file keyrings, and Workspace service accounts.
+- **Agent safety with explicit boundaries:** runtime `--readonly`, command
+  allow/deny rules, `--gmail-no-send`, untrusted-content wrapping, dry-run plans,
+  baked safety-profile binaries, and a typed MCP server that is read-only by default.
+- **A discoverable contract:** `gog schema --json`, generated reference pages
+  for every command, and schema-generated service skills for agent workflows.
+
+Read [Why gog](docs/why-gog.md) for the design tradeoffs, or go straight to:
+[Install](docs/install.md) · [Quickstart](docs/quickstart.md) · [Auth](docs/auth-clients.md) ·
+[Command index](docs/commands/README.md) · [Automation](docs/automation.md) ·
+[Agent skills](docs/agent-skills.md) · [MCP](docs/mcp.md).
+
+Rendered docs: <https://gogcli.sh/>. `gog` is open source and not affiliated
+with Google.
 
 ## Install
 
@@ -503,13 +519,46 @@ gog schema --json
 gog schema --json | jq '.automation'
 ```
 
-There is no separate agent mode. The same CLI is designed for interactive use,
-scripts, CI, and agents: `--json`/`--plain` keep stdout parseable, `--no-input`
-prevents prompts, stable exit codes classify failures, `--wrap-untrusted`
-marks fetched free text, and runtime or baked command policies constrain
-available operations. Root `--help` summarizes that contract; `gog schema
---json` exposes the complete command schema, exit-code map, and effective
-safety state. See [Automation](docs/automation.md).
+For APIs or methods not yet modeled as first-class commands, inspect and call
+Google's Discovery surface directly:
+
+```bash
+gog api describe gmail v1 gmail.users.labels.list
+gog api call gmail v1 gmail.users.labels.list --params '{"userId":"me"}'
+```
+
+Generic mutations require `--allow-write` plus confirmation (or `--force`).
+Prefer first-class commands when available; `api call` intentionally grants a
+broader surface than a narrow command allowlist. With runtime command filters,
+each method also needs an explicit `api.<method-id>` rule such as
+`api.gmail.users.labels.list`; generic calls are unavailable in binaries built
+with a baked safety profile.
+
+There is no separate agent execution mode. The same CLI behavior serves
+interactive use, scripts, CI, and agents: `--json`/`--plain` keep stdout
+parseable, `--no-input` prevents prompts, stable exit codes classify failures,
+`--wrap-untrusted` marks fetched free text, and runtime or baked command
+policies constrain available operations. `GOG_HELP=agent gog --help` emits a
+compact root-help contract with common read-only recipes; it does not change
+commands or authorization. `gog schema --json` exposes the complete command
+schema, exit-code map, and effective safety state. See
+[Automation](docs/automation.md).
+
+### Agent evaluation
+
+The reproducible [gog/GWS comparison](docs/gws-comparison.md) runs identical
+Gmail, Calendar, and exact-name Drive tasks through Codex and OpenClaw. In the
+final two-repetition, cache-counterbalanced matrix against GWS 0.22.5, all 24
+task assertions passed:
+
+| Agent | gog median tokens | GWS median tokens | gog median latency | GWS median latency |
+| --- | ---: | ---: | ---: | ---: |
+| Codex | 94,078.5 | 97,546 | 13,735 ms | 13,676 ms |
+| OpenClaw | 38,350.5 | 45,727 | 41,124.5 ms | 45,597 ms |
+
+With correctness tied, gog used 3.6% fewer total tokens in Codex and 16.1%
+fewer in OpenClaw. The linked methodology documents fixtures, cache ordering,
+tool-call and uncached-token metrics, credential isolation, and reproduction.
 
 Useful global flags:
 
@@ -523,6 +572,7 @@ Useful global flags:
 - `--wrap-untrusted`: in JSON/raw output, wrap fetched free-text fields with
   external untrusted-content markers for LLM/agent consumption
 - `--dry-run`: print intended actions where a command supports planning
+- `--readonly`: block mutating API requests before network dispatch; still allow known POST-based query APIs
 - `--no-input`: fail instead of prompting
 - `--force`: confirm destructive operations
 - `--enable-commands <csv>`: allow selected command prefixes. Parent paths allow children, so `gmail` allows the Gmail command family.
@@ -536,6 +586,7 @@ For coding agents or CI, prefer:
 gog --account you@gmail.com \
   --enable-commands-exact gmail.search,gmail.get,drive.ls,docs.cat \
   --gmail-no-send \
+  --readonly \
   --wrap-untrusted \
   --json \
   gmail search 'newer_than:7d'
@@ -589,6 +640,7 @@ Docs: [Auth clients](docs/auth-clients.md),
 Store a Desktop OAuth client once:
 
 ```bash
+gog auth setup you@gmail.com --gcloud-project my-gog-project --enable-apis --open-console
 gog auth credentials ~/Downloads/client_secret_....json
 gog auth add you@gmail.com --services gmail,calendar,drive
 ```

@@ -40,6 +40,7 @@ type RootFlags struct {
 	EnableCommandsExact string `name:"enable-commands-exact" help:"Comma-separated list of exact enabled commands; dot paths allowed and parent commands do not enable children" default:"${enabled_commands_exact}"`
 	DisableCommands     string `help:"Comma-separated list of disabled commands; dot paths allowed" default:"${disabled_commands}"`
 	GmailNoSend         bool   `help:"Block Gmail send operations (agent safety)" default:"${gmail_no_send}"`
+	ReadOnly            bool   `name:"readonly" help:"Block mutating API requests at runtime; auth add also requests read-only OAuth scopes" default:"${readonly}"`
 	JSON                bool   `help:"Output JSON to stdout (best for scripting)" default:"${json}" aliases:"machine" short:"j"`
 	Plain               bool   `help:"Output stable, parseable text to stdout (TSV; no colors)" default:"${plain}" aliases:"tsv" short:"p"`
 	WrapUntrusted       bool   `name:"wrap-untrusted" help:"In JSON/raw output, wrap fetched text fields in external untrusted-content markers" default:"${wrap_untrusted}"`
@@ -101,6 +102,7 @@ type CLI struct {
 	SearchConsole SearchConsoleCmd      `cmd:"" name:"searchconsole" aliases:"gsc,search-console,webmasters" help:"Google Search Console"`
 	YouTube       YouTubeCmd            `cmd:"" name:"youtube" aliases:"yt" help:"YouTube Data API (search, activities, videos, playlists, comments, channels)"`
 	Photos        PhotosCmd             `cmd:"" name:"photos" aliases:"photo" help:"Google Photos Library and Picker APIs"`
+	API           APICmd                `cmd:"" name:"api" help:"Google Discovery APIs and generic method calls"`
 	Config        ConfigCmd             `cmd:"" help:"Manage configuration"`
 	Schema        SchemaCmd             `cmd:"" help:"Machine-readable command/flag schema" aliases:"help-json,helpjson"`
 	Mcp           McpCmd                `cmd:"" name:"mcp" help:"Run a typed, allowlisted MCP server over stdio"`
@@ -204,6 +206,7 @@ func executeWithRuntime(args []string, runtime *app.Runtime) (err error) {
 
 	ctx := context.Background()
 	ctx = app.WithRuntime(ctx, runtime)
+	ctx = googleapi.WithReadOnly(ctx, cli.ReadOnly)
 	runtimeContext := ctx
 	serviceAccounts := func() (*config.ServiceAccountStore, error) {
 		return commandServiceAccountStore(runtimeContext)
@@ -476,6 +479,7 @@ func newParserWithWriters(description string, stdout, stderr io.Writer) (*kong.K
 		"gmail_no_send":          boolString(envBool("GOG_GMAIL_NO_SEND")),
 		"json":                   boolString(envMode.JSON),
 		"plain":                  boolString(envMode.Plain),
+		"readonly":               boolString(envBool("GOG_READONLY")),
 		"wrap_untrusted":         boolString(envBool("GOG_WRAP_UNTRUSTED")),
 		"version":                VersionString(),
 	}

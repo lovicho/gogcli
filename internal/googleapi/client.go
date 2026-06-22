@@ -148,10 +148,10 @@ func authenticatedTransportWithStoredScopeCheck(
 		}
 	}
 
-	return NewRetryTransport(&oauth2.Transport{
+	return readOnlyTransportFromContext(ctx, NewRetryTransport(&oauth2.Transport{
 		Source: ts,
 		Base:   newBaseTransport(),
-	}), nil
+	})), nil
 }
 
 func optionsForAccountScopes(ctx context.Context, serviceLabel string, email string, scopes []string) ([]option.ClientOption, error) {
@@ -171,13 +171,13 @@ func optionsForServiceAccountScopes(ctx context.Context, serviceLabel string, em
 			return nil, err
 		}
 
-		return tokenSourceClientOptions(ts), nil
+		return tokenSourceClientOptions(ctx, ts), nil
 	}
 
 	if accessToken := authclient.AccessTokenFromContext(ctx); accessToken != "" {
 		slog.Debug("using direct access token", "serviceLabel", serviceLabel)
 
-		return tokenSourceClientOptions(oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})), nil
+		return tokenSourceClientOptions(ctx, oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})), nil
 	}
 
 	dependencies, err := requireAuthDependencies(ctx)
@@ -196,15 +196,15 @@ func optionsForServiceAccountScopes(ctx context.Context, serviceLabel string, em
 
 	slog.Debug("using required service account credentials", "email", email, "path", path)
 
-	return tokenSourceClientOptions(ts), nil
+	return tokenSourceClientOptions(ctx, ts), nil
 }
 
-func tokenSourceClientOptions(ts oauth2.TokenSource) []option.ClientOption {
+func tokenSourceClientOptions(ctx context.Context, ts oauth2.TokenSource) []option.ClientOption {
 	return []option.ClientOption{option.WithHTTPClient(&http.Client{
-		Transport: NewRetryTransport(&oauth2.Transport{
+		Transport: readOnlyTransportFromContext(ctx, NewRetryTransport(&oauth2.Transport{
 			Source: ts,
 			Base:   newBaseTransport(),
-		}),
+		})),
 	})}
 }
 
@@ -244,6 +244,18 @@ func NewHTTPClient(ctx context.Context, service googleauth.Service, email string
 	}
 
 	transport, err := authenticatedTransport(ctx, string(service), email, scopes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Client{Transport: transport}, nil
+}
+
+// NewHTTPClientForScopes returns an authenticated raw client for a
+// Discovery-described API method whose scopes are not part of the static
+// service registry.
+func NewHTTPClientForScopes(ctx context.Context, serviceLabel, email string, scopes []string) (*http.Client, error) {
+	transport, err := authenticatedTransport(ctx, serviceLabel, email, scopes)
 	if err != nil {
 		return nil, err
 	}
