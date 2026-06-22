@@ -1,9 +1,14 @@
 # Changelog
 
-## 0.29.1 - Unreleased
+## 0.30.1 - Unreleased
+
+## 0.30.0 - 2026-06-21
 
 ### Added
 
+- Sheets: add structured formula-error verification to `sheets update --fail-on-formula-error`, using exact updated-range grid data and canonical `--values-json @file` input. (#849) — thanks @alexknowshtml.
+- Docs: add first-class footnote, section-break, horizontal-rule, and section-column commands with shared index, anchor, tab, dry-run, and batch behavior where supported. (#856) — thanks @sebsnyk.
+- Docs: add header/footer lifecycle commands plus segment-aware plain-text insert, update, delete, format, and range lookup across headers, footers, and footnotes. (#857) — thanks @sebsnyk.
 - Docs: add table cell borders, padding, and vertical content alignment to `docs cell-style`. (#855) — thanks @sebsnyk.
 - Docs: add minimum height and page-overflow controls to `docs table-row style`. (#855) — thanks @sebsnyk.
 - Docs: add `docs table-row pin-header --rows N` for pinning or unpinning repeated table header rows. (#855) — thanks @sebsnyk.
