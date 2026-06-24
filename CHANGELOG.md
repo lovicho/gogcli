@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.30.1 - Unreleased
+## 0.31.1 - Unreleased
+
+## 0.31.0 - 2026-06-24
 
 - Gmail: preserve HTML fragments from `--signature-file` instead of escaping their markup, without broadening HTML detection for message display or reply quoting. (#879) — thanks @kesslerio.
 - Docs: honor `--tab` when setting document layout so `page-layout --tab` (and `write --pageless --tab`) target the specified tab instead of always the default tab. Page layout is per-tab; previously these silently no-opped on secondary tabs of multi-tab documents. (#878) — thanks @atmasphere.
