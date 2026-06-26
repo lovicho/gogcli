@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.31.1 - Unreleased
+## 0.31.2 - Unreleased
+
+## 0.31.1 - 2026-06-26
+
+- Calendar: add `calendar changed` for listing recently modified events, including cancellations, across one or more calendars. (#875) — thanks @sorenisanerd.
+- Calendar: add a `;resource` attendee modifier for event create, attendee replacement, and additive attendee updates. (#881) — thanks @titus7490.
 
 ## 0.31.0 - 2026-06-24
 
