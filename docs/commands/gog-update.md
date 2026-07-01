@@ -1,18 +1,22 @@
-# `gog youtube videos list`
+# `gog update`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-List videos by ID, chart, or your rating
+Check gogcli release status
 
 ## Usage
 
 ```bash
-gog youtube (yt) videos (video) list (ls) [flags]
+gog update <command> [flags]
 ```
 
 ## Parent
 
-- [gog youtube videos](gog-youtube-videos.md)
+- [gog](gog.md)
+
+## Subcommands
+
+- [gog update status](gog-update-status.md) - Show installed and latest gogcli release status
 
 ## Flags
 
@@ -20,7 +24,6 @@ gog youtube (yt) videos (video) list (ls) [flags]
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
-| `--chart` | `string` |  | Chart: mostPopular (regionCode required) |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
@@ -31,16 +34,10 @@ gog youtube (yt) videos (video) list (ls) [flags]
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
-| `--id` | `string` |  | Comma-separated video IDs |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
-| `--max`<br>`--limit` | `int64` | 25 | Max results |
-| `--my-rating` | `string` |  | Your rated videos: like (liked videos) or dislike (requires -a account) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
-| `--page` | `string` |  | Page token |
-| `--parts` | `string` |  | Comma-separated videos.list parts or 'all' (default: snippet,contentDetails,statistics) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--readonly` | `bool` | false | Block mutating API requests at runtime; auth add also requests read-only OAuth scopes |
-| `--region` | `string` |  | Region code (e.g. US) for chart |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
 | `--select`<br>`--pick`<br>`--project` | `string` |  | In JSON mode, select comma-separated fields (best-effort; supports dot paths). Desire path: use --fields for most commands. |
 | `-v`<br>`--verbose` | `bool` |  | Enable verbose logging |
@@ -49,5 +46,5 @@ gog youtube (yt) videos (video) list (ls) [flags]
 
 ## See Also
 
-- [gog youtube videos](gog-youtube-videos.md)
+- [gog](gog.md)
 - [Command index](README.md)
