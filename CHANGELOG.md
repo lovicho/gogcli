@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.32.1 - Unreleased
+
 ## 0.32.0 - 2026-07-03
 
 - Docs: add `docs suggestions list` for read-only pending text insertions and deletions, including exact UTF-16 ranges, segment context, and tab selection. (#876)
