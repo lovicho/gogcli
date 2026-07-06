@@ -555,7 +555,7 @@ Generated from `gog schema --json`.
       - [`gog sheets (sheet) chart (charts) update (edit,set) --spec-json=STRING <spreadsheetId> <chartId>`](commands/gog-sheets-chart-update.md) - Update a chart spec
     - [`gog sheets (sheet) clear <spreadsheetId> <range>`](commands/gog-sheets-clear.md) - Clear values in a range
     - [`gog sheets (sheet) conditional-format (cf,conditional-formats) <command>`](commands/gog-sheets-conditional-format.md) - Manage conditional formatting rules
-      - [`gog sheets (sheet) conditional-format (cf,conditional-formats) add (create,new) --type=STRING --format-json=STRING <spreadsheetId> <range> [flags]`](commands/gog-sheets-conditional-format-add.md) - Add a conditional formatting rule
+      - [`gog sheets (sheet) conditional-format (cf,conditional-formats) add (create,new) <spreadsheetId> <range> [flags]`](commands/gog-sheets-conditional-format-add.md) - Add a conditional formatting rule
       - [`gog sheets (sheet) conditional-format (cf,conditional-formats) clear (delete,rm,remove) --sheet=STRING <spreadsheetId> [flags]`](commands/gog-sheets-conditional-format-clear.md) - Remove conditional formatting rules
       - [`gog sheets (sheet) conditional-format (cf,conditional-formats) list <spreadsheetId> [flags]`](commands/gog-sheets-conditional-format-list.md) - List conditional formatting rules
     - [`gog sheets (sheet) copy (cp,duplicate) <spreadsheetId> <title> [flags]`](commands/gog-sheets-copy.md) - Copy a Google Sheet
@@ -564,6 +564,8 @@ Generated from `gog schema --json`.
     - [`gog sheets (sheet) delete-dimension (delete-dim) --dimension=STRING <spreadsheetId> <rangeOrSheet> [flags]`](commands/gog-sheets-delete-dimension.md) - Delete rows or columns while preserving intersecting tables
     - [`gog sheets (sheet) delete-tab (delete-sheet) <spreadsheetId> <tabName>`](commands/gog-sheets-delete-tab.md) - Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)
     - [`gog sheets (sheet) export (download,dl) <spreadsheetId> [flags]`](commands/gog-sheets-export.md) - Export a Google Sheet (pdf|xlsx|csv) via Drive
+    - [`gog sheets (sheet) filter (filters,basic-filter,basic-filters) <command>`](commands/gog-sheets-filter.md) - Manage basic filters
+      - [`gog sheets (sheet) filter (filters,basic-filter,basic-filters) set (create,add) <spreadsheetId> <range>`](commands/gog-sheets-filter-set.md) - Set a basic filter on a range; replacing an existing filter requires confirmation (or --force)
     - [`gog sheets (sheet) find-replace <spreadsheetId> <find> <replace> [flags]`](commands/gog-sheets-find-replace.md) - Find and replace text across a spreadsheet
     - [`gog sheets (sheet) format <spreadsheetId> <range> [flags]`](commands/gog-sheets-format.md) - Apply cell formatting to a range
     - [`gog sheets (sheet) freeze <spreadsheetId> [flags]`](commands/gog-sheets-freeze.md) - Freeze rows and columns on a sheet
