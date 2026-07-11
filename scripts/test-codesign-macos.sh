@@ -16,6 +16,7 @@ EOF
 cat > "$tmp/bin/codesign" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'codesign-home %s\n' "$HOME" >> "$RELEASE_TEST_LOG"
 printf 'codesign %s\n' "$*" >> "$RELEASE_TEST_LOG"
 if [[ " $* " == *' --display '* ]]; then
   {
@@ -61,6 +62,7 @@ EOF
 cat > "$tmp/bin/xcrun" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf 'xcrun-home %s\n' "$HOME" >> "$RELEASE_TEST_LOG"
 printf 'xcrun %s\n' "$*" >> "$RELEASE_TEST_LOG"
 [[ "${MOCK_NOTARY_REJECT:-0}" != 1 ]] || exit 1
 printf '{"id":"12345678-1234-1234-1234-123456789abc","status":"%s"}\n' "${MOCK_NOTARY_STATUS:-Accepted}"
@@ -111,6 +113,8 @@ export GOG_OFFICIAL_RELEASE=1
 export CODESIGN_IDENTITY='Developer ID Application: OpenClaw Foundation (FWJYW4S8P8)'
 export CODESIGN_KEYCHAIN=/tmp/foundation-release.keychain-db
 export MAC_RELEASE_CODESIGN_KEYCHAIN=$CODESIGN_KEYCHAIN
+mkdir -p "$tmp/isolated-home"
+export HOME="$tmp/isolated-home"
 
 reset_binary
 unset NOTARYTOOL_KEYCHAIN_PROFILE
@@ -187,6 +191,13 @@ grep -Fq -- '--timestamp --options runtime --identifier com.steipete.gogcli.gog'
 grep -Fq -- '--keychain /tmp/foundation-release.keychain-db --sign Developer ID Application: OpenClaw Foundation (FWJYW4S8P8)' "$log"
 grep -Fq -- 'notarytool submit' "$log"
 grep -Fq -- '--keychain-profile test-profile --no-s3-acceleration --wait --output-format json' "$log"
+expected_release_home=$(/usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" NFSHomeDirectory | /usr/bin/sed 's/^NFSHomeDirectory: //')
+grep -Fq "codesign-home $expected_release_home" "$log"
+grep -Fq "xcrun-home $expected_release_home" "$log"
+if grep -Fq "$tmp/isolated-home" "$log"; then
+  echo "codesign test: Apple security tools retained the isolated build HOME" >&2
+  exit 1
+fi
 grep -Fq -- '--verify --strict -R=identifier "com.steipete.gogcli.gog"' "$log"
 grep -Fq -- 'codesign -d -r-' "$log"
 grep -Fq -- '--verify --strict --check-notarization -R=notarized' "$log"

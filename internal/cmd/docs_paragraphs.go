@@ -35,6 +35,14 @@ type paragraphMap struct {
 // and table sequentially (1-based). The initial SectionBreak at index 0 is
 // skipped as it is not user-editable.
 func buildParagraphMap(doc *docs.Document, tabID string) (*paragraphMap, error) {
+	return buildParagraphMapWithOptions(doc, tabID, false)
+}
+
+func buildParagraphMapWithChips(doc *docs.Document, tabID string) (*paragraphMap, error) {
+	return buildParagraphMapWithOptions(doc, tabID, true)
+}
+
+func buildParagraphMapWithOptions(doc *docs.Document, tabID string, renderChips bool) (*paragraphMap, error) {
 	if doc == nil {
 		return nil, fmt.Errorf("nil document")
 	}
@@ -82,12 +90,16 @@ func buildParagraphMap(doc *docs.Document, tabID string) (*paragraphMap, error) 
 
 		case el.Paragraph != nil:
 			num++
+			text := paragraphText(el.Paragraph)
+			if renderChips {
+				text = paragraphTextWithChips(el.Paragraph)
+			}
 			dp := docParagraph{
 				Num:        num,
 				StartIndex: el.StartIndex,
 				EndIndex:   el.EndIndex,
 				ElemType:   "paragraph",
-				Text:       paragraphText(el.Paragraph),
+				Text:       text,
 			}
 
 			// Extract named style type.
@@ -113,13 +125,17 @@ func buildParagraphMap(doc *docs.Document, tabID string) (*paragraphMap, error) 
 			if rows > 0 && len(el.Table.TableRows[0].TableCells) > 0 {
 				cols = len(el.Table.TableRows[0].TableCells)
 			}
+			text := tablePreviewText(el.Table)
+			if renderChips {
+				text = tablePreviewTextWithChips(el.Table)
+			}
 			dp := docParagraph{
 				Num:        num,
 				StartIndex: el.StartIndex,
 				EndIndex:   el.EndIndex,
 				Type:       "TABLE",
 				ElemType:   "table",
-				Text:       tablePreviewText(el.Table),
+				Text:       text,
 				TableRows:  rows,
 				TableCols:  cols,
 			}
@@ -144,6 +160,14 @@ func buildParagraphMap(doc *docs.Document, tabID string) (*paragraphMap, error) 
 
 // paragraphText extracts the plain text from a Paragraph element.
 func paragraphText(p *docs.Paragraph) string {
+	return paragraphTextWithOptions(p, false)
+}
+
+func paragraphTextWithChips(p *docs.Paragraph) string {
+	return paragraphTextWithOptions(p, true)
+}
+
+func paragraphTextWithOptions(p *docs.Paragraph, renderChips bool) string {
 	if p == nil {
 		return ""
 	}
@@ -151,6 +175,12 @@ func paragraphText(p *docs.Paragraph) string {
 	for _, elem := range p.Elements {
 		if elem.TextRun != nil {
 			sb.WriteString(elem.TextRun.Content)
+			continue
+		}
+		if renderChips {
+			if chip, ok := renderDocsSmartChip(elem); ok {
+				sb.WriteString(chip.Text)
+			}
 		}
 	}
 	// Trim the trailing newline that Google Docs adds to every paragraph.
@@ -187,6 +217,14 @@ func fetchAndBuildMap(ctx context.Context, svc *docs.Service, docID, tabID strin
 
 // tablePreviewText returns a short preview of the table content.
 func tablePreviewText(t *docs.Table) string {
+	return tablePreviewTextWithOptions(t, false)
+}
+
+func tablePreviewTextWithChips(t *docs.Table) string {
+	return tablePreviewTextWithOptions(t, true)
+}
+
+func tablePreviewTextWithOptions(t *docs.Table, renderChips bool) string {
 	if t == nil || len(t.TableRows) == 0 {
 		return "[empty table]"
 	}
@@ -196,7 +234,11 @@ func tablePreviewText(t *docs.Table) string {
 		var text strings.Builder
 		for _, el := range cell.Content {
 			if el.Paragraph != nil {
-				text.WriteString(paragraphText(el.Paragraph))
+				if renderChips {
+					text.WriteString(paragraphTextWithChips(el.Paragraph))
+				} else {
+					text.WriteString(paragraphText(el.Paragraph))
+				}
 			}
 		}
 		cells = append(cells, strings.TrimSpace(text.String()))

@@ -1,7 +1,14 @@
 # Changelog
 
-## 0.33.1 - 2026-07-10
+## 0.34.1 - Unreleased
 
+- MCP: add optional global and per-account capability ceilings in `config.json`, with narrow persistent write authorization, runtime-only restriction, and fail-closed selector validation. (#913) — thanks @mcaldas.
+
+## 0.34.0 - 2026-07-11
+
+- Calendar: add `--timezone` / `--tz` display overrides to `calendar events` and `calendar event`, including uniform multi-calendar output without changing range parsing. (#908) — thanks @bxxd.
+- Calendar: render event-local fields in the event's own timezone when present, falling back to the containing calendar timezone. (#905) — thanks @Hilo-Hilo.
+- Docs: add opt-in smart-chip rendering to `docs cat --chips` and structured person, date, and rich-link metadata to JSON output while preserving default text output. (#907, #909) — thanks @TurboTheTurtle.
 - Release: sign and notarize macOS artifacts locally with the OpenClaw Foundation Developer ID while preserving the existing `com.steipete.gogcli.gog` identifier; ordinary builds and GitHub CI remain credential-free.
 
 ## 0.33.0 - 2026-07-06
