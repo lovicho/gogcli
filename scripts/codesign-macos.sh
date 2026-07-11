@@ -57,6 +57,19 @@ for tool in codesign ditto mktemp mv plutil xcrun; do
   }
 done
 
+# Go builds use an isolated HOME for reproducibility, but Apple security tools
+# resolve Keychain identities and notary profiles through the login account.
+# Restore only the system-owned account home inside this signing hook.
+release_user=$(/usr/bin/id -un)
+release_uid=$(/usr/bin/id -u)
+release_home=$(/usr/bin/dscl . -read "/Users/$release_user" NFSHomeDirectory | /usr/bin/sed 's/^NFSHomeDirectory: //')
+[[ "$release_home" == /* && "$release_home" != *$'\n'* && -d "$release_home" && "$(/usr/bin/stat -f %u "$release_home")" == "$release_uid" ]] || {
+  echo "codesign: cannot resolve the trusted release account home" >&2
+  exit 1
+}
+HOME=$release_home
+export HOME
+
 binary_dir=$(cd "$(dirname "$binary")" && pwd)
 binary_name=$(basename "$binary")
 work_dir=$(mktemp -d "$binary_dir/.gog-notary.XXXXXX")
