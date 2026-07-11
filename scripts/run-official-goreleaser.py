@@ -94,6 +94,7 @@ def run_helper(arguments: list[str]) -> None:
         "LC_ALL": "C",
         "LOGNAME": account.pw_name,
         "MAC_RELEASE_MANIFEST": manifest,
+        "MAC_RELEASE_OP_FIELDS": " ".join(sorted(PACKAGE_FIELDS)),
         "PATH": SYSTEM_PATH,
         "SHELL": "/bin/bash",
         "TERM": "xterm-256color",

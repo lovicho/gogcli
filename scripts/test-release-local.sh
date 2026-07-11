@@ -837,6 +837,7 @@ if declare -F security >/dev/null || [[ -n "${ATTACKER_SECRET+x}" || -n "${PYTHO
 fi
 [[ "$PATH" == /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin ]]
 [[ "$HOME" == /* && "$TMPDIR" == /tmp && "$LC_ALL" == C && "$TZ" == UTC ]]
+[[ "${MAC_RELEASE_OP_FIELDS:-}" == NOTARYTOOL_KEYCHAIN_PROFILE ]]
 if [[ "$1" == draft ]]; then
   [[ "${GITHUB_TOKEN:-}" == test-token ]]
 else
