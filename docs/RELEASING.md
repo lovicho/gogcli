@@ -61,8 +61,8 @@ signing or notary credentials.
 
 ## Preparation
 
-For v0.34.0, finalize the top changelog heading with the release date and set
-`internal/cmd/VERSION` to `v0.34.0`. Run the repository gates, review the diff,
+For v0.34.1, finalize the top changelog heading with the release date and set
+`internal/cmd/VERSION` to `v0.34.1`. Run the repository gates, review the diff,
 commit, push, and require exact-head CI before creating the signed annotated
 tag. Release notes are extracted from the tagged changelog; mutable worktree
 notes are not accepted. The verifier also models GoReleaser v2.17's single
@@ -80,11 +80,11 @@ Run only one gate at a time and only after explicit maintainer authorization:
 
 ```sh
 # Submits ephemeral binaries to Apple, but creates no tag or GitHub release.
-scripts/release-local pilot v0.34.0
+scripts/release-local pilot v0.34.1
 
 # After the reviewed release commit is on protected main:
-git tag -s v0.34.0 -m "Release 0.34.0"
-git push origin v0.34.0
+git tag -s v0.34.1 -m "Release 0.34.1"
+git push origin v0.34.1
 
 # Wait for successful exact-tag `ci` and read-only `release-check` runs.
 # Every later local gate verifies both run identities, tag commit, and success.
@@ -93,14 +93,14 @@ git push origin v0.34.0
 scripts/release-local draft
 
 # Dispatches and accepts only exact two-architecture protected-default proof.
-scripts/release-local verify-draft v0.34.0
+scripts/release-local verify-draft v0.34.1
 
 # Revalidates tag, notes, assets, and proof before publishing the frozen draft.
-scripts/release-local publish v0.34.0
+scripts/release-local publish v0.34.1
 
 # Re-verifies public assets, dispatches the hash-bound tap update, and proves a
 # clean Homebrew install from Formula/gogcli.rb.
-scripts/release-local homebrew v0.34.0
+scripts/release-local homebrew v0.34.1
 ```
 
 The publish and Homebrew gates are safe to rerun after an interrupted network
@@ -126,23 +126,23 @@ quarantine is applied naturally. Extract normally and run `gog --version`.
 No Gatekeeper override is allowed.
 
 For Keychain continuity, use a controlled non-production account and the same
-installed path. Confirm the v0.33.0 binary can read its existing test credential,
-replace it in place with v0.34.0, record any one-time authorization caused by
-the known Team-bound requirement migration, and confirm subsequent v0.34.0
-reads do not prompt again. Do not claim continuity from source inspection alone.
+installed path. Confirm the v0.34.0 binary can read its existing test credential,
+replace it in place with v0.34.1, confirm the unchanged Foundation Team
+requirement causes no new authorization prompt, and confirm subsequent v0.34.1
+reads remain prompt-free. Do not claim continuity from source inspection alone.
 
 Only after GitHub, both native verifier jobs, public downloads, release notes,
 Homebrew install/test, Gatekeeper, and the migration observation are complete:
 
 ```sh
-scripts/start-next-release.sh v0.34.0
+scripts/start-next-release.sh v0.34.1
 git diff -- CHANGELOG.md internal/cmd/VERSION
-committer "chore(release): start v0.34.1" CHANGELOG.md internal/cmd/VERSION
+committer "chore(release): start v0.34.2" CHANGELOG.md internal/cmd/VERSION
 git push origin main
 git pull --ff-only
 git status -sb
 ```
 
-The closeout script opens `0.34.1 - Unreleased` and sets
-`internal/cmd/VERSION` to `v0.34.0-dev`. There is no automatic post-tag writer;
+The closeout script opens `0.34.2 - Unreleased` and sets
+`internal/cmd/VERSION` to `v0.34.1-dev`. There is no automatic post-tag writer;
 the explicit closeout commit is the sole next-release transition.
