@@ -39,6 +39,7 @@ gog drive (drv) <command> [flags]
 - [gog drive search](gog-drive-search.md) - Full-text search across Drive
 - [gog drive share](gog-drive-share.md) - Share a file or folder
 - [gog drive shortcut](gog-drive-shortcut.md) - Manage shortcuts to Drive files and folders
+- [gog drive sync](gog-drive-sync.md) - Reconcile local files with Drive
 - [gog drive tree](gog-drive-tree.md) - Print a read-only folder tree
 - [gog drive unshare](gog-drive-unshare.md) - Remove a permission from a file
 - [gog drive upload](gog-drive-upload.md) - Upload a file

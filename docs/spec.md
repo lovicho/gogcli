@@ -221,6 +221,7 @@ Flag aliases:
 - `gog drive get <fileId>`
 - `gog drive download <fileId> [--out PATH|-] [--format F]` (`--format` only applies to Google Workspace files; `--format md` exports a Google Doc as Markdown)
 - `gog drive upload <localPath> [--name N] [--parent ID] [--convert] [--convert-to doc|sheet|slides] [--keep-frontmatter]` (Markdown → Google Doc with `--convert` or `--convert-to doc`: leading `---`/`---` frontmatter is stripped before upload unless `--keep-frontmatter`; delimiter-based, not a full YAML parse; large non-JSON uploads print progress to stderr)
+- `gog drive sync push <localDirectory> --parent ID [--dry-run] [--[no-]all-drives]` (recursively reconciles local contents without deleting remote-only files; duplicate names, wrong types, Google-native files, and local symlinks fail before mutation)
 - `gog drive mkdir <name> [--parent ID]`
 - `gog drive delete <fileId> [--permanent]`
 - `gog drive move <fileId> --parent ID`
@@ -381,7 +382,7 @@ after the bounded retry window, the command exits with retryable code `8`.
 - `gog gmail thread get <threadId> [--download]`
 - `gog gmail thread modify <threadId> [--add ...] [--remove ...]`
 - `gog gmail get <messageId> [--format full|metadata|raw] [--headers ...]`
-- `gog gmail attachment <messageId> <attachmentId> [--out PATH] [--name NAME]`
+- `gog gmail attachment <messageId> <attachmentId> [--out PATH] [--name NAME] [--inline]`
 - `gog gmail url <threadIds...>`
 - `gog gmail reply <messageId> [--body B|--body-file PATH|--body-html HTML|--body-html-file PATH] [--to ...] [--cc ...] [--bcc ...] [--remove ...] [--subject S] [--no-quote] [--from addr] [--signature|--signature-from addr|--signature-file path] [--attach <file>...]`
 - `gog gmail reply-all <messageId> [--body B|--body-file PATH|--body-html HTML|--body-html-file PATH] [--to ...] [--cc ...] [--bcc ...] [--remove ...] [--subject S] [--no-quote] [--from addr] [--signature|--signature-from addr|--signature-file path] [--attach <file>...]`

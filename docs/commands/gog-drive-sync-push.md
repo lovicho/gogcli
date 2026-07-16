@@ -1,18 +1,18 @@
-# `gog gmail attachment`
+# `gog drive sync push`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Download a single attachment
+Push a local directory's contents into a Drive folder (no remote deletes)
 
 ## Usage
 
 ```bash
-gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
+gog drive (drv) sync push --parent=STRING <localDirectory> [flags]
 ```
 
 ## Parent
 
-- [gog gmail](gog-gmail.md)
+- [gog drive sync](gog-drive-sync.md)
 
 ## Flags
 
@@ -20,6 +20,7 @@ gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
 | --- | --- | --- | --- |
 | `--access-token` | `string` |  | Use provided access token directly (bypasses stored refresh tokens; token expires in ~1h) |
 | `-a`<br>`--account`<br>`--acct` | `string` |  | Account email, alias, or auto for authenticated Google API commands |
+| `--all-drives` | `bool` | true | Include shared drives (default: true; use --no-all-drives for My Drive only) |
 | `--client` | `string` |  | OAuth client name (selects stored credentials + token bucket) |
 | `--color` | `string` | auto | Color output: auto\|always\|never |
 | `--disable-commands` | `string` |  | Comma-separated list of disabled commands; dot paths allowed |
@@ -30,11 +31,9 @@ gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
-| `--inline` | `bool` |  | Also return the attachment content base64-encoded (contentBase64) in the response; attachments over the inline size limit fall back to the file path with an explanatory reason |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
-| `--name` | `string` |  | Filename (used when --out is empty or points to a directory) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
-| `--out`<br>`--output` | `string` |  | Output file path (default: gogcli config dir) |
+| `--parent` | `string` |  | Existing destination Drive folder ID |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--readonly` | `bool` | false | Block mutating API requests at runtime; auth add also requests read-only OAuth scopes |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
@@ -45,5 +44,5 @@ gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
 
 ## See Also
 
-- [gog gmail](gog-gmail.md)
+- [gog drive sync](gog-drive-sync.md)
 - [Command index](README.md)

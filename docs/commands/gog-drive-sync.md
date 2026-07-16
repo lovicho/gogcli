@@ -1,18 +1,22 @@
-# `gog gmail attachment`
+# `gog drive sync`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Download a single attachment
+Reconcile local files with Drive
 
 ## Usage
 
 ```bash
-gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
+gog drive (drv) sync <command>
 ```
 
 ## Parent
 
-- [gog gmail](gog-gmail.md)
+- [gog drive](gog-drive.md)
+
+## Subcommands
+
+- [gog drive sync push](gog-drive-sync-push.md) - Push a local directory's contents into a Drive folder (no remote deletes)
 
 ## Flags
 
@@ -30,11 +34,8 @@ gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
-| `--inline` | `bool` |  | Also return the attachment content base64-encoded (contentBase64) in the response; attachments over the inline size limit fall back to the file path with an explanatory reason |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
-| `--name` | `string` |  | Filename (used when --out is empty or points to a directory) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
-| `--out`<br>`--output` | `string` |  | Output file path (default: gogcli config dir) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
 | `--readonly` | `bool` | false | Block mutating API requests at runtime; auth add also requests read-only OAuth scopes |
 | `--results-only` | `bool` |  | In JSON mode, emit only the primary result (drops envelope fields like nextPageToken) |
@@ -45,5 +46,5 @@ gog gmail (mail,email) attachment <messageId> <attachmentId> [flags]
 
 ## See Also
 
-- [gog gmail](gog-gmail.md)
+- [gog drive](gog-drive.md)
 - [Command index](README.md)
