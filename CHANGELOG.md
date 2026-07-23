@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Docs: `docs write` now rejects an explicitly empty `--tab`/`--tab-id` value instead of silently targeting the whole document.
+
 ## 0.34.1 - 2026-07-16
 
 - Drive: add non-destructive `drive sync push` for recursive local-directory uploads with checksum skips, ID-preserving updates, full conflict preflight, deterministic dry-run plans, and shared-drive support. (#925) — thanks @Avg8888.
