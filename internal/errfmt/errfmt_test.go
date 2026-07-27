@@ -115,12 +115,36 @@ func TestFormat_GoogleAPIError_AccessNotConfiguredHint(t *testing.T) {
 		t.Fatalf("unexpected: %q", got)
 	}
 
-	if !strings.Contains(got, "overview?project=123") {
+	if !strings.Contains(got, "https://console.cloud.google.com/apis/library/drive.googleapis.com?project=123") {
 		t.Fatalf("expected project-scoped enable URL, got: %q", got)
+	}
+
+	if strings.Contains(got, "console.developers.google.com") {
+		t.Fatalf("must not return the legacy developer console URL, got: %q", got)
 	}
 
 	if strings.Contains(got, "Google API error") {
 		t.Fatalf("expected user-facing enablement hint, got: %q", got)
+	}
+}
+
+func TestFormat_GoogleAPIError_AccessNotConfiguredHintCloudLegacyPath(t *testing.T) {
+	err := &ggoogleapi.Error{
+		Code: 403,
+		Message: "Google Drive API has not been used in project 123 before or it is disabled. " +
+			"Enable it by visiting https://console.cloud.google.com/apis/api/drive.googleapis.com/overview?project=123",
+		Errors: []ggoogleapi.ErrorItem{
+			{Reason: "accessNotConfigured"},
+		},
+	}
+
+	got := Format(err)
+	if !strings.Contains(got, "https://console.cloud.google.com/apis/library/drive.googleapis.com?project=123") {
+		t.Fatalf("expected normalized API Library URL, got: %q", got)
+	}
+
+	if strings.Contains(got, "/apis/api/") {
+		t.Fatalf("must not return the legacy API overview path, got: %q", got)
 	}
 }
 
@@ -144,7 +168,7 @@ func TestFormat_GoogleAPIError_ServiceAccountOnlyDisabledAPI(t *testing.T) {
 			}
 
 			got := Format(err)
-			if !containsAll(got, "service-account set", "overview?project=123") {
+			if !containsAll(got, "service-account set", "/apis/library/"+tc.apiName+"?project=123") {
 				t.Fatalf("unexpected: %q", got)
 			}
 

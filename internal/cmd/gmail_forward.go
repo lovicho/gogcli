@@ -47,7 +47,7 @@ func (c *GmailForwardCmd) Run(ctx context.Context, flags *RootFlags) error {
 		"cc":               splitCSV(c.Cc),
 		"bcc":              splitCSV(c.Bcc),
 		"from":             strings.TrimSpace(c.From),
-		"note_len":         len(strings.TrimSpace(note)),
+		"note_len":         len(note),
 		"skip_attachments": c.SkipAttachments,
 	}); dryRunErr != nil {
 		return dryRunErr
