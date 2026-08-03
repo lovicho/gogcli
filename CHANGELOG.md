@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Dependencies: update the Go developer tools, pnpm, and email-tracking worker transitive pins to their latest releases.
+- Docs: rewrite the README as a concise front door and move task examples into a dedicated guide.
+
 ## 0.34.2 - 2026-08-02
 
 - Release: move tagging, signing, notarization, verification, and Homebrew handoff to the shared unified workflow.
