@@ -6,7 +6,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/steipete/gogcli/internal/ui"
+	"github.com/alecthomas/kong"
+	"google.golang.org/api/docs/v1"
+	"google.golang.org/api/drive/v3"
+
+	"github.com/openclaw/gogcli/internal/outfmt"
+	"github.com/openclaw/gogcli/internal/ui"
 )
 
 // DocsCommentsCmd is the parent command for comment operations on a Google Doc.
@@ -31,9 +36,12 @@ type DocsCommentsListCmd struct {
 	All             bool   `name:"all" aliases:"all-pages" help:"Fetch all pages"`
 	FailEmpty       bool   `name:"fail-empty" aliases:"non-empty,require-results" help:"Exit with code 3 if no results"`
 	Since           string `name:"since" help:"Only return comments modified at or after this RFC3339 timestamp"`
+	Locate          bool   `name:"locate" help:"Attach each comment's tab and index ranges (one extra Docs fetch)"`
+	Tab             string `name:"tab" help:"Only comments located in this tab by title or ID (implies --locate)"`
+	TabID           string `name:"tab-id" hidden:"" help:"(deprecated) Use --tab"`
 }
 
-func (c *DocsCommentsListCmd) Run(ctx context.Context, flags *RootFlags) error {
+func (c *DocsCommentsListCmd) Run(ctx context.Context, kctx *kong.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	docID := normalizeGoogleID(strings.TrimSpace(c.DocID))
 	if docID == "" {
@@ -46,12 +54,20 @@ func (c *DocsCommentsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	tab, err := resolveTabArg(ctx, c.Tab, c.TabID)
+	if err != nil {
+		return err
+	}
+	if tab == "" && (flagProvided(kctx, "tab") || flagProvided(kctx, "tab-id")) {
+		return usage("--tab requires a non-empty tab title or ID")
+	}
+	c.Tab = tab
 
 	_, svc, err := requireDriveService(ctx, flags)
 	if err != nil {
 		return err
 	}
-	comments, nextPageToken, err := listDriveComments(ctx, svc, docID, driveCommentListOptions{
+	listOpts := driveCommentListOptions{
 		resourceKey:     "docId",
 		resourceID:      docID,
 		includeResolved: c.IncludeResolved,
@@ -63,7 +79,13 @@ func (c *DocsCommentsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		max:             c.Max,
 		emptyMessage:    "No comments",
 		mode:            driveCommentListModeExpanded,
-	})
+	}
+
+	if c.Locate || tab != "" {
+		return c.runLocated(ctx, u, flags, svc, docID, tab, listOpts)
+	}
+
+	comments, nextPageToken, err := listDriveComments(ctx, svc, docID, listOpts)
 	if err != nil {
 		return err
 	}
@@ -74,6 +96,95 @@ func (c *DocsCommentsListCmd) Run(ctx context.Context, flags *RootFlags) error {
 		emptyMessage: "No comments",
 		mode:         driveCommentListModeExpanded,
 	}, comments, nextPageToken)
+}
+
+// runLocated shares a single documents.get across every comment, and across
+// every page walked while looking for tab matches.
+func (c *DocsCommentsListCmd) runLocated(
+	ctx context.Context,
+	u *ui.UI,
+	flags *RootFlags,
+	svc *drive.Service,
+	docID string,
+	tab string,
+	listOpts driveCommentListOptions,
+) error {
+	docsSvc, err := requireDocsService(ctx, flags)
+	if err != nil {
+		return err
+	}
+	locator, err := newDocsCommentLocator(ctx, docsSvc, docID, tab)
+	if err != nil {
+		return err
+	}
+
+	located, nextPageToken, err := c.collectLocatedComments(ctx, svc, docID, listOpts, locator)
+	if err != nil {
+		return err
+	}
+	return writeDocsCommentListWithLocations(ctx, u, docID, c.FailEmpty, locator.targetTab, located, nextPageToken)
+}
+
+// collectLocatedComments walks Drive pages until the tab filter yields at
+// least one comment, mirroring how listDriveComments scans for open comments.
+func (c *DocsCommentsListCmd) collectLocatedComments(
+	ctx context.Context,
+	svc *drive.Service,
+	docID string,
+	listOpts driveCommentListOptions,
+	locator *docsCommentLocator,
+) ([]*driveCommentWithLocation, string, error) {
+	seen := map[string]bool{}
+	pageToken := listOpts.page
+	for {
+		listOpts.page = pageToken
+		comments, nextPageToken, err := listDriveComments(ctx, svc, docID, listOpts)
+		if err != nil {
+			return nil, "", err
+		}
+		located := locator.attach(comments)
+		nextPageToken = strings.TrimSpace(nextPageToken)
+		if locator.targetTab == nil || len(located) > 0 || nextPageToken == "" || seen[nextPageToken] {
+			return located, nextPageToken, nil
+		}
+		seen[nextPageToken] = true
+		pageToken = nextPageToken
+	}
+}
+
+func writeDocsCommentListWithLocations(
+	ctx context.Context,
+	u *ui.UI,
+	docID string,
+	failEmpty bool,
+	targetTab *docs.Tab,
+	located []*driveCommentWithLocation,
+	nextPageToken string,
+) error {
+	if outfmt.IsJSON(ctx) {
+		payload := map[string]any{
+			"docId":         docID,
+			"comments":      located,
+			"nextPageToken": nextPageToken,
+		}
+		if tab := newDocsCommentListTab(targetTab); tab != nil {
+			payload["tab"] = tab
+		}
+		return writePagedJSONResult(ctx, payload, len(located), failEmpty)
+	}
+
+	if len(located) == 0 {
+		if targetTab != nil {
+			u.Err().Linef("No comments located in tab %q", docsCommentTabLabel(targetTab))
+		} else {
+			u.Err().Println("No comments")
+		}
+		return failEmptyExit(failEmpty)
+	}
+
+	printExpandedCommentRows(ctx, located, true)
+	printNextPageHintWithAll(u, nextPageToken, "--all/--all-pages")
+	return nil
 }
 
 // DocsCommentsGetCmd retrieves a single comment by ID.

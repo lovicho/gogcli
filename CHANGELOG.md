@@ -1,7 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.35.0 - 2026-08-09
 
+- Install: move the Go module to `github.com/openclaw/gogcli`; new releases install with `go install github.com/openclaw/gogcli/cmd/gog@latest` instead of the former `github.com/steipete/gogcli` path.
+- Security: carry forward the `golang.org/x/text` (GO-2026-5970) and gRPC-Go (GO-2026-6061) advisory remediations prepared for the tagged but unpublished 0.34.2 release.
+- Docs: add opt-in `--locate` and `--tab` to `docs comments list`, resolving all comment locations from one shared document fetch. (#961, #965) — thanks @ryo-touch.
+- Gmail: allow `GOG_GMAIL_AUTO_FROM_ADDRESSED_ALIAS` to enable the existing addressed-alias sender policy for replies and reply-context drafts. (#964) — thanks @ronny-rentner.
+- Gmail: add opt-in compact 0-based attachment references across search, message, thread, draft, and download workflows. (#963) — thanks @ronny-rentner.
+- Gmail: add opt-in attachment metadata to message search in JSON and text output without rendering decoded bodies. (#962) — thanks @ronny-rentner.
+- Security: redact credentials embedded in Gmail watch hook URLs, including userinfo, path, query, and fragment components, unless `--show-secrets` is set. (#960) — thanks @bunlongheng.
 - Gmail: add guarded single-message RFC822/EML import from a file or stdin, with labels, internal-date, spam, calendar-processing, and parse-only dry-run controls. (#956) — thanks @holgergruenhagen.
 - Gmail: warn before a draft update replaces an existing rich-text body with plain text only, while keeping JSON stdout clean. (#955) — thanks @mcinteerj.
 - Dependencies: update the Google API and OpenTelemetry stacks, Go developer tools, pnpm, and email-tracking worker toolchain to their latest policy-eligible releases.
