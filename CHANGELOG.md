@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.35.1 - Unreleased
+
+- Auth: offer one-time re-authorization for expired or revoked stored OAuth refresh tokens after interactive confirmation, while preserving non-interactive recovery guidance. (#973) — thanks @inamiy.
+- Dependencies: update Kong, Cloudflare Workers types, and pnpm to their latest releases.
+
 ## 0.35.0 - 2026-08-09
 
 - Install: move the Go module to `github.com/openclaw/gogcli`; new releases install with `go install github.com/openclaw/gogcli/cmd/gog@latest` instead of the former `github.com/steipete/gogcli` path.
