@@ -19,6 +19,7 @@ type GmailSearchCmd struct {
 	Page        string   `name:"page" aliases:"cursor" help:"Page token"`
 	All         bool     `name:"all" aliases:"all-pages,allpages" help:"Fetch all pages"`
 	FailEmpty   bool     `name:"fail-empty" aliases:"non-empty,require-results" help:"Exit with code 3 if no results"`
+	Count       bool     `name:"count" help:"Report the whole-query count as totalMatches (exact) or totalMatchesAtLeast (lower bound); free with --all unless --page is set; unavailable with --results-only"`
 	Oldest      bool     `name:"oldest" help:"Show first message date instead of last"`
 	Timezone    string   `name:"timezone" short:"z" help:"Output timezone (IANA name, e.g. America/New_York, UTC). Default: GOG_TIMEZONE, config, then local"`
 	Local       bool     `name:"local" help:"Use local timezone (default behavior, useful to override --timezone)"`
@@ -65,14 +66,33 @@ func (c *GmailSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 		return err
 	}
 
+	var matchCount gmailMatchCount
+	countReported := false
+	if c.Count {
+		matchCount, countReported, err = resolveGmailMatchCount(u, flags.ResultsOnly, c.All, c.Page, len(threads), func() (gmailMatchCount, error) {
+			return countGmailThreadMatches(ctx, svc, query)
+		})
+		if err != nil {
+			return err
+		}
+	}
+
 	if len(threads) == 0 {
 		if outfmt.IsJSON(ctx) {
-			return writePagedJSONResult(ctx, map[string]any{
+			payload := map[string]any{
 				"threads":       []threadItem{},
 				"nextPageToken": nextPageToken,
-			}, 0, c.FailEmpty)
+			}
+			if countReported {
+				matchCount.apply(payload)
+			}
+			return writePagedJSONResult(ctx, payload, 0, c.FailEmpty)
 		}
-		u.Err().Println("No results")
+		if countReported {
+			printGmailMatchCount(u, 0, matchCount)
+		} else {
+			u.Err().Println("No results")
+		}
 		return failEmptyExit(c.FailEmpty)
 	}
 
@@ -92,10 +112,14 @@ func (c *GmailSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	if outfmt.IsJSON(ctx) {
-		return writePagedJSONResult(ctx, map[string]any{
+		payload := map[string]any{
 			"threads":       items,
 			"nextPageToken": nextPageToken,
-		}, len(items), c.FailEmpty)
+		}
+		if countReported {
+			matchCount.apply(payload)
+		}
+		return writePagedJSONResult(ctx, payload, len(items), c.FailEmpty)
 	}
 
 	if len(items) == 0 {
@@ -105,6 +129,10 @@ func (c *GmailSearchCmd) Run(ctx context.Context, flags *RootFlags) error {
 
 	if err := outfmt.WriteTable(ctx, stdoutWriter(ctx), items, gmailThreadColumns()); err != nil {
 		return err
+	}
+	// stderr, so the table on stdout stays parseable.
+	if countReported {
+		printGmailMatchCount(u, len(items), matchCount)
 	}
 	printNextPageHintWithAll(u, nextPageToken, "--all/--all-pages")
 	return nil
