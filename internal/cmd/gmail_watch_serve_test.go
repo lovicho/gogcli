@@ -459,3 +459,46 @@ func TestGmailWatchServeCmd_PreservesClientOverrideForRequestContexts(t *testing
 		t.Fatalf("newService: %v", callErr)
 	}
 }
+
+func TestGmailWatchServeCmd_HTTPServerTimeouts(t *testing.T) {
+	origListen := listenAndServe
+	t.Cleanup(func() { listenAndServe = origListen })
+
+	setWatchTestConfigHome(t)
+
+	store := newGmailWatchTestStore(t, "a@b.com")
+	updateErr := store.Update(func(s *gmailWatchState) error {
+		s.Account = "a@b.com"
+		return nil
+	})
+	if updateErr != nil {
+		t.Fatalf("seed: %v", updateErr)
+	}
+
+	flags := &RootFlags{Account: "a@b.com"}
+	var got *http.Server
+	listenAndServe = func(srv *http.Server) error {
+		got = srv
+		return nil
+	}
+
+	ctx := withGmailTestService(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), &gmail.Service{})
+	if execErr := runKong(t, &GmailWatchServeCmd{}, []string{"--port", "9999", "--path", "/hook"}, ctx, flags); execErr != nil {
+		t.Fatalf("execute: %v", execErr)
+	}
+	if got == nil {
+		t.Fatal("expected server")
+	}
+	if got.ReadTimeout == 0 {
+		t.Fatal("ReadTimeout must be set")
+	}
+	if got.ReadHeaderTimeout == 0 {
+		t.Fatal("ReadHeaderTimeout must be set")
+	}
+	if got.IdleTimeout == 0 {
+		t.Fatal("IdleTimeout must be set")
+	}
+	if got.MaxHeaderBytes == 0 {
+		t.Fatal("MaxHeaderBytes must be set")
+	}
+}

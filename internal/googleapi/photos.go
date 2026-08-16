@@ -38,7 +38,7 @@ func WithPhotosBaseURL(baseURL string) PhotosClientOption {
 
 func NewPhotosClient(client *http.Client, opts ...PhotosClientOption) *PhotosClient {
 	if client == nil {
-		client = http.DefaultClient
+		client = NewBoundedHTTPClient()
 	}
 
 	c := &PhotosClient{

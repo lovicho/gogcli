@@ -76,7 +76,7 @@ func NewClient(alias string, credentials Credentials, tokens TokenStore, opts ..
 			ClientSecret: strings.TrimSpace(credentials.ClientSecret),
 		},
 		alias:      NormalizeAlias(alias),
-		httpClient: http.DefaultClient,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 		now:        time.Now,
 		tokens:     tokens,
 	}

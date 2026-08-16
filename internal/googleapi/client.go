@@ -317,6 +317,14 @@ func newBaseTransport() *http.Transport {
 	return transport
 }
 
+// NewBoundedHTTPClient returns an unauthenticated client with the same
+// ResponseHeaderTimeout used by authenticated Google clients. It does not
+// set Client.Timeout so large downloads are not cut short after headers
+// arrive.
+func NewBoundedHTTPClient() *http.Client {
+	return &http.Client{Transport: newBaseTransport()}
+}
+
 // reauthFunctionFromContext builds a Reauth closure from the auth
 // dependencies stored in the context. Returns nil if the dependencies are
 // not available or the Reauth function is not configured, in which case

@@ -1202,6 +1202,26 @@ func TestNewBaseTransport_SetsResponseHeaderTimeout(t *testing.T) {
 	}
 }
 
+func TestNewBoundedHTTPClient_SetsResponseHeaderTimeout(t *testing.T) {
+	client := NewBoundedHTTPClient()
+	if client == http.DefaultClient {
+		t.Fatal("NewBoundedHTTPClient returned DefaultClient")
+	}
+
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+
+	if transport.ResponseHeaderTimeout != responseHeaderTimeout {
+		t.Fatalf("expected ResponseHeaderTimeout=%v, got %v", responseHeaderTimeout, transport.ResponseHeaderTimeout)
+	}
+
+	if client.Timeout != 0 {
+		t.Fatalf("expected no Client.Timeout, got %v", client.Timeout)
+	}
+}
+
 func TestOptionsForAccountScopes_NoClientTimeout(t *testing.T) {
 	opts, err := optionsForAccountScopes(testClientResolverContext(t), "svc", "a@b.com", []string{"s1"})
 	if err != nil {

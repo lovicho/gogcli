@@ -3,12 +3,31 @@ package googleauth
 import (
 	"context"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
 
 	"golang.org/x/oauth2"
 )
+
+func TestNewOAuthCallbackServer_ReadTimeout(t *testing.T) {
+	t.Parallel()
+
+	srv := newOAuthCallbackServer(http.NotFoundHandler())
+	if srv.ReadTimeout == 0 {
+		t.Fatal("ReadTimeout must be set")
+	}
+	if srv.ReadHeaderTimeout == 0 {
+		t.Fatal("ReadHeaderTimeout must be set")
+	}
+	if srv.IdleTimeout == 0 {
+		t.Fatal("IdleTimeout must be set")
+	}
+	if srv.MaxHeaderBytes == 0 {
+		t.Fatal("MaxHeaderBytes must be set")
+	}
+}
 
 func TestAuthURLParams(t *testing.T) {
 	t.Parallel()

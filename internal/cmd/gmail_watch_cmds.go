@@ -430,7 +430,10 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           server,
+		ReadTimeout:       defaultGmailWatchReadTimeout,
 		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    64 << 10,
 	}
 	return listenAndServe(httpServer)
 }

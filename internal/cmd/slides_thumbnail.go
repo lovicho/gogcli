@@ -156,7 +156,7 @@ func downloadSlidesThumbnail(ctx context.Context, url, outputPath string, overwr
 		return 0, "", fmt.Errorf("build thumbnail download request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := outboundHTTPClient.Do(req)
 	if err != nil {
 		return 0, "", fmt.Errorf("download thumbnail: %w", err)
 	}

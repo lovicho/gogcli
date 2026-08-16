@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Security: bound `gmail watch serve` and the local OAuth callback HTTP servers with read, idle, and header-size limits so a slow or oversized request cannot stall the listener.
+
 ## v0.37.0 - 2026-08-14
 
 - Gmail: emit sanitized message headers and bodies once in `gmail get --json --sanitize-content`, while retaining the `message` envelope and `--results-only` unwrapping. (#986) — thanks @ronny-rentner.

@@ -136,3 +136,23 @@ func TestRedactZoomURL(t *testing.T) {
 		t.Fatalf("expected include passwords env")
 	}
 }
+
+func TestNewClientDefaultHTTPClientIsBounded(t *testing.T) {
+	store, _ := newTestStore(t)
+	client, err := NewClient("work", Credentials{
+		AccountID:    "acct",
+		ClientID:     "client",
+		ClientSecret: "secret",
+	}, store)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if client.httpClient == http.DefaultClient {
+		t.Fatal("NewClient used http.DefaultClient")
+	}
+	if client.httpClient.Timeout == 0 {
+		if tr, ok := client.httpClient.Transport.(*http.Transport); !ok || tr.ResponseHeaderTimeout == 0 {
+			t.Fatal("default Zoom HTTP client has no timeout")
+		}
+	}
+}

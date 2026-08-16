@@ -45,6 +45,8 @@ type ManualAuthURLResult struct {
 // visible before the local OAuth server shuts down.
 const postSuccessDisplaySeconds = 30
 
+const defaultOAuthCallbackReadTimeout = 10 * time.Second
+
 // successTemplateData holds data passed to the success page template.
 type successTemplateData struct {
 	Email            string
@@ -153,6 +155,16 @@ func manageCredentialsReader(
 	}
 }
 
+func newOAuthCallbackServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadTimeout:       defaultOAuthCallbackReadTimeout,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+	}
+}
+
 func authorizeServer(ctx context.Context, opts AuthorizeOptions, creds config.ClientCredentials) (string, error) {
 	state, err := randomStateFn()
 	if err != nil {
@@ -184,63 +196,60 @@ func authorizeServer(ctx context.Context, opts AuthorizeOptions, creds config.Cl
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
-	srv := &http.Server{
-		ReadHeaderTimeout: 5 * time.Second,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/oauth2/callback" {
-				http.NotFound(w, r)
-				return
-			}
-			q := r.URL.Query()
+	srv := newOAuthCallbackServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth2/callback" {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query()
 
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-			if q.Get("error") != "" {
-				select {
-				case errCh <- fmt.Errorf("%w: %s", errAuthorization, q.Get("error")):
-				default:
-				}
-
-				w.WriteHeader(http.StatusOK)
-				renderCancelledPage(w)
-
-				return
-			}
-
-			if q.Get("state") != state {
-				select {
-				case errCh <- errStateMismatch:
-				default:
-				}
-
-				w.WriteHeader(http.StatusBadRequest)
-				renderErrorPage(w, "State mismatch - possible CSRF attack. Please try again.")
-
-				return
-			}
-
-			code := q.Get("code")
-			if code == "" {
-				select {
-				case errCh <- errMissingCode:
-				default:
-				}
-
-				w.WriteHeader(http.StatusBadRequest)
-				renderErrorPage(w, "Missing authorization code. Please try again.")
-
-				return
-			}
-
+		if q.Get("error") != "" {
 			select {
-			case codeCh <- code:
+			case errCh <- fmt.Errorf("%w: %s", errAuthorization, q.Get("error")):
 			default:
 			}
 
 			w.WriteHeader(http.StatusOK)
-			renderSuccessPage(w)
-		}),
-	}
+			renderCancelledPage(w)
+
+			return
+		}
+
+		if q.Get("state") != state {
+			select {
+			case errCh <- errStateMismatch:
+			default:
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			renderErrorPage(w, "State mismatch - possible CSRF attack. Please try again.")
+
+			return
+		}
+
+		code := q.Get("code")
+		if code == "" {
+			select {
+			case errCh <- errMissingCode:
+			default:
+			}
+
+			w.WriteHeader(http.StatusBadRequest)
+			renderErrorPage(w, "Missing authorization code. Please try again.")
+
+			return
+		}
+
+		select {
+		case codeCh <- code:
+		default:
+		}
+
+		w.WriteHeader(http.StatusOK)
+		renderSuccessPage(w)
+	}))
 
 	go func() {
 		<-ctx.Done()

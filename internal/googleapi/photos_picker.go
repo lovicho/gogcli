@@ -44,7 +44,7 @@ func WithPhotosPickerBaseURL(baseURL string) PhotosPickerClientOption {
 
 func NewPhotosPickerClient(client *http.Client, opts ...PhotosPickerClientOption) *PhotosPickerClient {
 	if client == nil {
-		client = http.DefaultClient
+		client = NewBoundedHTTPClient()
 	}
 
 	c := &PhotosPickerClient{

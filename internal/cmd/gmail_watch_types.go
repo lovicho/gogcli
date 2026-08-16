@@ -16,6 +16,7 @@ const (
 	defaultHistoryFetchDelay     = 3 * time.Second
 	defaultPushBodyLimitBytes    = 1024 * 1024
 	defaultHookRequestTimeoutSec = 10
+	defaultGmailWatchReadTimeout = 10 * time.Second
 )
 
 type gmailWatchServeConfig struct {

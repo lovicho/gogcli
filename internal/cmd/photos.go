@@ -176,7 +176,7 @@ func (c *PhotosDownloadCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return fmt.Errorf("build media download request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := outboundHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("download media item: %w", err)
 	}
