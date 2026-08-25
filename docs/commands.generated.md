@@ -32,8 +32,11 @@ Generated from `gog schema --json`.
   - [`gog appscript (script,apps-script) <command> [flags]`](commands/gog-appscript.md) - Google Apps Script
     - [`gog appscript (script,apps-script) content (cat) <scriptId>`](commands/gog-appscript-content.md) - Get Apps Script project content
     - [`gog appscript (script,apps-script) create (new) --title=STRING [flags]`](commands/gog-appscript-create.md) - Create an Apps Script project
+    - [`gog appscript (script,apps-script) deployments (list-deployments) <scriptId> [flags]`](commands/gog-appscript-deployments.md) - List deployments
     - [`gog appscript (script,apps-script) get (info,show) <scriptId>`](commands/gog-appscript-get.md) - Get Apps Script project metadata
+    - [`gog appscript (script,apps-script) pull <scriptId> <dir> [flags]`](commands/gog-appscript-pull.md) - Pull an Apps Script project into a local directory
     - [`gog appscript (script,apps-script) run <scriptId> <function> [flags]`](commands/gog-appscript-run.md) - Run a deployed Apps Script function
+    - [`gog appscript (script,apps-script) versions (list-versions) <scriptId> [flags]`](commands/gog-appscript-versions.md) - List versions
   - [`gog auth <command> [flags]`](commands/gog-auth.md) - Auth and credentials
     - [`gog auth add <email> [flags]`](commands/gog-auth-add.md) - Authorize a Google Account or Google Workspace account and store a refresh token
     - [`gog auth alias <command>`](commands/gog-auth-alias.md) - Manage account aliases
@@ -567,13 +570,17 @@ Generated from `gog schema --json`.
     - [`gog sheets (sheet) copy (cp,duplicate) <spreadsheetId> <title> [flags]`](commands/gog-sheets-copy.md) - Copy a Google Sheet
     - [`gog sheets (sheet) copy-paste (fill,copy-range) <spreadsheetId> <source> <dest> [flags]`](commands/gog-sheets-copy-paste.md) - Copy a range's values/formulas/format to another range (tiles to fill down/across)
     - [`gog sheets (sheet) create (new) <title> [flags]`](commands/gog-sheets-create.md) - Create a new spreadsheet
-    - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) <command>`](commands/gog-sheets-datasource.md) - Inspect Connected Sheets data sources and extracts
+    - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) <command>`](commands/gog-sheets-datasource.md) - Manage Connected Sheets data sources and extracts
+      - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) add <spreadsheetId> [flags]`](commands/gog-sheets-datasource-add.md) - Add one BigQuery Connected Sheets data source
+      - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) delete (rm,remove) <spreadsheetId> <dataSourceId>`](commands/gog-sheets-datasource-delete.md) - Delete one Connected Sheets data source and its linked sheet
       - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) describe (get,show,info) <spreadsheetId> <dataSourceId>`](commands/gog-sheets-datasource-describe.md) - Describe a Connected Sheets data source
       - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) list <spreadsheetId>`](commands/gog-sheets-datasource-list.md) - List Connected Sheets data sources
+      - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) refresh <spreadsheetId> <dataSourceId> [flags]`](commands/gog-sheets-datasource-refresh.md) - Refresh one Connected Sheets data source
       - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) table (tables,extract,extracts) <command>`](commands/gog-sheets-datasource-table.md) - Inspect Connected Sheets data-source tables (extracts)
         - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) table (tables,extract,extracts) describe (get,show,info) <spreadsheetId> <anchor>`](commands/gog-sheets-datasource-table-describe.md) - Describe a data-source table at an anchor cell
         - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) table (tables,extract,extracts) list <spreadsheetId> [flags]`](commands/gog-sheets-datasource-table-list.md) - List data-source tables (extracts)
         - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) table (tables,extract,extracts) read (values) <spreadsheetId> <anchor> [flags]`](commands/gog-sheets-datasource-table-read.md) - Read values from a data-source table
+      - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) update <spreadsheetId> <dataSourceId> [flags]`](commands/gog-sheets-datasource-update.md) - Update one BigQuery Connected Sheets data source
     - [`gog sheets (sheet) delete-dimension (delete-dim) --dimension=STRING <spreadsheetId> <rangeOrSheet> [flags]`](commands/gog-sheets-delete-dimension.md) - Delete rows or columns while preserving intersecting tables
     - [`gog sheets (sheet) delete-tab (delete-sheet) <spreadsheetId> <tabName>`](commands/gog-sheets-delete-tab.md) - Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)
     - [`gog sheets (sheet) export (download,dl) <spreadsheetId> [flags]`](commands/gog-sheets-export.md) - Export a Google Sheet (pdf|xlsx|csv) via Drive

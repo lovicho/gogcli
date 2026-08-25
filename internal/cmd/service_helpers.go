@@ -11,11 +11,20 @@ import (
 	"google.golang.org/api/driveactivity/v2"
 	"google.golang.org/api/gmail/v1"
 	"google.golang.org/api/meet/v2"
+	scriptapi "google.golang.org/api/script/v1"
 	"google.golang.org/api/sheets/v4"
 )
 
 func requireDocsService(ctx context.Context, flags *RootFlags) (*docs.Service, error) {
 	_, svc, err := requireGoogleService(ctx, flags, docsService)
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
+}
+
+func requireAppScriptService(ctx context.Context, flags *RootFlags) (*scriptapi.Service, error) {
+	_, svc, err := requireGoogleService(ctx, flags, appScriptService)
 	if err != nil {
 		return nil, err
 	}
@@ -56,6 +65,10 @@ func requireSheetsService(ctx context.Context, flags *RootFlags) (string, *sheet
 
 func requireConnectedSheetsService(ctx context.Context, flags *RootFlags) (string, *sheets.Service, error) {
 	return requireGoogleService(ctx, flags, connectedSheetsService)
+}
+
+func requireConnectedSheetsWriterService(ctx context.Context, flags *RootFlags) (string, *sheets.Service, error) {
+	return requireGoogleService(ctx, flags, connectedSheetsWriterService)
 }
 
 func requireGoogleService[T any](ctx context.Context, flags *RootFlags, newService func(context.Context, string) (*T, error)) (string, *T, error) {

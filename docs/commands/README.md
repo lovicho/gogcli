@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 721.
+Generated pages: 728.
 
 ## Top-level Commands
 
@@ -85,8 +85,11 @@ Generated pages: 721.
   - [gog appscript](gog-appscript.md) - Google Apps Script
     - [gog appscript content](gog-appscript-content.md) - Get Apps Script project content
     - [gog appscript create](gog-appscript-create.md) - Create an Apps Script project
+    - [gog appscript deployments](gog-appscript-deployments.md) - List deployments
     - [gog appscript get](gog-appscript-get.md) - Get Apps Script project metadata
+    - [gog appscript pull](gog-appscript-pull.md) - Pull an Apps Script project into a local directory
     - [gog appscript run](gog-appscript-run.md) - Run a deployed Apps Script function
+    - [gog appscript versions](gog-appscript-versions.md) - List versions
   - [gog auth](gog-auth.md) - Auth and credentials
     - [gog auth add](gog-auth-add.md) - Authorize a Google Account or Google Workspace account and store a refresh token
     - [gog auth alias](gog-auth-alias.md) - Manage account aliases
@@ -620,13 +623,17 @@ Generated pages: 721.
     - [gog sheets copy](gog-sheets-copy.md) - Copy a Google Sheet
     - [gog sheets copy-paste](gog-sheets-copy-paste.md) - Copy a range's values/formulas/format to another range (tiles to fill down/across)
     - [gog sheets create](gog-sheets-create.md) - Create a new spreadsheet
-    - [gog sheets datasource](gog-sheets-datasource.md) - Inspect Connected Sheets data sources and extracts
+    - [gog sheets datasource](gog-sheets-datasource.md) - Manage Connected Sheets data sources and extracts
+      - [gog sheets datasource add](gog-sheets-datasource-add.md) - Add one BigQuery Connected Sheets data source
+      - [gog sheets datasource delete](gog-sheets-datasource-delete.md) - Delete one Connected Sheets data source and its linked sheet
       - [gog sheets datasource describe](gog-sheets-datasource-describe.md) - Describe a Connected Sheets data source
       - [gog sheets datasource list](gog-sheets-datasource-list.md) - List Connected Sheets data sources
+      - [gog sheets datasource refresh](gog-sheets-datasource-refresh.md) - Refresh one Connected Sheets data source
       - [gog sheets datasource table](gog-sheets-datasource-table.md) - Inspect Connected Sheets data-source tables (extracts)
         - [gog sheets datasource table describe](gog-sheets-datasource-table-describe.md) - Describe a data-source table at an anchor cell
         - [gog sheets datasource table list](gog-sheets-datasource-table-list.md) - List data-source tables (extracts)
         - [gog sheets datasource table read](gog-sheets-datasource-table-read.md) - Read values from a data-source table
+      - [gog sheets datasource update](gog-sheets-datasource-update.md) - Update one BigQuery Connected Sheets data source
     - [gog sheets delete-dimension](gog-sheets-delete-dimension.md) - Delete rows or columns while preserving intersecting tables
     - [gog sheets delete-tab](gog-sheets-delete-tab.md) - Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)
     - [gog sheets export](gog-sheets-export.md) - Export a Google Sheet (pdf|xlsx|csv) via Drive

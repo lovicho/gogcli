@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Sheets: delete individual Connected Sheets data sources with explicit confirmation, linked-sheet impact warnings, and single-attempt safety. (#938) — thanks @ryo-touch.
+- Sheets: update individual BigQuery Connected Sheets sources with precise field masks, source-type verification, and SQL-safe execution previews. (#938) — thanks @ryo-touch.
+- Sheets: add explicitly billed BigQuery Connected Sheets data sources from SQL queries or native tables without exposing SQL in command output. (#938) — thanks @ryo-touch.
+- Sheets: refresh individual Connected Sheets data sources with scoped BigQuery authorization, dry-run safety, and structured execution status. (#938) — thanks @ryo-touch.
+- Chat: include user-mention annotations and emoji-reaction summaries in message-list JSON without changing existing text output. (#1000) — thanks @Ben-Living.
+- Apps Script: safely pull project source and list deployments and versions without mutating remote projects. (#1018) — thanks @haosdent.
 - Auth: explain Google Account requirements before OAuth while preserving existing services during reauthorization. (#1014)
 - Calendar: add `--no-reminders` to event creation and updates so calendar-default reminders can be explicitly disabled. (#1002)
 - Slides: add skip/unskip commands and expose slide visibility without changing existing plain-text output. (#1009) — thanks @marnunez.
