@@ -1,14 +1,19 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/mail"
 	"os"
 	"strings"
 
 	"google.golang.org/api/gmail/v1"
 
+	"github.com/openclaw/gogcli/internal/googleapi"
 	"github.com/openclaw/gogcli/internal/mailmime"
 	"github.com/openclaw/gogcli/internal/tracking"
 	"github.com/openclaw/gogcli/internal/ui"
@@ -23,6 +28,7 @@ type GmailSendCmd struct {
 	BodyFile                string   `name:"body-file" help:"Body file path (plain text; '-' for stdin)"`
 	BodyHTML                string   `name:"body-html" help:"Body (HTML; optional)"`
 	BodyHTMLFile            string   `name:"body-html-file" help:"HTML body file path ('-' for stdin)"`
+	RawFile                 string   `name:"raw-file" help:"Send an exact RFC822 message from a file, or '-' for stdin (cannot be combined with compose flags)"`
 	ReplyToMessageID        string   `name:"reply-to-message-id" aliases:"in-reply-to" help:"Reply to Gmail message ID (sets In-Reply-To/References and thread)"`
 	ThreadID                string   `name:"thread-id" help:"Reply within a Gmail thread (uses latest message for headers)"`
 	ReplyAll                bool     `name:"reply-all" help:"Auto-populate recipients from original message (requires --reply-to-message-id or --thread-id)"`
@@ -68,6 +74,9 @@ type sendMessageOptions struct {
 }
 
 func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
+	if strings.TrimSpace(c.RawFile) != "" {
+		return c.runRaw(ctx, flags)
+	}
 	u := ui.FromContext(ctx)
 
 	replyToMessageID := normalizeGmailMessageID(c.ReplyToMessageID)
@@ -235,6 +244,131 @@ func (c *GmailSendCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 
 	return writeSendResults(ctx, u, from.header, results, attachmentMetadata)
+}
+
+type gmailRawSendPlan struct {
+	Source   string `json:"source"`
+	Bytes    int    `json:"bytes"`
+	SHA256   string `json:"sha256"`
+	ThreadID string `json:"thread_id,omitempty"`
+	sender   *mail.Address
+	from     string
+}
+
+func (c *GmailSendCmd) runRaw(ctx context.Context, flags *RootFlags) error {
+	if conflict := c.rawModeConflict(); conflict != "" {
+		return usagef("--raw-file cannot be combined with %s", conflict)
+	}
+	raw, plan, err := readRawSendInput(ctx, c.RawFile, c.ThreadID)
+	if err != nil {
+		return err
+	}
+	if guardErr := checkAccountNoSend(ctx, plan.sender.Address); guardErr != nil {
+		return guardErr
+	}
+	if dryRunErr := dryRunExit(ctx, flags, "gmail.send", plan); dryRunErr != nil {
+		return dryRunErr
+	}
+	if googleapi.ReadOnly(ctx) {
+		return fmt.Errorf("%w: Gmail sending is disabled", googleapi.ErrReadOnly)
+	}
+	account, svc, err := requireGmailSendService(ctx, flags)
+	if err != nil {
+		return err
+	}
+	if account == accessTokenPlaceholderAccount || account == adcPlaceholderAccount {
+		return usage("--raw-file requires an explicit --account with direct access tokens or ADC")
+	}
+	if !strings.EqualFold(account, plan.sender.Address) {
+		if _, senderErr := resolveComposeSender(ctx, svc, account, plan.sender.Address); senderErr != nil {
+			return senderErr
+		}
+	}
+	message := &gmail.Message{Raw: base64.RawURLEncoding.EncodeToString(raw), ThreadId: plan.ThreadID}
+	sent, err := svc.Users.Messages.Send("me", message).Context(ctx).Do()
+	if err != nil {
+		return err
+	}
+	return writeSendResults(ctx, ui.FromContext(ctx), plan.from, []sendResult{{
+		MessageID: sent.Id,
+		ThreadID:  sent.ThreadId,
+	}}, nil)
+}
+
+func (c *GmailSendCmd) rawModeConflict() string {
+	checks := []struct {
+		set  bool
+		flag string
+	}{
+		{strings.TrimSpace(c.To) != "", "--to"},
+		{strings.TrimSpace(c.Cc) != "", "--cc"},
+		{strings.TrimSpace(c.Bcc) != "", "--bcc"},
+		{strings.TrimSpace(c.Subject) != "", "--subject"},
+		{c.Body != "", "--body"},
+		{strings.TrimSpace(c.BodyFile) != "", "--body-file"},
+		{c.BodyHTML != "", "--body-html"},
+		{strings.TrimSpace(c.BodyHTMLFile) != "", "--body-html-file"},
+		{strings.TrimSpace(c.ReplyToMessageID) != "", "--reply-to-message-id"},
+		{c.ReplyAll, "--reply-all"},
+		{strings.TrimSpace(c.ReplyTo) != "", "--reply-to"},
+		{len(c.Attach) != 0, "--attach"},
+		{strings.TrimSpace(c.From) != "", "--from"},
+		{c.Signature, "--signature"},
+		{strings.TrimSpace(c.SignatureFrom) != "", "--signature-from"},
+		{strings.TrimSpace(c.SignatureFile) != "", "--signature-file"},
+		{c.Track, "--track"},
+		{c.TrackSplit, "--track-split"},
+		{c.Quote, "--quote"},
+	}
+	for _, check := range checks {
+		if check.set {
+			return check.flag
+		}
+	}
+	return ""
+}
+
+func readRawSendInput(ctx context.Context, source, threadID string) ([]byte, gmailRawSendPlan, error) {
+	source = strings.TrimSpace(source)
+	raw, message, err := readRFC822Input(ctx, source)
+	if err != nil {
+		return nil, gmailRawSendPlan{}, err
+	}
+	if !bytes.Contains(raw, []byte("\r\n\r\n")) && !bytes.Contains(raw, []byte("\n\n")) {
+		return nil, gmailRawSendPlan{}, usage("invalid RFC822 input: missing header/body separator")
+	}
+	fromHeaders := message.Header["From"]
+	if len(fromHeaders) == 0 || strings.TrimSpace(fromHeaders[0]) == "" {
+		return nil, gmailRawSendPlan{}, usage("invalid RFC822 input: missing From header")
+	}
+	if len(fromHeaders) != 1 {
+		return nil, gmailRawSendPlan{}, usage("invalid RFC822 input: exactly one From header is required")
+	}
+	sender, addressErr := mail.ParseAddress(fromHeaders[0])
+	if addressErr != nil {
+		return nil, gmailRawSendPlan{}, usagef("invalid RFC822 input: invalid From header: %v", addressErr)
+	}
+	if strings.TrimSpace(message.Header.Get("To")) == "" && strings.TrimSpace(message.Header.Get("Cc")) == "" && strings.TrimSpace(message.Header.Get("Bcc")) == "" {
+		return nil, gmailRawSendPlan{}, usage("invalid RFC822 input: missing recipient header")
+	}
+	for _, header := range []string{"To", "Cc", "Bcc"} {
+		value := strings.TrimSpace(message.Header.Get(header))
+		if value == "" {
+			continue
+		}
+		if _, addressErr := mail.ParseAddressList(value); addressErr != nil {
+			return nil, gmailRawSendPlan{}, usagef("invalid RFC822 input: invalid %s header: %v", header, addressErr)
+		}
+	}
+	threadID = normalizeGmailThreadID(threadID)
+	if strings.ContainsAny(threadID, " \t\r\n") {
+		return nil, gmailRawSendPlan{}, usage("invalid --thread-id")
+	}
+	digest := sha256.Sum256(raw)
+	return raw, gmailRawSendPlan{
+		Source: source, Bytes: len(raw), SHA256: fmt.Sprintf("%x", digest), ThreadID: threadID,
+		sender: sender, from: fromHeaders[0],
+	}, nil
 }
 
 func (c *GmailSendCmd) resolveTrackingConfig(ctx context.Context, account string, toRecipients, ccRecipients, bccRecipients []string, htmlBody string) (*tracking.Config, error) {

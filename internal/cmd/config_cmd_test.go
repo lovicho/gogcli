@@ -1,8 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/openclaw/gogcli/internal/app"
@@ -141,6 +147,217 @@ func TestConfigCmd_InvalidInputIsUsageError(t *testing.T) {
 				t.Fatalf("expected %q in error, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestConfigCmd_ConcurrentMutationsPreserveAliases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		run  func(context.Context, *RootFlags) error
+	}{
+		{
+			name: "set",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return (&ConfigSetCmd{Key: "timezone", Value: "America/Los_Angeles"}).Run(ctx, flags)
+			},
+		},
+		{
+			name: "unset",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return (&ConfigUnsetCmd{Key: "timezone"}).Run(ctx, flags)
+			},
+		},
+		{
+			name: "keyring",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return (&AuthKeyringCmd{Backend: "file"}).Run(ctx, flags)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			layout := config.Layout{ConfigDir: t.TempDir()}
+			store := config.NewConfigStore(layout)
+			if err := store.Write(config.File{DefaultTimezone: "UTC"}); err != nil {
+				t.Fatalf("write config: %v", err)
+			}
+
+			const aliasCount = 24
+			start := make(chan struct{})
+			errs := make(chan error, aliasCount*2)
+			var wg sync.WaitGroup
+			wg.Add(aliasCount * 2)
+
+			for i := range aliasCount {
+				ctx := withTestRuntime(newCmdOutputContext(t, io.Discard, io.Discard), func(runtime *app.Runtime) {
+					runtime.Config = config.NewConfigStore(layout)
+					runtime.IO = app.IO{Out: io.Discard, Err: io.Discard}
+				})
+				go func() {
+					defer wg.Done()
+					<-start
+
+					errs <- tt.run(ctx, &RootFlags{})
+				}()
+
+				go func() {
+					defer wg.Done()
+					<-start
+
+					alias := fmt.Sprintf("proof-%02d", i)
+					errs <- config.NewConfigStore(layout).SetAccountAlias(alias, "clawdbot@gmail.com")
+				}()
+			}
+
+			close(start)
+			wg.Wait()
+			close(errs)
+
+			for err := range errs {
+				if err != nil {
+					t.Fatalf("concurrent update: %v", err)
+				}
+			}
+
+			cfg, err := store.Read()
+			if err != nil {
+				t.Fatalf("read config: %v", err)
+			}
+			if len(cfg.AccountAliases) != aliasCount {
+				t.Fatalf("retained %d of %d concurrent account aliases: %#v", len(cfg.AccountAliases), aliasCount, cfg.AccountAliases)
+			}
+		})
+	}
+}
+
+func TestConfigCmd_DryRunLeavesConfigAndLockUntouched(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		run  func(context.Context, *RootFlags) error
+	}{
+		{
+			name: "set",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return (&ConfigSetCmd{Key: "timezone", Value: "UTC"}).Run(ctx, flags)
+			},
+		},
+		{
+			name: "unset",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return (&ConfigUnsetCmd{Key: "timezone"}).Run(ctx, flags)
+			},
+		},
+		{
+			name: "keyring",
+			run: func(ctx context.Context, flags *RootFlags) error {
+				return (&AuthKeyringCmd{Backend: "file"}).Run(ctx, flags)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			configDir := filepath.Join(t.TempDir(), "config")
+			ctx := withTestRuntime(newCmdOutputContext(t, io.Discard, io.Discard), func(runtime *app.Runtime) {
+				runtime.Config = config.NewConfigStore(config.Layout{ConfigDir: configDir})
+				runtime.IO = app.IO{Out: io.Discard, Err: io.Discard}
+			})
+			if err := tt.run(ctx, &RootFlags{DryRun: true}); err == nil || ExitCode(err) != 0 {
+				t.Fatalf("dry run: %v", err)
+			}
+			if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+				t.Fatalf("dry run touched configuration or lock directory: %v", err)
+			}
+		})
+	}
+}
+
+func TestConfigSetRedactsSensitiveValues(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []config.Key{config.KeyYoutubeAPIKey, config.KeyPlacesAPIKey} {
+		for _, tc := range []struct {
+			name   string
+			json   bool
+			dryRun bool
+		}{
+			{name: "JSON preview", json: true, dryRun: true},
+			{name: "plain preview", dryRun: true},
+			{name: "JSON saved", json: true},
+			{name: "plain saved"},
+		} {
+			t.Run(key.String()+" "+tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				configDir := filepath.Join(t.TempDir(), "config")
+				store := config.NewConfigStore(config.Layout{ConfigDir: configDir})
+				runtime := &app.Runtime{Config: store}
+				value := "synthetic-" + key.String() + "-value"
+				args := []string{}
+				if tc.json {
+					args = append(args, "--json")
+				} else {
+					args = append(args, "--plain")
+				}
+				if tc.dryRun {
+					args = append(args, "--dry-run")
+				}
+				args = append(args, "config", "set", key.String(), value)
+				result := executeWithTestRuntime(t, args, runtime)
+				if result.err != nil {
+					t.Fatalf("config set: %v\n%s", result.err, result.stderr)
+				}
+				if strings.Contains(result.stdout, value) || strings.Contains(result.stderr, value) ||
+					!strings.Contains(result.stdout, "[REDACTED]") {
+					t.Fatalf("sensitive value escaped output: stdout=%q stderr=%q", result.stdout, result.stderr)
+				}
+				if tc.dryRun {
+					if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+						t.Fatalf("dry-run created configuration state: %v", err)
+					}
+					return
+				}
+				cfg, err := store.Read()
+				if err != nil {
+					t.Fatalf("read stored config: %v", err)
+				}
+				stored := cfg.YoutubeAPIKey
+				if key == config.KeyPlacesAPIKey {
+					stored = cfg.PlacesAPIKey
+				}
+				if stored != value {
+					t.Fatalf("stored value = %q, want the unchanged original", stored)
+				}
+			})
+		}
+	}
+}
+
+func TestRemoveDomainMappings_NoMatchLeavesConfigAbsent(t *testing.T) {
+	t.Parallel()
+
+	configDir := filepath.Join(t.TempDir(), "config")
+	ctx := withTestRuntime(newCmdOutputContext(t, io.Discard, io.Discard), func(runtime *app.Runtime) {
+		runtime.Config = config.NewConfigStore(config.Layout{ConfigDir: configDir})
+	})
+	removed, err := removeDomainMappings(ctx, "work")
+	if err != nil {
+		t.Fatalf("remove domain mappings: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Fatalf("removed unexpected domains: %v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "config.json")); !os.IsNotExist(err) {
+		t.Fatalf("unchanged domain cleanup created config file: %v", err)
 	}
 }
 

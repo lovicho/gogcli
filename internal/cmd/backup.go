@@ -66,6 +66,14 @@ func (f backupFlags) options() backup.Options {
 	}
 }
 
+func (f backupFlags) dryRunConfig(ctx context.Context) (backup.Config, error) {
+	opts := f.options()
+	if err := bindBackupConfigStore(ctx, &opts); err != nil {
+		return backup.Config{}, err
+	}
+	return backup.ResolveOptions(opts)
+}
+
 type backupReadFlags struct {
 	Config   string `name:"config" help:"Backup config path" default:""`
 	Repo     string `name:"repo" help:"Local backup repository path"`
@@ -133,7 +141,7 @@ func (c *BackupInitCmd) Run(ctx context.Context, flags *RootFlags) error {
 		}
 		return dryRunExit(ctx, flags, "backup.init", map[string]any{
 			"repo":       cfg.Repo,
-			"remote":     cfg.Remote,
+			"remote":     backup.RedactGitURL(cfg.Remote),
 			"identity":   cfg.Identity,
 			"recipients": cfg.Recipients,
 			"push":       opts.Push,
@@ -144,17 +152,18 @@ func (c *BackupInitCmd) Run(ctx context.Context, flags *RootFlags) error {
 	if err != nil {
 		return err
 	}
+	remote := backup.RedactGitURL(cfg.Remote)
 	if outfmt.IsJSON(ctx) {
 		return outfmt.WriteJSON(ctx, stdoutWriter(ctx), map[string]any{
 			"repo":      cfg.Repo,
-			"remote":    cfg.Remote,
+			"remote":    remote,
 			"identity":  cfg.Identity,
 			"recipient": recipient,
 		})
 	}
 	u := ui.FromContext(ctx)
 	u.Out().Linef("repo\t%s", cfg.Repo)
-	u.Out().Linef("remote\t%s", cfg.Remote)
+	u.Out().Linef("remote\t%s", remote)
 	u.Out().Linef("identity\t%s", cfg.Identity)
 	u.Out().Linef("recipient\t%s", recipient)
 	return nil
@@ -190,6 +199,32 @@ func (c *BackupPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	}
 	if err := c.validate(); err != nil {
 		return err
+	}
+	if flags != nil && flags.DryRun {
+		builders := c.snapshotBuilders(ctx, flags, backup.Options{})
+		for _, service := range services {
+			if _, ok := builders[strings.ToLower(strings.TrimSpace(service))]; !ok {
+				return usagef("unsupported backup service %q (supported: %s)", service, backupSupportedServicesHelp)
+			}
+		}
+		cfg, err := c.dryRunConfig(ctx)
+		if err != nil {
+			return err
+		}
+		return dryRunExit(ctx, flags, "backup.push", map[string]any{
+			"services":            services,
+			"repo":                cfg.Repo,
+			"remote":              backup.RedactGitURL(cfg.Remote),
+			"identity":            cfg.Identity,
+			"recipients":          cfg.Recipients,
+			"push":                !c.NoPush,
+			"query":               c.Query,
+			"max":                 c.Max,
+			"include_spam_trash":  c.IncludeSpamTrash,
+			"gmail_cache":         c.GmailCache,
+			"gmail_refresh_cache": c.GmailRefreshCache,
+			"gmail_checkpoints":   c.GmailCheckpoints,
+		})
 	}
 	backupOpts := c.options()
 	if err := bindBackupConfigStore(ctx, &backupOpts); err != nil {
@@ -262,6 +297,26 @@ func (c *BackupGmailPushCmd) Run(ctx context.Context, flags *RootFlags) error {
 	ctx = backupCommandContext(ctx, flags)
 	if err := c.validate(); err != nil {
 		return err
+	}
+	if flags != nil && flags.DryRun {
+		cfg, err := c.dryRunConfig(ctx)
+		if err != nil {
+			return err
+		}
+		return dryRunExit(ctx, flags, "backup.gmail.push", map[string]any{
+			"services":            []string{backupServiceGmail},
+			"repo":                cfg.Repo,
+			"remote":              backup.RedactGitURL(cfg.Remote),
+			"identity":            cfg.Identity,
+			"recipients":          cfg.Recipients,
+			"push":                !c.NoPush,
+			"query":               c.Query,
+			"max":                 c.Max,
+			"include_spam_trash":  c.IncludeSpamTrash,
+			"gmail_cache":         c.CacheMessages,
+			"gmail_refresh_cache": c.RefreshCache,
+			"gmail_checkpoints":   c.Checkpoints,
+		})
 	}
 	backupOpts := c.options()
 	if err := bindBackupConfigStore(ctx, &backupOpts); err != nil {

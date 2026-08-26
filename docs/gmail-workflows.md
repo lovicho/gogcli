@@ -27,6 +27,11 @@ message text for automation. Message JSON remains under the `message` key;
 add `--results-only` to emit that sanitized message directly. Both shapes emit
 the message headers and body once.
 
+Thread and draft attachment downloads honor `--dry-run` before opening account
+credentials, fetching messages, or writing files. Thread downloads keep their
+current-directory default or explicit `--out-dir`; draft downloads retain the
+existing configured attachment directory.
+
 ## Filters
 
 Export filters as Gmail WebUI-compatible XML:
@@ -67,6 +72,28 @@ For account-specific send blocking, use the no-send config commands:
 - [`gog config no-send set`](commands/gog-config-no-send-set.md)
 - [`gog config no-send list`](commands/gog-config-no-send-list.md)
 - [`gog config no-send remove`](commands/gog-config-no-send-remove.md)
+
+### Send an exact RFC822 message
+
+Use raw mode when a trusted caller has already constructed and approved the
+complete message, including its headers and MIME body:
+
+```bash
+gog --account you@example.com gmail send --raw-file approved.eml
+cat approved.eml | gog --account you@example.com gmail send --raw-file - --thread-id <threadId>
+```
+
+Raw mode sends the input bytes unchanged. It cannot be combined with compose,
+reply, attachment, signature, or tracking flags; `--thread-id` is the only
+optional message setting, and Gmail thread URLs are accepted. The single `From`
+address must match the authenticated account or a verified send-as alias;
+checking aliases requires Gmail settings access, so a `--gmail-scope send` token
+can send only from its own account. Direct access tokens and ADC require an
+explicit `--account`. Read-only and global/per-account no-send policies still
+apply. A dry-run validates the RFC822 structure without authentication and
+reports only the source, byte count, SHA-256 digest, and optional thread ID.
+
+Command page: [`gog gmail send`](commands/gog-gmail-send.md).
 
 ## Import an RFC822 Message
 
