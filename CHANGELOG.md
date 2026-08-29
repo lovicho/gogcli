@@ -2,6 +2,9 @@
 
 ## 0.38.2 - Unreleased
 
+- Sheets: preserve zero-valued sheet, row, and column indexes in Connected Sheets refresh status references, keeping A1 anchors identifiable. (#938) — thanks @ryo-touch.
+- Dependencies: prefer Go 1.27 while retaining Go 1.26 compatibility, refresh Google and MCP SDKs, update tracking worker dependencies and Go tooling, and refresh Docker build actions.
+
 ## 0.38.1 - 2026-08-25
 
 - Gmail: send exact prebuilt RFC822 messages with verified sender/account guards, normalized thread IDs, and content-safe offline dry runs. (#1032, #1029) — thanks @higginz777.

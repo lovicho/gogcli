@@ -25,7 +25,7 @@ GOIMPORTS := $(TOOLS_DIR)/goimports
 GOLANGCI_LINT := $(TOOLS_DIR)/golangci-lint
 DEADCODE := $(TOOLS_DIR)/deadcode
 TOOLS_STAMP := $(TOOLS_DIR)/.versions
-TOOLS_VERSION := gofumpt=v0.11.0;goimports=v0.48.0;golangci-lint=v2.12.2;deadcode=v0.48.0
+TOOLS_VERSION := gofumpt=v0.11.0;goimports=v0.49.0;golangci-lint=v2.13.2;deadcode=v0.49.0
 
 # Allow passing CLI args as extra "targets":
 #   make gogcli -- --help
@@ -91,9 +91,9 @@ tools:
 	else \
 		set -e; \
 		GOBIN=$(TOOLS_DIR) go install mvdan.cc/gofumpt@v0.11.0; \
-		GOBIN=$(TOOLS_DIR) go install golang.org/x/tools/cmd/goimports@v0.48.0; \
-		GOBIN=$(TOOLS_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2; \
-		GOBIN=$(TOOLS_DIR) go install golang.org/x/tools/cmd/deadcode@v0.48.0; \
+		GOBIN=$(TOOLS_DIR) go install golang.org/x/tools/cmd/goimports@v0.49.0; \
+		GOBIN=$(TOOLS_DIR) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2; \
+		GOBIN=$(TOOLS_DIR) go install golang.org/x/tools/cmd/deadcode@v0.49.0; \
 		printf '%s\n' "$(TOOLS_VERSION)" > "$(TOOLS_STAMP)"; \
 	fi
 
@@ -139,15 +139,17 @@ pnpm-gate:
 docker-version-check:
 	@set -e; \
 	go_version="$$(awk '$$1 == "go" { print $$2; exit }' go.mod)"; \
+	toolchain_version="$$(awk '$$1 == "toolchain" && $$2 != "default" { sub(/^go/, "", $$2); print $$2; exit }' go.mod)"; \
+	build_version="$${toolchain_version:-$$go_version}"; \
 	docker_version="$$(sed -n 's/^ARG GO_VERSION=//p' Dockerfile)"; \
-	if [ -z "$$go_version" ] || [ -z "$$docker_version" ] || [ "$$docker_version" != "$$go_version" ]; then \
-		printf 'Docker Go version %s must match go.mod version %s\n' "$$docker_version" "$$go_version" >&2; \
+	if [ -z "$$go_version" ] || [ -z "$$docker_version" ] || [ "$$docker_version" != "$$build_version" ]; then \
+		printf 'Docker Go version %s must match go.mod build toolchain %s\n' "$$docker_version" "$$build_version" >&2; \
 		exit 1; \
 	fi
 
 test:
 	@go test $(GO_TEST_FLAGS) $(TEST_FLAGS) $(TEST_PKGS)
-	@node --test scripts/eval-gws.test.mjs scripts/eval-gws-agents.test.mjs
+	@node --test scripts/eval-gws.test.mjs scripts/eval-gws-agents.test.mjs scripts/check-docker-go-version.test.mjs
 
 eval-gws: build
 	@node scripts/eval-gws.mjs --gog $(BIN) --gws $${GWS_BIN:-gws} --out $${OUT:-/tmp/gog-gws-eval.json}
