@@ -134,6 +134,10 @@ gog auth doctor --check --json --no-input
 
 ## Exit codes
 
+Google API rate-limit retries honor `Retry-After` delays up to 60 seconds per
+retry, including numeric seconds and HTTP dates. Cancelling the command also
+cancels a pending retry wait.
+
 | Code | Name | Meaning |
 | ---: | --- | --- |
 | 0 | `ok` | Success |
