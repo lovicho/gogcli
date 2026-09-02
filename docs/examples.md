@@ -78,6 +78,8 @@ gog drive labels file list <fileId> --json
 gog drive labels file apply <fileId> <labelId> --text fieldId=value
 
 # Recursively push local contents without deleting remote-only files.
+# Listing errors, repeated page tokens, and page-limit failures stop preflight.
+# Remote writes begin only after the complete recursive plan succeeds.
 gog drive sync push ./backup --parent <folderId> --dry-run --json
 gog drive sync push ./backup --parent <folderId>
 
