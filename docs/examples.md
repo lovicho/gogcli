@@ -155,6 +155,11 @@ gog contacts dedupe --resource people/123 --resource people/456 \
   --apply --force --json
 ```
 
+Contact exports include user-defined group names as vCard categories. Group
+names are collected from all pages before output is written. If Google repeats
+a group page token or a group page fails, the command returns an error without
+writing a partial export.
+
 ## Docs
 
 See [Google Docs editing](docs-editing.md), [atomic request batches](docs-batch.md),

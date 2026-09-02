@@ -15,6 +15,12 @@ gog gmail get <messageId> --json
 gog gmail thread get <threadId> --json
 ```
 
+Use `--from-contact 'Ada Lovelace'` with `gmail search` to resolve a contact
+into a sender query. If contact search misses, the fallback scans connections
+page by page and retains only exact name or email matches. Multiple matching
+contacts require a more specific selector; a repeated page token stops with a
+pagination error instead of leaving the command stuck.
+
 For agents, logs, or issue reports, prefer sanitized content:
 
 ```bash
