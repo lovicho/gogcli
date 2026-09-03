@@ -3,12 +3,14 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/drive/v3"
 
 	"github.com/openclaw/gogcli/internal/app"
+	"github.com/openclaw/gogcli/internal/authclient"
 )
 
 func TestEnvOr(t *testing.T) {
@@ -236,6 +238,73 @@ func TestExecute_AccessTokenWarningUsesRuntimeStderr(t *testing.T) {
 	}
 	if !strings.Contains(result.stderr, directAccessTokenWarning) {
 		t.Fatalf("missing access-token warning: %q", result.stderr)
+	}
+}
+
+func TestExecute_QuotaProjectReachesCommandContext(t *testing.T) {
+	stopErr := errors.New("stop after context inspection")
+
+	tests := []struct {
+		name            string
+		flagProject     string
+		gogProject      string
+		standardProject string
+		want            string
+	}{
+		{
+			name:        "explicit flag",
+			flagProject: "flag-project",
+			want:        "flag-project",
+		},
+		{
+			name:            "GOG_QUOTA_PROJECT",
+			gogProject:      "gog-project",
+			standardProject: "std-project",
+			want:            "gog-project",
+		},
+		{
+			name:            "flag overrides environment",
+			flagProject:     "flag-project",
+			gogProject:      "gog-project",
+			standardProject: "std-project",
+			want:            "flag-project",
+		},
+		{
+			name:            "standard environment alone ignored",
+			standardProject: "std-project",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GOG_QUOTA_PROJECT", test.gogProject)
+			t.Setenv("GOOGLE_CLOUD_QUOTA_PROJECT", test.standardProject)
+			if test.gogProject == "" {
+				// An empty-but-present value masks lower-priority env fallbacks.
+				if err := os.Unsetenv("GOG_QUOTA_PROJECT"); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			args := []string{"--access-token", "ya29.test-token"}
+			if test.flagProject != "" {
+				args = append(args, "--quota-project", test.flagProject)
+			}
+			args = append(args, "drive", "ls")
+
+			var gotQuotaProject string
+			result := executeWithTestRuntime(t, args, &app.Runtime{Services: app.Services{
+				Drive: func(ctx context.Context, _ string) (*drive.Service, error) {
+					gotQuotaProject = authclient.QuotaProjectFromContext(ctx)
+					return nil, stopErr
+				},
+			}})
+			if !errors.Is(result.err, stopErr) {
+				t.Fatalf("Execute error = %v, want %v", result.err, stopErr)
+			}
+			if gotQuotaProject != test.want {
+				t.Fatalf("quota project = %q, want %q", gotQuotaProject, test.want)
+			}
+		})
 	}
 }
 

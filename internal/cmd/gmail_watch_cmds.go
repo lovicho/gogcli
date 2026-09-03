@@ -400,6 +400,7 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		cfg.MaxBodyBytes = defaultHookMaxBytes
 	}
 
+	quotaProject := authclient.QuotaProjectFromContext(ctx)
 	selectedClient := strings.TrimSpace(flags.Client)
 	directToken := authclient.AccessTokenFromContext(ctx)
 	gmailFactory, err := gmailServiceFactory(ctx)
@@ -412,6 +413,9 @@ func (c *GmailWatchServeCmd) Run(ctx context.Context, kctx *kong.Context, flags 
 		}
 		if selectedClient != "" {
 			ctx = authclient.WithClient(ctx, selectedClient)
+		}
+		if quotaProject != "" {
+			ctx = authclient.WithQuotaProject(ctx, quotaProject)
 		}
 		return gmailFactory(ctx, account)
 	}

@@ -24,6 +24,7 @@ const sections = [
   ["Gmail", ["gmail-workflows.md", "gmail-autoreply.md", "watch.md", "email-tracking.md", "email-tracking-worker.md"]],
   ["Drive & Files", ["drive-audits.md", "raw-api.md", "raw-audit.md"]],
   ["Photos", ["photos-picker.md"]],
+  ["AdSense", ["adsense.md"]],
   ["YouTube", ["youtube.md"]],
   ["Docs, Sheets, Slides", ["docs-editing.md", "docs-batch.md", "sedmat.md", "sheets-batch-update.md", "sheets-tables.md", "sheets-formatting.md", "slides-markdown.md", "slides-template-replacement.md", "slides-introspection.md", "slides-text-editing.md", "slides-tables.md", "slides-structure.md"]],
   ["Contacts", ["contacts-dedupe.md", "contacts-json-update.md"]],
@@ -378,7 +379,7 @@ function inline(text, currentRel) {
   out = escapeHtml(out)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, "$1<em>$2</em>")
-    .replace(/(^|[^_])_([^_\s][^_]*?)_(?!_)/g, "$1<em>$2</em>")
+    .replace(/(^|[^\p{L}\p{N}_])_([^_\s][^_]*?)_(?![\p{L}\p{N}_])/gu, "$1<em>$2</em>")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, href) => `<a href="${escapeAttr(rewriteHref(href, currentRel))}">${label}</a>`)
     .replace(/&lt;(https?:\/\/[^\s<>]+)&gt;/g, '<a href="$1">$1</a>');
   out = out.replace(/\\\|/g, "|");

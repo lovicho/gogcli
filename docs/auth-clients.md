@@ -70,6 +70,40 @@ Shows stored credential files plus any configured domain mappings.
 - Manual or remote authorization started before v0.24.0 cannot be completed
   after upgrading. Run step 1 again to generate a PKCE-bound URL.
 
+## Quota project
+
+This selects request quota/billing attribution; it does not switch the Google
+login, grant IAM access, enable an API, or change a project's billing setup.
+
+Some Google APIs reject ADC or direct access tokens when they cannot identify
+a quota project, even if the API is enabled in a project you control. Set
+`--quota-project <project-id>` or `GOG_QUOTA_PROJECT` to send that project in
+the `X-Goog-User-Project` header on authenticated Google API requests:
+
+```bash
+GOG_AUTH_MODE=adc gog --readonly --quota-project my-project calendar events
+GOG_AUTH_MODE=adc GOG_QUOTA_PROJECT=my-project gog --readonly calendar events
+```
+
+The flag takes precedence over `GOG_QUOTA_PROJECT`. When both are unset, gog
+adds no quota-project header and existing authentication behavior is unchanged.
+`GOOGLE_CLOUD_QUOTA_PROJECT` and an ADC file's `quota_project_id` do not activate
+this setting; configure the flag or gog-specific variable explicitly.
+
+The setting applies to stored OAuth, direct-token, ADC, and delegated
+service-account clients. A request's existing `X-Goog-User-Project` header takes
+precedence. Gmail watch request clients and MCP commands retain the selected
+project. API-key-only requests are unchanged.
+
+The target API must be enabled on the project, and the authenticated principal
+needs `serviceusage.services.use` there, such as through
+`roles/serviceusage.serviceUsageConsumer`. See Google's
+[quota-project requirements](https://docs.cloud.google.com/docs/quotas/set-quota-project).
+This option does not grant IAM permissions or OAuth scopes, enable APIs, or
+configure billing. Credentials still need the command's API scopes; for example,
+ADC Calendar credentials need an appropriate Calendar scope independently of the
+quota project.
+
 ## Workspace service accounts
 
 Workspace Admin, group, org-unit, and Keep automation commonly run through a

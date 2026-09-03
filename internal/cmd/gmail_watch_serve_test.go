@@ -421,6 +421,85 @@ func TestGmailWatchServeCmd_SaveHookAndOIDC(t *testing.T) {
 	}
 }
 
+func TestGmailWatchServeCmd_PreservesQuotaProjectForRequestContexts(t *testing.T) {
+	origListen := listenAndServe
+	t.Cleanup(func() { listenAndServe = origListen })
+
+	setWatchTestConfigHome(t)
+
+	gmailAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Goog-User-Project"); got != "quota-project" {
+			t.Errorf("X-Goog-User-Project = %q, want quota-project", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer quota-test-token" {
+			t.Errorf("Authorization = %q, want Bearer quota-test-token", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"historyId":"101"}`)
+	}))
+	t.Cleanup(gmailAPI.Close)
+
+	store := newGmailWatchTestStore(t, "a@b.com")
+	updateErr := store.Update(func(s *gmailWatchState) error {
+		s.Account = "a@b.com"
+		return nil
+	})
+	if updateErr != nil {
+		t.Fatalf("seed: %v", updateErr)
+	}
+
+	var got *gmailWatchServer
+	listenAndServe = func(srv *http.Server) error {
+		if gs, ok := srv.Handler.(*gmailWatchServer); ok {
+			got = gs
+		}
+		return nil
+	}
+
+	var serviceCtx context.Context
+	ctx := withGmailTestServiceFactory(newCmdRuntimeOutputContext(t, io.Discard, io.Discard), func(ctx context.Context, account string) (*gmail.Service, error) {
+		serviceCtx = ctx
+		svc, err := googleapi.NewGmail(ctx, account)
+		if err != nil {
+			return nil, err
+		}
+		svc.BasePath = gmailAPI.URL + "/"
+		return svc, nil
+	})
+	ctx = authclient.WithQuotaProject(ctx, "quota-project")
+	if execErr := runKong(t, &GmailWatchServeCmd{}, []string{"--port", "9999", "--path", "/hook"}, ctx, &RootFlags{Account: "a@b.com"}); execErr != nil {
+		t.Fatalf("execute: %v", execErr)
+	}
+	if got == nil {
+		t.Fatal("expected server")
+	}
+
+	requestCtx, cancelRequest := context.WithTimeout(authclient.WithAccessToken(context.Background(), "quota-test-token"), 10*time.Second)
+	defer cancelRequest()
+	svc, callErr := got.newService(requestCtx, "a@b.com")
+	if callErr != nil {
+		t.Fatalf("newService: %v", callErr)
+	}
+	wantDeadline, _ := requestCtx.Deadline()
+	if deadline, ok := serviceCtx.Deadline(); !ok || !deadline.Equal(wantDeadline) {
+		t.Fatalf("service deadline = %v, %t; want %v", deadline, ok, wantDeadline)
+	}
+	if serviceCtx.Done() != requestCtx.Done() {
+		t.Fatal("service context does not preserve request cancellation")
+	}
+	response, err := svc.Users.History.List("me").StartHistoryId(100).Context(requestCtx).Do()
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if response.HistoryId != 101 {
+		t.Fatalf("history ID = %d, want 101", response.HistoryId)
+	}
+	cancelRequest()
+	if err := serviceCtx.Err(); !errors.Is(err, context.Canceled) {
+		t.Fatalf("service context error = %v, want context.Canceled", err)
+	}
+}
+
 func TestGmailWatchServeCmd_PreservesClientOverrideForRequestContexts(t *testing.T) {
 	origListen := listenAndServe
 	t.Cleanup(func() { listenAndServe = origListen })
