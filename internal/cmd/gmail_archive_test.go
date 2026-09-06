@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"google.golang.org/api/gmail/v1"
 
@@ -310,4 +312,127 @@ func TestGmailBulkOps_QueryInvalidMaxFailsBeforeDryRun(t *testing.T) {
 			}
 		})
 	}
+}
+
+func stuckGmailSearchListHandler(t *testing.T, listCalls *atomic.Int32) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/gmail/v1")
+		if r.Method != http.MethodGet || path != "/users/me/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if listCalls.Add(1) > 2 {
+			http.Error(w, "too many list requests", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"messages":      []map[string]any{{"id": "m1"}},
+			"nextPageToken": "stuck",
+		})
+	}
+}
+
+func TestSearchMessageIDsRejectsRepeatedPageToken(t *testing.T) {
+	var listCalls atomic.Int32
+	svc, cleanup := newGmailServiceForTest(t, stuckGmailSearchListHandler(t, &listCalls))
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ids, err := searchMessageIDs(ctx, svc, "in:inbox", 50)
+	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls, ids=%v", err, listCalls.Load(), ids)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+	t.Logf("err = %v after %d list calls", err, listCalls.Load())
+}
+
+func TestSearchMessageIDsRejectsRepeatedEmptyPageToken(t *testing.T) {
+	var listCalls atomic.Int32
+	svc, cleanup := newGmailServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/gmail/v1")
+		if r.Method != http.MethodGet || path != "/users/me/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		if listCalls.Add(1) > 2 {
+			http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"nextPageToken": "stuck",
+		})
+	})
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ids, err := searchMessageIDs(ctx, svc, "in:inbox", 50)
+	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls, ids=%v", err, listCalls.Load(), ids)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+	t.Logf("err = %v after %d list calls", err, listCalls.Load())
+}
+
+func TestSearchMessageIDsFollowsDistinctPageTokens(t *testing.T) {
+	var listCalls atomic.Int32
+	svc, cleanup := newGmailServiceForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/gmail/v1")
+		if r.Method != http.MethodGet || path != "/users/me/messages" {
+			http.NotFound(w, r)
+			return
+		}
+		n := listCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("pageToken") == "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"messages":      []map[string]any{{"id": "m1"}},
+				"nextPageToken": "page-2",
+			})
+			return
+		}
+		if r.URL.Query().Get("pageToken") != "page-2" || n != 2 {
+			t.Fatalf("unexpected list call %d token=%q", n, r.URL.Query().Get("pageToken"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"messages": []map[string]any{{"id": "m2"}},
+		})
+	})
+	defer cleanup()
+
+	ids, err := searchMessageIDs(context.Background(), svc, "in:inbox", 50)
+	if err != nil {
+		t.Fatalf("searchMessageIDs: %v", err)
+	}
+	if strings.Join(ids, ",") != "m1,m2" {
+		t.Fatalf("ids = %v, want [m1 m2]", ids)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+}
+
+func TestGmailArchiveCmd_QueryRejectsRepeatedPageToken(t *testing.T) {
+	var listCalls atomic.Int32
+	svc, cleanup := newGmailServiceForTest(t, stuckGmailSearchListHandler(t, &listCalls))
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(withGmailTestService(context.Background(), svc), 10*time.Second)
+	defer cancel()
+	err := runKong(t, &GmailArchiveCmd{}, []string{"--query", "in:inbox", "--max", "50"}, ctx, &RootFlags{Account: "a@b.com"})
+	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls", err, listCalls.Load())
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+	t.Logf("err = %v after %d list calls", err, listCalls.Load())
 }

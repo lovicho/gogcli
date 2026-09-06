@@ -149,7 +149,11 @@ func fetchBackupDriveFileCollaboration(ctx context.Context, svc *drive.Service, 
 func fetchBackupDrivePermissions(ctx context.Context, svc *drive.Service, fileID string) ([]*drive.Permission, error) {
 	var out []*drive.Permission
 	pageToken := ""
+	var guard pageTokenGuard
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, fmt.Errorf("drive file %s permissions: %w", fileID, err)
+		}
 		call := svc.Permissions.List(fileID).
 			PageSize(100).
 			SupportsAllDrives(true).
@@ -174,7 +178,11 @@ func fetchBackupDrivePermissions(ctx context.Context, svc *drive.Service, fileID
 func fetchBackupDriveComments(ctx context.Context, svc *drive.Service, fileID string) ([]*drive.Comment, error) {
 	var out []*drive.Comment
 	pageToken := ""
+	var guard pageTokenGuard
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, fmt.Errorf("drive file %s comments: %w", fileID, err)
+		}
 		comments, nextPageToken, err := listDriveComments(ctx, svc, fileID, driveCommentListOptions{
 			includeResolved: true,
 			includeQuoted:   true,
@@ -197,7 +205,11 @@ func fetchBackupDriveComments(ctx context.Context, svc *drive.Service, fileID st
 func fetchBackupDriveRevisions(ctx context.Context, svc *drive.Service, fileID string) ([]*drive.Revision, error) {
 	var out []*drive.Revision
 	pageToken := ""
+	var guard pageTokenGuard
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, fmt.Errorf("drive file %s revisions: %w", fileID, err)
+		}
 		call := svc.Revisions.List(fileID).
 			PageSize(200).
 			Fields(gapi.Field(driveRevisionListFields)).

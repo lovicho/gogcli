@@ -7,6 +7,9 @@ read_when:
 `gog contacts dedupe` finds likely duplicate personal contacts and prints a
 merge plan. Preview is the default; `--apply` performs the reviewed plan.
 
+Repeated page tokens stop the scan before a plan or contact update. `--max 0`
+still scans every distinct page; a positive `--max` stops at that contact count.
+
 ## Command Page
 
 - [`gog contacts dedupe`](commands/gog-contacts-dedupe.md)

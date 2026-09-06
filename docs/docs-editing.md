@@ -135,6 +135,10 @@ Use `--occurrence N` when an anchor is ambiguous and `--match-case` when case
 must be exact. `docs comments locate` applies the same matching rules to a
 comment's quoted text and reports its tab plus UTF-16 range.
 
+By default, `docs comments list` skips resolved-only pages until it finds open
+comments or reaches the end. A repeated page token stops the scan with a
+pagination error instead of hanging or reporting an incomplete result.
+
 `docs comments list --locate` does the same for every listed comment from a
 single document fetch, adding a `location` object (`matches`, `orphaned`) and a
 `TAB` column. `--tab` implies `--locate`, adds the resolved tab to JSON output

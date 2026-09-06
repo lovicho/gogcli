@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -152,5 +153,112 @@ func TestResolveRecurringParentEvent_Instance(t *testing.T) {
 	}
 	if len(recurrence) != 1 || recurrence[0] != "RRULE:FREQ=WEEKLY" {
 		t.Fatalf("unexpected recurrence: %#v", recurrence)
+	}
+}
+
+func TestResolveRecurringInstanceIDRejectsRepeatedPageToken(t *testing.T) {
+	var listCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
+		if !(r.Method == http.MethodGet && strings.HasPrefix(path, "/calendars/cal/events/ev_master/instances")) {
+			http.NotFound(w, r)
+			return
+		}
+		if listCalls.Add(1) > 2 {
+			http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{
+					"id": "ev_other",
+					"originalStartTime": map[string]any{
+						"dateTime": "2025-01-03T10:00:00Z",
+					},
+				},
+			},
+			"nextPageToken": "stuck",
+		})
+	}))
+	defer srv.Close()
+
+	svc, err := calendar.NewService(context.Background(),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(srv.Client()),
+		option.WithEndpoint(srv.URL+"/"),
+	)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	got, err := resolveRecurringInstanceID(context.Background(), svc, "cal", "ev_master", "2025-01-02T10:00:00Z")
+	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls, got = %q", err, listCalls.Load(), got)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+}
+
+func TestResolveRecurringInstanceIDFindsMatchOnLaterPage(t *testing.T) {
+	originalStart := "2025-01-02T10:00:00Z"
+	var listCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
+		if !(r.Method == http.MethodGet && strings.HasPrefix(path, "/calendars/cal/events/ev_master/instances")) {
+			http.NotFound(w, r)
+			return
+		}
+		listCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("pageToken") {
+		case "":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{
+						"id": "ev_other",
+						"originalStartTime": map[string]any{
+							"dateTime": "2025-01-03T10:00:00Z",
+						},
+					},
+				},
+				"nextPageToken": "page-2",
+			})
+		case "page-2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{
+						"id": "ev_1",
+						"originalStartTime": map[string]any{
+							"dateTime": originalStart,
+						},
+					},
+				},
+			})
+		default:
+			http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+		}
+	}))
+	defer srv.Close()
+
+	svc, err := calendar.NewService(context.Background(),
+		option.WithoutAuthentication(),
+		option.WithHTTPClient(srv.Client()),
+		option.WithEndpoint(srv.URL+"/"),
+	)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	got, err := resolveRecurringInstanceID(context.Background(), svc, "cal", "ev_master", originalStart)
+	if err != nil {
+		t.Fatalf("resolveRecurringInstanceID: %v", err)
+	}
+	if got != "ev_1" {
+		t.Fatalf("unexpected instance id: %q", got)
+	}
+	if listCalls.Load() != 2 {
+		t.Fatalf("list calls = %d, want 2", listCalls.Load())
 	}
 }

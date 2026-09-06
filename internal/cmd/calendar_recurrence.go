@@ -70,7 +70,12 @@ func resolveRecurringInstanceID(ctx context.Context, svc *calendar.Service, cale
 		TimeMin(timeMin).
 		TimeMax(timeMax)
 
+	var guard pageTokenGuard
+	pageToken := ""
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return "", err
+		}
 		resp, err := call.Context(ctx).Do()
 		if err != nil {
 			return "", err
@@ -83,6 +88,7 @@ func resolveRecurringInstanceID(ctx context.Context, svc *calendar.Service, cale
 		if resp.NextPageToken == "" {
 			break
 		}
+		pageToken = resp.NextPageToken
 		call = svc.Events.Instances(calendarID, recurringEventID).
 			ShowDeleted(false).
 			TimeMin(timeMin).

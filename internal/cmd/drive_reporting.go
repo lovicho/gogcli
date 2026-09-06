@@ -366,8 +366,12 @@ func listDriveChildren(ctx context.Context, svc *drive.Service, parentID string,
 	q := buildDriveListQuery(parentID, "")
 	out := make([]*drive.File, 0, 64)
 	var pageToken string
+	var guard pageTokenGuard
 
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, err
+		}
 		call := svc.Files.List().
 			Q(q).
 			PageSize(driveDefaultPageSize).

@@ -325,6 +325,53 @@ func TestDocsCommentsList_ScansPagesForOpenComments(t *testing.T) {
 	}
 }
 
+func TestDocsCommentsList_RejectsRepeatedScanPageToken(t *testing.T) {
+	var listCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/drive/v3")
+		if r.Method != http.MethodGet || path != "/files/stuck/comments" {
+			http.NotFound(w, r)
+			return
+		}
+		listCalls++
+		if listCalls > 2 {
+			http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+			return
+		}
+		if listCalls == 1 {
+			if got := r.URL.Query().Get("pageToken"); got != "" {
+				t.Errorf("first pageToken = %q, want empty", got)
+			}
+		} else if got := r.URL.Query().Get("pageToken"); got != "stuck" {
+			t.Errorf("later pageToken = %q, want stuck", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"comments": []map[string]any{
+				{
+					"id":          "c-res",
+					"author":      map[string]any{"displayName": "Eli"},
+					"content":     "Resolved only",
+					"createdTime": "2025-06-03T09:00:00Z",
+					"resolved":    true,
+				},
+			},
+			"nextPageToken": "stuck",
+		})
+	}))
+	defer srv.Close()
+	svc := driveServiceFromServer(t, srv)
+
+	result := executeWithDriveTestService(t, []string{"--json", "--account", "a@b.com", "docs", "comments", "list", "stuck"}, svc)
+	if result.err == nil || !strings.Contains(result.err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls", result.err, listCalls)
+	}
+	if listCalls != 2 {
+		t.Fatalf("list calls = %d, want 2", listCalls)
+	}
+	t.Logf("err = %v after %d list calls", result.err, listCalls)
+}
+
 func TestDocsCommentsList_Empty(t *testing.T) {
 	srv := newCommentsTestServer(t)
 	defer srv.Close()

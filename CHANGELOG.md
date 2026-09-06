@@ -1,8 +1,18 @@
 # Changelog
 
-## 0.39.1 - Unreleased
+## 0.39.2 - Unreleased
 
+## 0.39.1 - 2026-09-05
+
+### Highlights
+
+- Backups: stop repeated page tokens across Drive, Calendar, Contacts, Tasks, Groups, Admin, Keep, Workspace, and Apps Script without adding new page limits; retain earlier ACL and membership rows on ordinary API failures. (#1078, #1079, #1080, #1081, #1082, #1087) — thanks @SebTardif.
+- Calendar: stop cyclic recurring-instance lookups while preserving success as soon as the requested occurrence is found. (#1084, #1087) — thanks @SebTardif.
+- Gmail: stop cyclic query scans before bulk message changes or automatic replies, including empty result pages. (#1086, #1087) — thanks @SebTardif.
+- Drive and Contacts: stop tree, inventory, disk-usage, and contact-dedupe scans on repeated page tokens before emitting a partial report or applying contact changes. (#1083, #1085, #1087) — thanks @SebTardif.
+- Docs: stop open-comment scans when Drive repeats a page token, preserving first-open-page results. (#1087) — thanks @SebTardif.
 - Dependencies: refresh Google API support modules, tracking worker tooling and Undici, pnpm, and the Pages deployment action while retaining Go 1.26 compatibility.
+- MCP: update the protocol SDK to 1.0 while preserving existing stdio clients.
 
 ## 0.39.0 - 2026-09-03
 

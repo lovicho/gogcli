@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestExecuteDriveTreeJSON(t *testing.T) {
@@ -322,5 +326,174 @@ func TestDriveTreeRejectsFolderCycle(t *testing.T) {
 	}
 	if !strings.Contains(result.err.Error(), `drive folder cycle detected at "A/Root again" (id root)`) {
 		t.Fatalf("cycle error = %q", result.err)
+	}
+}
+
+func TestListDriveChildrenRejectsRepeatedPageToken(t *testing.T) {
+	t.Parallel()
+
+	var listCalls atomic.Int32
+	svc, closeSvc := newDriveTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/files") {
+			http.NotFound(w, r)
+			return
+		}
+		n := listCalls.Add(1)
+		if n > 2 {
+			http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+			return
+		}
+		wantToken := ""
+		if n == 2 {
+			wantToken = "stuck"
+		}
+		requireSupportsAllDrives(t, r)
+		requireQuery(t, r, "includeItemsFromAllDrives", "true")
+		requireQuery(t, r, "corpora", "allDrives")
+		requireQuery(t, r, "pageSize", "1000")
+		requireQuery(t, r, "orderBy", "folder,name")
+		requireQuery(t, r, "pageToken", wantToken)
+		if q := r.URL.Query().Get("q"); !strings.Contains(q, "'root' in parents") {
+			t.Fatalf("query = %q, want root parent", q)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"files": []any{
+				map[string]any{"id": "child-1", "name": "a.txt", "mimeType": "text/plain"},
+			},
+			"nextPageToken": "stuck",
+		})
+	}))
+	defer closeSvc()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	files, err := listDriveChildren(ctx, svc, "", driveTreeFields, true)
+	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls", err, listCalls.Load())
+	}
+	if files != nil {
+		t.Fatalf("unexpected partial children: %#v", files)
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+	t.Logf("err = %v after %d list calls", err, listCalls.Load())
+}
+
+func TestListDriveChildrenLaterPages(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name           string
+		failSecondPage bool
+	}{
+		{name: "success preserves page order"},
+		{name: "later error discards partial children", failSecondPage: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var listCalls atomic.Int32
+			svc, closeSvc := newDriveTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/files") {
+					http.NotFound(w, r)
+					return
+				}
+				requireSupportsAllDrives(t, r)
+				requireQuery(t, r, "pageSize", "1000")
+				requireQuery(t, r, "orderBy", "folder,name")
+				if q := r.URL.Query().Get("q"); !strings.Contains(q, "'parent' in parents") {
+					t.Fatalf("query = %q, want parent folder", q)
+				}
+				n := listCalls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				switch n {
+				case 1:
+					requireQuery(t, r, "pageToken", "")
+					_, _ = io.WriteString(w, `{"files":[{"id":"child-1","name":"1.txt","mimeType":"text/plain"}],"nextPageToken":"page-2"}`)
+				case 2:
+					requireQuery(t, r, "pageToken", "page-2")
+					if tc.failSecondPage {
+						http.Error(w, `{"error":{"code":403,"message":"page two denied"}}`, http.StatusForbidden)
+						return
+					}
+					_, _ = io.WriteString(w, `{"files":[{"id":"child-2","name":"2.txt","mimeType":"text/plain"}]}`)
+				default:
+					http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+				}
+			}))
+			defer closeSvc()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			files, err := listDriveChildren(ctx, svc, "parent", driveTreeFields, true)
+			if tc.failSecondPage {
+				if err == nil || !strings.Contains(err.Error(), "page two denied") || files != nil {
+					t.Fatalf("files = %#v, err = %v; want nil children and provider error", files, err)
+				}
+			} else if err != nil || len(files) != 2 || files[0].Id != "child-1" || files[1].Id != "child-2" {
+				t.Fatalf("files = %#v, err = %v; want both pages in order", files, err)
+			}
+			if got := listCalls.Load(); got != 2 {
+				t.Fatalf("list calls = %d, want 2", got)
+			}
+		})
+	}
+}
+
+func TestExecuteDriveReportingRejectsRepeatedPageToken(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{name: "tree", args: []string{"drive", "tree", "--parent", "root", "--depth", "1"}},
+		{name: "inventory", args: []string{"drive", "inventory", "--parent", "root", "--depth", "1"}},
+		{name: "du", args: []string{"drive", "du", "--parent", "root", "--depth", "1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var listCalls atomic.Int32
+			svc, closeSvc := newDriveTestService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/files") {
+					http.NotFound(w, r)
+					return
+				}
+				n := listCalls.Add(1)
+				if n > 2 {
+					http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+					return
+				}
+				requireSupportsAllDrives(t, r)
+				if n == 1 {
+					requireQuery(t, r, "pageToken", "")
+				} else {
+					requireQuery(t, r, "pageToken", "stuck")
+				}
+				if q := r.URL.Query().Get("q"); !strings.Contains(q, "'root' in parents") {
+					t.Fatalf("query = %q, want root parent", q)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"files": []any{
+						map[string]any{"id": "loop", "name": "stuck.txt", "mimeType": "text/plain"},
+					},
+					"nextPageToken": "stuck",
+				})
+			}))
+			defer closeSvc()
+
+			args := append([]string{"--json", "--account", "owner@example.com", "--no-input"}, tc.args...)
+			result := executeWithDriveTestService(t, args, svc)
+			wantError := `list Drive folder root: pagination loop: repeated page token "stuck"`
+			if result.err == nil || !strings.Contains(result.err.Error(), wantError) || ExitCode(result.err) != 1 {
+				t.Fatalf("err = %v, exit = %d, stderr = %q; want folder list error", result.err, ExitCode(result.err), result.stderr)
+			}
+			if result.stdout != "" || !strings.Contains(result.stderr, wantError) {
+				t.Fatalf("stdout = %q, stderr = %q; want only the list error", result.stdout, result.stderr)
+			}
+			if got := listCalls.Load(); got != 2 {
+				t.Fatalf("list calls = %d, want 2", got)
+			}
+			t.Logf("%v; no success output", result.err)
+		})
 	}
 }

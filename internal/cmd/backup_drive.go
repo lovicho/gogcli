@@ -99,9 +99,7 @@ func buildDriveBackupSnapshot(ctx context.Context, flags *RootFlags, opts driveB
 }
 
 func fetchBackupSharedDrives(ctx context.Context, svc *drive.Service) ([]*drive.Drive, error) {
-	var out []*drive.Drive
-	pageToken := ""
-	for {
+	out, err := collectUnboundedPages("", func(pageToken string) ([]*drive.Drive, string, error) {
 		call := svc.Drives.List().
 			PageSize(100).
 			Fields("nextPageToken, drives(id, name, createdTime, hidden, restrictions)").
@@ -111,22 +109,19 @@ func fetchBackupSharedDrives(ctx context.Context, svc *drive.Service) ([]*drive.
 		}
 		resp, err := call.Do()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		out = append(out, resp.Drives...)
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
+		return resp.Drives, resp.NextPageToken, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Id < out[j].Id })
 	return out, nil
 }
 
 func fetchBackupDriveFiles(ctx context.Context, svc *drive.Service) ([]driveBackupFile, error) {
-	var out []driveBackupFile
-	pageToken := ""
-	for {
+	files, err := collectUnboundedPages("", func(pageToken string) ([]*drive.File, string, error) {
 		call := svc.Files.List().
 			Q("trashed = false").
 			PageSize(1000).
@@ -139,15 +134,16 @@ func fetchBackupDriveFiles(ctx context.Context, svc *drive.Service) ([]driveBack
 		}
 		resp, err := call.Do()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		for _, file := range resp.Files {
-			out = append(out, driveBackupFile{File: file})
-		}
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
+		return resp.Files, resp.NextPageToken, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []driveBackupFile
+	for _, file := range files {
+		out = append(out, driveBackupFile{File: file})
 	}
 	return out, nil
 }

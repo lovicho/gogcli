@@ -150,7 +150,11 @@ func contactsDedupeGetResources(ctx context.Context, svc *people.Service, resour
 func contactsDedupeList(ctx context.Context, svc *people.Service, maxResults int64) ([]*people.Person, error) {
 	var out []*people.Person
 	pageToken := ""
+	var guard pageTokenGuard
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, err
+		}
 		pageSize := int64(500)
 		if maxResults > 0 && maxResults-int64(len(out)) < pageSize {
 			pageSize = maxResults - int64(len(out))

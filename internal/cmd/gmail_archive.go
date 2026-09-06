@@ -256,8 +256,12 @@ func searchMessageIDs(ctx context.Context, svc *gmail.Service, query string, lim
 	var ids []string
 	pageToken := ""
 	remaining := limit
+	var guard pageTokenGuard
 
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, err
+		}
 		batchSize := remaining
 		if batchSize > 500 {
 			batchSize = 500

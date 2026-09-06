@@ -148,6 +148,14 @@ Best-effort optional services record encrypted `errors` shards and let the rest
 of the backup finish. The Gmail cache is only a local acceleration/resume cache;
 encrypted backup shards remain the source of truth once a push completes.
 
+Backup listings reject repeated page tokens without imposing new limits on
+distinct pages. Drive, Calendar, Contacts, and Tasks collection errors stop the
+final snapshot; optional service errors follow `--best-effort`. Per-file Drive
+collaboration errors and per-form response errors remain embedded error rows.
+Calendar ACL and Groups membership listings retain fetched rows on an ordinary
+later API error, but discard the affected resource's rows when pagination cycles;
+both cases record an error and continue with the next calendar or group.
+
 ## Files
 
 Local config:

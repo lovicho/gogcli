@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"google.golang.org/api/people/v1"
@@ -163,6 +164,43 @@ func TestContactsDedupeExecuteJSON(t *testing.T) {
 	if !reflect.DeepEqual(parsed.Groups[0].MatchedOn, []string{"email:ada@example.com"}) {
 		t.Fatalf("matched_on = %#v", parsed.Groups[0].MatchedOn)
 	}
+}
+
+func TestContactsDedupeExecuteRejectsRepeatedPageToken(t *testing.T) {
+	var listCalls atomic.Int32
+	svc, closeSrv := newPeopleService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/people/me/connections" {
+			http.NotFound(w, r)
+			return
+		}
+		if listCalls.Add(1) > 2 {
+			http.Error(w, "unexpected extra connections page request", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"connections": []map[string]any{{
+				"resourceName":   "people/1",
+				"names":          []map[string]any{{"displayName": "Ada"}},
+				"emailAddresses": []map[string]any{{"value": "ada@example.com"}},
+			}},
+			"nextPageToken": "stuck",
+		})
+	}))
+	defer closeSrv()
+
+	result := executeWithPeopleTestServices(t, []string{"--json", "--account", "a@example.com", "contacts", "dedupe"}, peopleTestServices{
+		Contacts: fixedPeopleTestService(svc),
+	})
+	if result.err == nil || !strings.Contains(result.err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d list calls", result.err, listCalls.Load())
+	}
+	if got := listCalls.Load(); got != 2 {
+		t.Fatalf("list calls = %d, want 2", got)
+	}
+	if result.stdout != "" {
+		t.Fatalf("unexpected partial output: %q", result.stdout)
+	}
+	t.Logf("err = %v after %d list calls", result.err, listCalls.Load())
 }
 
 func testDedupePerson(resource, name string, emails, phones []string) *people.Person {

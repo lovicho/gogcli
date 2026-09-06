@@ -48,6 +48,9 @@ aggregates those placements independently and sorts by `size`, `path`, or
 `files`. Shortcuts count as file placements with zero content bytes; scans do
 not follow shortcut targets.
 
+These reports reject repeated folder-list page tokens before emitting output.
+Successful scans retain their existing size and depth limits.
+
 ## Inventory Export
 
 Export a read-only item inventory:

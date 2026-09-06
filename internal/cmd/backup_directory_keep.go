@@ -136,7 +136,11 @@ func buildKeepBackupSnapshot(ctx context.Context, flags *RootFlags, shardMaxRows
 func fetchBackupCloudIdentityGroups(ctx context.Context, svc *cloudidentity.Service, account string) ([]*cloudidentity.GroupRelation, error) {
 	var out []*cloudidentity.GroupRelation
 	pageToken := ""
+	var guard pageTokenGuard
 	for {
+		if err := guard.check(pageToken); err != nil {
+			return nil, err
+		}
 		call := svc.Groups.Memberships.SearchTransitiveGroups("groups/-").
 			Query(searchTransitiveGroupsQuery(account)).
 			PageSize(1000).
@@ -171,7 +175,13 @@ func fetchBackupCloudIdentityGroupMembers(ctx context.Context, svc *cloudidentit
 			continue
 		}
 		pageToken := ""
+		var guard pageTokenGuard
+		groupStart := len(out)
 		for {
+			if err := guard.check(pageToken); err != nil {
+				out = append(out[:groupStart], groupsBackupMember{GroupEmail: groupEmail, Error: err.Error()})
+				break
+			}
 			call := svc.Groups.Memberships.List(groupName).PageSize(1000).Context(ctx)
 			if pageToken != "" {
 				call = call.PageToken(pageToken)
@@ -199,48 +209,47 @@ func fetchBackupCloudIdentityGroupMembers(ctx context.Context, svc *cloudidentit
 	return out
 }
 
-func fetchBackupAdminUsers(ctx context.Context, svc *admin.Service, domain string) ([]*admin.User, error) {
-	var out []*admin.User
-	pageToken := ""
-	for {
-		call := svc.Users.List().Domain(domain).MaxResults(500).Context(ctx)
-		if pageToken != "" {
-			call = call.PageToken(pageToken)
-		}
-		resp, err := call.Do()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, resp.Users...)
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
+func fetchSortedBackupPages[T any](fetch func(string) ([]T, string, error), less func(T, T) bool) ([]T, error) {
+	rows, err := collectUnboundedPages("", fetch)
+	if err != nil {
+		return nil, err
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].PrimaryEmail < out[j].PrimaryEmail })
-	return out, nil
+	sort.Slice(rows, func(i, j int) bool { return less(rows[i], rows[j]) })
+	return rows, nil
+}
+
+func fetchBackupAdminUsers(ctx context.Context, svc *admin.Service, domain string) ([]*admin.User, error) {
+	return fetchSortedBackupPages(
+		func(pageToken string) ([]*admin.User, string, error) {
+			call := svc.Users.List().Domain(domain).MaxResults(500).Context(ctx)
+			if pageToken != "" {
+				call = call.PageToken(pageToken)
+			}
+			resp, err := call.Do()
+			if err != nil {
+				return nil, "", err
+			}
+			return resp.Users, resp.NextPageToken, nil
+		},
+		func(a, b *admin.User) bool { return a.PrimaryEmail < b.PrimaryEmail },
+	)
 }
 
 func fetchBackupAdminGroups(ctx context.Context, svc *admin.Service, domain string) ([]*admin.Group, error) {
-	var out []*admin.Group
-	pageToken := ""
-	for {
-		call := svc.Groups.List().Domain(domain).MaxResults(200).Context(ctx)
-		if pageToken != "" {
-			call = call.PageToken(pageToken)
-		}
-		resp, err := call.Do()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, resp.Groups...)
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Email < out[j].Email })
-	return out, nil
+	return fetchSortedBackupPages(
+		func(pageToken string) ([]*admin.Group, string, error) {
+			call := svc.Groups.List().Domain(domain).MaxResults(200).Context(ctx)
+			if pageToken != "" {
+				call = call.PageToken(pageToken)
+			}
+			resp, err := call.Do()
+			if err != nil {
+				return nil, "", err
+			}
+			return resp.Groups, resp.NextPageToken, nil
+		},
+		func(a, b *admin.Group) bool { return a.Email < b.Email },
+	)
 }
 
 func fetchBackupAdminGroupMembers(ctx context.Context, svc *admin.Service, groups []*admin.Group) []adminBackupMember {
@@ -286,25 +295,20 @@ func fetchAllBackupAdminGroupMembers(ctx context.Context, svc *admin.Service, gr
 }
 
 func fetchBackupKeepNotes(ctx context.Context, svc *keepapi.Service) ([]*keepapi.Note, error) {
-	var out []*keepapi.Note
-	pageToken := ""
-	for {
-		call := svc.Notes.List().PageSize(1000).Context(ctx)
-		if pageToken != "" {
-			call = call.PageToken(pageToken)
-		}
-		resp, err := call.Do()
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, resp.Notes...)
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return fetchSortedBackupPages(
+		func(pageToken string) ([]*keepapi.Note, string, error) {
+			call := svc.Notes.List().PageSize(1000).Context(ctx)
+			if pageToken != "" {
+				call = call.PageToken(pageToken)
+			}
+			resp, err := call.Do()
+			if err != nil {
+				return nil, "", err
+			}
+			return resp.Notes, resp.NextPageToken, nil
+		},
+		func(a, b *keepapi.Note) bool { return a.Name < b.Name },
+	)
 }
 
 func domainFromAccount(account string) string {

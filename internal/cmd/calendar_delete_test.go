@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"google.golang.org/api/calendar/v3"
@@ -67,6 +68,70 @@ func TestCalendarDeleteCmd_ScopeSingle(t *testing.T) {
 	}
 	if !payload.Deleted || payload.EventID != "ev_1" {
 		t.Fatalf("unexpected output: %#v", payload)
+	}
+}
+
+func TestCalendarDeleteCmd_ScopeSingleRejectsRepeatedPageToken(t *testing.T) {
+	var instanceCalls atomic.Int32
+	var deleted bool
+	svc, closeSvc := newCalendarServiceForTest(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/calendar/v3")
+		switch {
+		case r.Method == http.MethodGet && path == "/calendars/cal@example.com/events/ev":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":         "ev",
+				"recurrence": []string{"RRULE:FREQ=DAILY"},
+			})
+			return
+		case r.Method == http.MethodGet && strings.HasPrefix(path, "/calendars/cal@example.com/events/ev/instances"):
+			if instanceCalls.Add(1) > 2 {
+				http.Error(w, "unexpected extra page request", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"items": []map[string]any{
+					{
+						"id": "ev_other",
+						"originalStartTime": map[string]any{
+							"dateTime": "2025-01-03T10:00:00Z",
+						},
+					},
+				},
+				"nextPageToken": "stuck",
+			})
+			return
+		case r.Method == http.MethodDelete:
+			deleted = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		default:
+			http.NotFound(w, r)
+			return
+		}
+	}))
+	defer closeSvc()
+	ctx, output := newCalendarTestJSONContext(t, svc)
+
+	cmd := CalendarDeleteCmd{
+		CalendarID:        "cal@example.com",
+		EventID:           "ev",
+		Scope:             scopeSingle,
+		OriginalStartTime: "2025-01-02T10:00:00Z",
+	}
+	err := cmd.Run(ctx, &RootFlags{Account: "a@b.com", Force: true})
+	if err == nil || !strings.Contains(err.Error(), "repeated page token") {
+		t.Fatalf("err = %v after %d instance calls", err, instanceCalls.Load())
+	}
+	if instanceCalls.Load() != 2 {
+		t.Fatalf("instance calls = %d, want 2", instanceCalls.Load())
+	}
+	if deleted {
+		t.Fatalf("delete must not run after a pagination loop")
+	}
+	if output.Len() != 0 {
+		t.Fatalf("unexpected output: %s", output.Bytes())
 	}
 }
 

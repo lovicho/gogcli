@@ -21,6 +21,10 @@ page by page and retains only exact name or email matches. Multiple matching
 contacts require a more specific selector; a repeated page token stops with a
 pagination error instead of leaving the command stuck.
 
+Query-based bulk message commands and autoreply also reject repeated page
+tokens, including empty pages, before modifying messages or sending replies.
+Their existing `--max` limit still stops the scan as soon as it is reached.
+
 For agents, logs, or issue reports, prefer sanitized content:
 
 ```bash

@@ -259,30 +259,21 @@ func capDriveFiles(files []*drive.File, maxFiles int) []*drive.File {
 }
 
 func fetchBackupFormResponses(ctx context.Context, svc *formsapi.Service, formID string) ([]*formsapi.FormResponse, error) {
-	var out []*formsapi.FormResponse
-	pageToken := ""
-	for {
+	return collectUnboundedPages("", func(pageToken string) ([]*formsapi.FormResponse, string, error) {
 		call := svc.Forms.Responses.List(formID).PageSize(5000).Context(ctx)
 		if pageToken != "" {
 			call = call.PageToken(pageToken)
 		}
 		resp, err := call.Do()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		out = append(out, resp.Responses...)
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
-	}
-	return out, nil
+		return resp.Responses, resp.NextPageToken, nil
+	})
 }
 
 func fetchDriveFilesByMime(ctx context.Context, svc *drive.Service, mimeType string) ([]*drive.File, error) {
-	var out []*drive.File
-	pageToken := ""
-	for {
+	out, err := collectUnboundedPages("", func(pageToken string) ([]*drive.File, string, error) {
 		call := svc.Files.List().
 			Q(fmt.Sprintf("mimeType = '%s' and trashed = false", mimeType)).
 			PageSize(1000).
@@ -295,13 +286,12 @@ func fetchDriveFilesByMime(ctx context.Context, svc *drive.Service, mimeType str
 		}
 		resp, err := call.Do()
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		out = append(out, resp.Files...)
-		if resp.NextPageToken == "" {
-			break
-		}
-		pageToken = resp.NextPageToken
+		return resp.Files, resp.NextPageToken, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Id < out[j].Id })
 	return out, nil
