@@ -107,13 +107,26 @@ gog auth doctor --check
 
 ## 5. Set a default account
 
+For a persistent default, open the account manager and click **Set default**
+beside the account you want to use:
+
 ```bash
-export GOG_ACCOUNT=you@gmail.com
-# or persist a default with gog auth alias
-gog auth alias set default you@gmail.com
+gog auth manage
 ```
 
-Now you can drop `--account` from every command.
+The stored default applies when neither `--account` nor `GOG_ACCOUNT` is set.
+If you previously exported `GOG_ACCOUNT`, run `unset GOG_ACCOUNT` to use the
+stored default.
+
+Alternatively, select an account for your shell with:
+
+```bash
+export GOG_ACCOUNT=you@gmail.com
+```
+
+Either approach lets you omit `--account` from commands. Account aliases such
+as `work` are shortcuts for explicit selection; `default` and `auto` are
+reserved names, not aliases you can create.
 
 ## 6. Run real commands
 
