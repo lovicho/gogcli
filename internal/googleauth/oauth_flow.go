@@ -142,19 +142,6 @@ func readOAuthClientCredentials(ctx context.Context, client string) (config.Clie
 	return credentials, nil
 }
 
-func manageCredentialsReader(
-	ctx context.Context,
-	reader func(client string) (config.ClientCredentials, error),
-) func(client string) (config.ClientCredentials, error) {
-	if reader != nil {
-		return reader
-	}
-
-	return func(client string) (config.ClientCredentials, error) {
-		return readOAuthClientCredentials(ctx, client)
-	}
-}
-
 func newOAuthCallbackServer(handler http.Handler) *http.Server {
 	return &http.Server{
 		Handler:           handler,
@@ -368,13 +355,4 @@ func renderCancelledPage(w http.ResponseWriter) {
 		return
 	}
 	_ = tmpl.Execute(w, nil)
-}
-
-// waitPostSuccess waits for the specified duration or until the context is
-// cancelled (e.g., via Ctrl+C). Kept for tests and potential future UX tweaks.
-func waitPostSuccess(ctx context.Context, d time.Duration) {
-	select {
-	case <-time.After(d):
-	case <-ctx.Done():
-	}
 }
