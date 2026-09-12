@@ -1,11 +1,22 @@
 # Changelog
 
-## 0.39.2 - Unreleased
+## 0.40.1 - Unreleased
 
-**Highlights:** The quickstart now explains how to save a default account and how shell overrides affect it.
+## 0.40.0 - 2026-09-11
 
+**Highlights:** Preserve Slides styling, format paragraphs, and reuse cached Discovery documents; duplicate or inspect individual spreadsheet tabs and sort Drive files.
+
+- Slides: preserve leading text styling during `insert-text --replace`, including template inheritance, with revision protection and correct empty-target and UTF-16 handling. (#1111, #1122) — thanks @sebsnyk.
+- Slides: add `paragraph-style` for shape and table-cell alignment, spacing, indentation, and direction, with explicit field masks and zero-value support. (#1098, #1123) — thanks @sebsnyk.
+- API: cache Discovery documents for 24 hours with bounded disk usage, isolated endpoint/version keys, and explicit `--no-cache` bypass; keep API responses and authorization checks uncached. (#1106, #1121) — thanks @gurgeous.
+- Sheets: duplicate a tab within its spreadsheet, with an explicit destination name and optional insertion index. (#1102, #1116) — thanks @gurgeous.
+- Sheets: filter raw API reads by exact tab title with `--sheet`, including A1-like names and apostrophes, while retaining spreadsheet metadata and the grid-data opt-in. (#1104, #1115) — thanks @gurgeous.
+- Drive: add opt-in `ls --sort` and `--order` controls while preserving the existing modification-time default and native pagination. (#1105, #1117) — thanks @gurgeous.
+- Slides: delete several page elements in one guarded API batch, retain single-element output compatibility, and document replacing WordArt elements. (#1109) — thanks @sebsnyk.
+- Sheets: preserve zero-valued dimension indices so inserting before the first row or column succeeds. (#1107, #1114) — thanks @gurgeous.
 - Docs: replace the reserved `default` alias command with the account manager's **Set default** action and explain account-selection precedence. (#1092, #1093) — thanks @gianpaj and @goutamadwant.
-- Dependencies: refresh Cloudflare Workers types to 5.20260907.1 while retaining the existing runtime, package manager, and 24-hour release-age policy.
+- Dependencies: refresh Go networking, authentication and cryptography modules and tracking-worker tooling, including the patched Sharp dependency, while retaining Go 1.26 compatibility and the worker's 24-hour release-age policy.
+- Tooling: refresh goimports and deadcode to x/tools v0.50.0 while retaining the Go 1.26 minimum. (#1120)
 
 ## 0.39.1 - 2026-09-05
 

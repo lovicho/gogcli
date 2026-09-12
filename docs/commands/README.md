@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 766.
+Generated pages: 768.
 
 ## Top-level Commands
 
@@ -675,6 +675,7 @@ Generated pages: 766.
       - [gog sheets datasource update](gog-sheets-datasource-update.md) - Update one BigQuery Connected Sheets data source
     - [gog sheets delete-dimension](gog-sheets-delete-dimension.md) - Delete rows or columns while preserving intersecting tables
     - [gog sheets delete-tab](gog-sheets-delete-tab.md) - Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)
+    - [gog sheets duplicate-tab](gog-sheets-duplicate-tab.md) - Duplicate a tab within a spreadsheet
     - [gog sheets export](gog-sheets-export.md) - Export a Google Sheet (pdf|xlsx|csv) via Drive
     - [gog sheets filter](gog-sheets-filter.md) - Manage basic filters
       - [gog sheets filter set](gog-sheets-filter-set.md) - Set a basic filter on a range; replacing an existing filter requires confirmation (or --force)
@@ -734,7 +735,7 @@ Generated pages: 766.
       - [gog slides element alt-text](gog-slides-element-alt-text.md) - Set or clear element accessibility text
       - [gog slides element create-line](gog-slides-element-create-line.md) - Create a native line on a slide
       - [gog slides element create-shape](gog-slides-element-create-shape.md) - Create a native shape on a slide
-      - [gog slides element delete](gog-slides-element-delete.md) - Delete one page element
+      - [gog slides element delete](gog-slides-element-delete.md) - Delete one or more page elements
       - [gog slides element group](gog-slides-element-group.md) - Group two or more elements
       - [gog slides element style](gog-slides-element-style.md) - Style a shape fill/outline or a line
       - [gog slides element transform](gog-slides-element-transform.md) - Move, resize, rotate, or replace an element transform
@@ -749,6 +750,7 @@ Generated pages: 766.
     - [gog slides locate](gog-slides-locate.md) - Locate text in shapes and table cells with object IDs and UTF-16 ranges
     - [gog slides move-slide](gog-slides-move-slide.md) - Move a slide to a zero-based insertion index
     - [gog slides new-slide](gog-slides-new-slide.md) - Create a native themed slide
+    - [gog slides paragraph-style](gog-slides-paragraph-style.md) - Set paragraph alignment, spacing, indentation, or direction
     - [gog slides raw](gog-slides-raw.md) - Dump raw Google Slides API response as JSON (Presentations.Get; lossless; for scripting and LLM consumption)
     - [gog slides read-slide](gog-slides-read-slide.md) - Read slide content: speaker notes, text elements, and images
     - [gog slides replace-slide](gog-slides-replace-slide.md) - Replace an existing slide image from a local file or public URL

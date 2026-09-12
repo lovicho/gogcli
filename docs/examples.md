@@ -66,6 +66,8 @@ See [Drive audits](drive-audits.md), [polling](polling.md), and
 
 ```bash
 # Read-only folder audits.
+gog drive ls --sort modifiedByMeTime --order desc
+gog drive ls --sort name_natural --order asc
 gog drive tree --parent <folderId> --depth 2
 gog drive du --parent <folderId> --max 20 --json
 gog drive inventory --parent <folderId> --json
@@ -192,6 +194,7 @@ See [batch updates](sheets-batch-update.md), [tables](sheets-tables.md), and
 
 ```bash
 gog sheets get <spreadsheetId> 'Sheet1!A1:D20' --json
+gog sheets duplicate-tab <spreadsheetId> Sheet1 "Sheet1 backup" --json
 gog sheets update <spreadsheetId> 'Sheet1!B13' \
   --values-json @formula.json --fail-on-formula-error --json
 gog sheets batch-update <spreadsheetId> --data-json @updates.json --json

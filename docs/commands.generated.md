@@ -64,7 +64,7 @@ Generated from `gog schema --json`.
     - [`gog analytics (ga) report <property> [flags]`](commands/gog-analytics-report.md) - Run a GA4 report (Analytics Data API)
   - [`gog api <command> [flags]`](commands/gog-api.md) - Google Discovery APIs and generic method calls
     - [`gog api call <api> <version> <method> [flags]`](commands/gog-api-call.md) - Call a Discovery-described API method
-    - [`gog api describe <api> <version> [<method>]`](commands/gog-api-describe.md) - Describe a Discovery API or method
+    - [`gog api describe <api> <version> [<method>] [flags]`](commands/gog-api-describe.md) - Describe a Discovery API or method
     - [`gog api list [flags]`](commands/gog-api-list.md) - List Google Discovery APIs
   - [`gog appscript (script,apps-script) <command> [flags]`](commands/gog-appscript.md) - Google Apps Script
     - [`gog appscript (script,apps-script) content (cat) <scriptId>`](commands/gog-appscript-content.md) - Get Apps Script project content
@@ -621,6 +621,7 @@ Generated from `gog schema --json`.
       - [`gog sheets (sheet) datasource (data-source,data-sources,connected-sheets) update <spreadsheetId> <dataSourceId> [flags]`](commands/gog-sheets-datasource-update.md) - Update one BigQuery Connected Sheets data source
     - [`gog sheets (sheet) delete-dimension (delete-dim) --dimension=STRING <spreadsheetId> <rangeOrSheet> [flags]`](commands/gog-sheets-delete-dimension.md) - Delete rows or columns while preserving intersecting tables
     - [`gog sheets (sheet) delete-tab (delete-sheet) <spreadsheetId> <tabName>`](commands/gog-sheets-delete-tab.md) - Delete a tab/sheet from a spreadsheet (use --force to skip confirmation)
+    - [`gog sheets (sheet) duplicate-tab <spreadsheetId> <sourceTab> <newName> [flags]`](commands/gog-sheets-duplicate-tab.md) - Duplicate a tab within a spreadsheet
     - [`gog sheets (sheet) export (download,dl) <spreadsheetId> [flags]`](commands/gog-sheets-export.md) - Export a Google Sheet (pdf|xlsx|csv) via Drive
     - [`gog sheets (sheet) filter (filters,basic-filter,basic-filters) <command>`](commands/gog-sheets-filter.md) - Manage basic filters
       - [`gog sheets (sheet) filter (filters,basic-filter,basic-filters) set (create,add) <spreadsheetId> <range>`](commands/gog-sheets-filter-set.md) - Set a basic filter on a range; replacing an existing filter requires confirmation (or --force)
@@ -680,7 +681,7 @@ Generated from `gog schema --json`.
       - [`gog slides (slide) element alt-text <presentationId> <objectId> [flags]`](commands/gog-slides-element-alt-text.md) - Set or clear element accessibility text
       - [`gog slides (slide) element create-line <presentationId> <slideId> [flags]`](commands/gog-slides-element-create-line.md) - Create a native line on a slide
       - [`gog slides (slide) element create-shape <presentationId> <slideId> [flags]`](commands/gog-slides-element-create-shape.md) - Create a native shape on a slide
-      - [`gog slides (slide) element delete (rm) <presentationId> <objectId>`](commands/gog-slides-element-delete.md) - Delete one page element
+      - [`gog slides (slide) element delete (rm) <presentationId> <objectId> ...`](commands/gog-slides-element-delete.md) - Delete one or more page elements
       - [`gog slides (slide) element group <presentationId> <objectId> ... [flags]`](commands/gog-slides-element-group.md) - Group two or more elements
       - [`gog slides (slide) element style <presentationId> <objectId> [flags]`](commands/gog-slides-element-style.md) - Style a shape fill/outline or a line
       - [`gog slides (slide) element transform (move,resize,rotate) <presentationId> <objectId> [flags]`](commands/gog-slides-element-transform.md) - Move, resize, rotate, or replace an element transform
@@ -695,6 +696,7 @@ Generated from `gog schema --json`.
     - [`gog slides (slide) locate (find-element) <presentationId> <text> [flags]`](commands/gog-slides-locate.md) - Locate text in shapes and table cells with object IDs and UTF-16 ranges
     - [`gog slides (slide) move-slide --to-index=TO-INDEX <presentationId> <slideId>`](commands/gog-slides-move-slide.md) - Move a slide to a zero-based insertion index
     - [`gog slides (slide) new-slide <presentationId> [flags]`](commands/gog-slides-new-slide.md) - Create a native themed slide
+    - [`gog slides (slide) paragraph-style <presentationId> <objectId> [flags]`](commands/gog-slides-paragraph-style.md) - Set paragraph alignment, spacing, indentation, or direction
     - [`gog slides (slide) raw <presentationId> [flags]`](commands/gog-slides-raw.md) - Dump raw Google Slides API response as JSON (Presentations.Get; lossless; for scripting and LLM consumption)
     - [`gog slides (slide) read-slide <presentationId> <slideId> [flags]`](commands/gog-slides-read-slide.md) - Read slide content: speaker notes, text elements, and images
     - [`gog slides (slide) replace-slide <presentationId> <slideId> [<image>] [flags]`](commands/gog-slides-replace-slide.md) - Replace an existing slide image from a local file or public URL

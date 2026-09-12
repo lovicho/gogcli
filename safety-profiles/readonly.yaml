@@ -217,6 +217,7 @@ sheets:
   create: false
   copy: false
   add-tab: false
+  duplicate-tab: false
   rename-tab: false
   delete-tab: false
   chart:
@@ -241,6 +242,7 @@ slides:
   update-notes: false
   replace-slide: false
   insert-text: false
+  paragraph-style: false
   replace-text: false
 
 chat:

@@ -1,18 +1,18 @@
-# `gog slides element delete`
+# `gog sheets duplicate-tab`
 
 > Generated from `gog schema --json`. Do not edit this page by hand; run `make docs-commands`.
 
-Delete one or more page elements
+Duplicate a tab within a spreadsheet
 
 ## Usage
 
 ```bash
-gog slides (slide) element delete (rm) <presentationId> <objectId> ...
+gog sheets (sheet) duplicate-tab <spreadsheetId> <sourceTab> <newName> [flags]
 ```
 
 ## Parent
 
-- [gog slides element](gog-slides-element.md)
+- [gog sheets](gog-sheets.md)
 
 ## Flags
 
@@ -30,6 +30,7 @@ gog slides (slide) element delete (rm) <presentationId> <objectId> ...
 | `--gmail-no-send` | `bool` | false | Block Gmail send operations (agent safety) |
 | `-h`<br>`--help` | `kong.helpFlag` |  | Show context-sensitive help. |
 | `--home` | `string` |  | Override gogcli config/data/state/cache root (equivalent to GOG_HOME) |
+| `--index` | `*int64` |  | Zero-based insertion index (default: directly after the source tab) |
 | `-j`<br>`--json`<br>`--machine` | `bool` | false | Output JSON to stdout (best for scripting) |
 | `--no-input`<br>`--non-interactive`<br>`--noninteractive` | `bool` |  | Never prompt; fail instead (useful for CI) |
 | `-p`<br>`--plain`<br>`--tsv` | `bool` | false | Output stable, parseable text to stdout (TSV; no colors) |
@@ -43,5 +44,5 @@ gog slides (slide) element delete (rm) <presentationId> <objectId> ...
 
 ## See Also
 
-- [gog slides element](gog-slides-element.md)
+- [gog sheets](gog-sheets.md)
 - [Command index](README.md)
