@@ -16,6 +16,7 @@ gog searchconsole (gsc,search-console,webmasters) <command> [flags]
 
 ## Subcommands
 
+- [gog searchconsole inspect](gog-searchconsole-inspect.md) - Inspect URL index status (URL Inspection API)
 - [gog searchconsole query](gog-searchconsole-query.md) - Run a Search Analytics query
 - [gog searchconsole searchanalytics](gog-searchconsole-searchanalytics.md) - Search Analytics queries
 - [gog searchconsole sitemaps](gog-searchconsole-sitemaps.md) - List/get/submit/delete sitemaps
