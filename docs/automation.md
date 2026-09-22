@@ -142,6 +142,13 @@ cancels a pending retry wait. Upload bodies are closed even when a request is
 rejected by the circuit breaker or cannot be buffered for retry, so those
 failures release the associated file or stream resources.
 
+Command cancellation also stops in-flight YouTube requests, Chat unread-message
+lookups and sends, and People profile and relation reads.
+
+If `sheets append` reports missing update metadata, it returns an error without
+success output or another append attempt. Inspect the spreadsheet before
+retrying: the write may have succeeded despite the incomplete response.
+
 | Code | Name | Meaning |
 | ---: | --- | --- |
 | 0 | `ok` | Success |
@@ -202,6 +209,11 @@ cache. Missing, expired or corrupt entries are fetched again. Cache failures
 do not prevent network access, and failed fetches are not cached. `api list`
 and actual API responses remain uncached; authorization and command-policy
 checks still run on every call.
+
+`gog api list --plain` emits TSV columns `NAME`, `VERSION`, `TITLE`,
+`DESCRIPTION`, and `PREFERRED`. Embedded line breaks and terminal controls are
+normalized or escaped so each API occupies one row. Default output and `--json`
+preserve the full Discovery catalog response, including its metadata.
 
 ## MCP discovery
 
