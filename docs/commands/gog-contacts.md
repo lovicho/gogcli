@@ -16,6 +16,7 @@ gog contacts (contact) <command> [flags]
 
 ## Subcommands
 
+- [gog contacts batch](gog-contacts-batch.md) - Read, create, update, or delete contacts in native People API batches
 - [gog contacts create](gog-contacts-create.md) - Create a contact
 - [gog contacts dedupe](gog-contacts-dedupe.md) - Find likely duplicate contacts and optionally merge them
 - [gog contacts delete](gog-contacts-delete.md) - Delete a contact

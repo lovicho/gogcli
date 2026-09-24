@@ -2,7 +2,7 @@
 
 Every `gog` command has a generated docs page. The source of truth is the live CLI schema; run `make docs-commands` after changing command names, flags, help text, aliases, or arguments.
 
-Generated pages: 770.
+Generated pages: 775.
 
 ## Top-level Commands
 
@@ -13,7 +13,7 @@ Generated pages: 770.
 - [gog appscript](gog-appscript.md) - Google Apps Script
 - [gog auth](gog-auth.md) - Auth and credentials
 - [gog backup](gog-backup.md) - Encrypted Google account backups
-- [gog batch](gog-batch.md) - Build and submit persisted Google Docs request batches
+- [gog batch](gog-batch.md) - Build and submit persisted Google Docs and Slides request batches
 - [gog calendar](gog-calendar.md) - Google Calendar
 - [gog chat](gog-chat.md) - Google Chat
 - [gog classroom](gog-classroom.md) - Google Classroom
@@ -166,7 +166,7 @@ Generated pages: 770.
     - [gog backup push](gog-backup-push.md) - Export services into encrypted backup shards
     - [gog backup status](gog-backup-status.md) - Inspect backup manifest without decrypting shards
     - [gog backup verify](gog-backup-verify.md) - Decrypt and verify all backup shards
-  - [gog batch](gog-batch.md) - Build and submit persisted Google Docs request batches
+  - [gog batch](gog-batch.md) - Build and submit persisted Google Docs and Slides request batches
     - [gog batch abort](gog-batch-abort.md) - Delete a request batch without submitting
     - [gog batch begin](gog-batch-begin.md) - Begin a persisted request batch
     - [gog batch end](gog-batch-end.md) - Submit and remove a request batch
@@ -308,6 +308,11 @@ Generated pages: 770.
     - [gog config set](gog-config-set.md) - Set a config value
     - [gog config unset](gog-config-unset.md) - Unset a config value
   - [gog contacts](gog-contacts.md) - Google Contacts
+    - [gog contacts batch](gog-contacts-batch.md) - Read, create, update, or delete contacts in native People API batches
+      - [gog contacts batch create](gog-contacts-batch-create.md) - Create contacts from a JSON array, in batches of up to 200
+      - [gog contacts batch delete](gog-contacts-batch-delete.md) - Delete exact contact resources in batches of up to 500 (requires confirmation)
+      - [gog contacts batch get](gog-contacts-batch-get.md) - Get exact contact resources in batches of up to 200
+      - [gog contacts batch update](gog-contacts-batch-update.md) - Update contacts from a JSON resource map, preserving supplied CONTACT etags
     - [gog contacts create](gog-contacts-create.md) - Create a contact
     - [gog contacts dedupe](gog-contacts-dedupe.md) - Find likely duplicate contacts and optionally merge them
     - [gog contacts delete](gog-contacts-delete.md) - Delete a contact
