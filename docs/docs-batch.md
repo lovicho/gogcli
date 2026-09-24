@@ -24,6 +24,8 @@ gog batch end "$BATCH_ID"
 
 A revision-mismatch error identifies the queued batch with `batch=<UUID>` and the incoming document revision with `current=<revision>`. Use that batch UUID with `gog batch show` or `gog batch abort`.
 
+Omit `--batch` to submit an edit immediately. An explicitly empty or whitespace-only value, such as `--batch=` or `--batch "$BATCH_ID"` when the variable is empty, returns usage exit code `2` before reading input or authenticating. It never falls back to an immediate edit.
+
 ## Supported mutations
 
 The `--batch` flag is available on directly composable Docs mutations:
@@ -55,6 +57,10 @@ gog batch end "$BATCH_ID" --continue-on-error
 ```
 
 `--auto-split` and `--continue-on-error` are explicit non-atomic modes and cannot be combined. Failed default submissions leave the complete batch intact. Split submissions persist remaining requests after every successful chunk.
+
+When individual recovery finishes, `--continue-on-error` prints its result summary and exits with code `1` if any requests failed. The summary includes the original request count, successful submissions (`chunks`), and retained failures (`failed`). Exit code `0` means every request succeeded; continuing after a failure does not hide it from automation.
+
+Scripts that intentionally tolerate partial completion should handle exit code `1` explicitly and inspect `failed` in the JSON summary. Scripts using `set -e` will now stop on retained failures unless they handle that status. Successfully applied edits remain applied; inspect the retained batch before retrying.
 
 Use `batch abort <batchId>` to discard a batch and `batch prune --older-than 72h` to remove stale batches.
 
