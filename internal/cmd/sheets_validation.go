@@ -167,7 +167,7 @@ func (c *SheetsValidationSetCmd) Run(ctx context.Context, flags *RootFlags) erro
 		},
 	}
 
-	return runSheetsMutation(ctx, flags, "sheets.validation.set", map[string]any{
+	return runSheetsMutation(ctx, flags, "", spreadsheetID, "sheets.validation.set", map[string]any{
 		"spreadsheet_id":         spreadsheetID,
 		"range":                  rangeSpec,
 		"rule":                   rule,
@@ -234,7 +234,7 @@ func (c *SheetsValidationClearCmd) Run(ctx context.Context, flags *RootFlags) er
 		return err
 	}
 
-	return runSheetsMutation(ctx, flags, "sheets.validation.clear", map[string]any{
+	return runSheetsMutation(ctx, flags, "", spreadsheetID, "sheets.validation.clear", map[string]any{
 		"spreadsheet_id":         spreadsheetID,
 		"range":                  rangeSpec,
 		"filtered_rows_included": c.FilteredRowsIncluded,
@@ -255,7 +255,7 @@ func (c *SheetsValidationClearCmd) Run(ctx context.Context, flags *RootFlags) er
 			return nil, "", usage("clearing table-managed dropdown validation requires --filtered-rows-included")
 		}
 		ordinaryRanges := sheetsvalidation.SubtractSpans(gridRange, tableSpans)
-		requests := make([]*sheets.Request, 0, len(ordinaryRanges)+len(tableRequests))
+		requests := make([]*sheets.Request, 0, len(ordinaryRanges))
 		for _, ordinaryRange := range ordinaryRanges {
 			requests = append(requests, &sheets.Request{
 				SetDataValidation: &sheets.SetDataValidationRequest{
