@@ -23,7 +23,8 @@ For least-privilege Gmail authorization, use `gog auth add you@example.com --ser
 
 ## Install
 
-Homebrew is the shortest path on macOS and Linux:
+Homebrew is the shortest path on macOS and Linux. Prebuilt macOS binaries
+require macOS 15 or later:
 
 ```bash
 brew install openclaw/tap/gogcli
@@ -122,6 +123,11 @@ accounts, and [Paths and State](docs/paths.md) for `GOG_HOME`, XDG paths, and
 keyring storage.
 
 ## Discover the contract
+
+Running `gog` with no arguments shows the executable path, a short description,
+and local auth/config status. Use `gog --help` for the command overview. When
+JSON output is selected through the environment, the no-args view emits only
+the status JSON object.
 
 The running binary generates its command schema, reference pages, and agent
 skills from the same command tree:
