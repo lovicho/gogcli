@@ -7,6 +7,8 @@
 - Dependencies: refresh Google API and telemetry modules, tracking-worker packages, pnpm 11, and x/tools while retaining the Go 1.26 floor and worker release cooldown.
 - Dependencies: update Google API/auth, MCP, networking and cryptography modules, Wrangler, Workers types, Vite, and patched Sharp 0.35.5 (GHSA-wq5f-xc86-pv6w) while retaining Go 1.26, pnpm 11, and the worker's 24-hour release cooldown.
 - Gmail: include recipient headers and optionally sanitize message-search content through CLI and MCP; preserve untrusted sender/recipient wrapping across JSON projection. (#1188) — thanks @kendrickkester.
+- Gmail: preserve omitted Cc/Bcc recipients when updating drafts and allow explicit empty values to clear them. (#1186) — thanks @karyandrew.
+- Gmail: allow explicitly empty bodies with attachments while still rejecting omitted message content. (#1189) — thanks @jaysonsantos.
 - Photos: upload media and list/create app-created albums with an explicit append-scope opt-in; preserve read-only defaults and narrowed grants during reauthorization. (#1185) — thanks @beyondzero.
 - Meet: configure recording, transcription, smart notes, attendance reports, and moderation through explicit create/update flags; preserve omitted settings with per-field update masks. (#1182) — thanks @regaw-leinad.
 - Gmail: preserve standard payload header identifiers under `--wrap-untrusted`, keep custom names and values wrapped, and wrap flattened sender/recipient display text. (#1183) — thanks @postoso.

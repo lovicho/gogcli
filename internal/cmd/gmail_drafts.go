@@ -319,6 +319,9 @@ type draftComposeInput struct {
 	To               string
 	Cc               string
 	Bcc              string
+	ToProvided       bool
+	CcProvided       bool
+	BccProvided      bool
 	Subject          string
 	Body             string
 	BodyHTML         string
@@ -341,11 +344,13 @@ type draftComposeInput struct {
 	// PrebuiltAttachments carry already-resolved attachment bytes (e.g. existing
 	// draft attachments preserved across an update) alongside any --attach paths.
 	PrebuiltAttachments []mailmime.Attachment
-	// KeptToRecipients carries the existing draft's To recipients when an
-	// update omits --to (kept-existing). They bypass the strict flag parse:
+	// Kept recipients carry existing draft headers when an update omits their
+	// corresponding flags. They bypass the strict flag parse:
 	// the header was already resolved by keptDraftRecipients, so a
 	// legacy-malformed header cannot fail a body-only edit.
 	KeptToRecipients       []string
+	KeptCcRecipients       []string
+	KeptBccRecipients      []string
 	From                   string
 	AutoFromAddressedAlias bool
 	composeSignatureOptions
@@ -368,8 +373,8 @@ func (c draftComposeInput) validate() error {
 	return c.validateSignatureOptions()
 }
 
-// keptDraftRecipients converts an existing draft's To header into the
-// recipient list for a rebuild when an update omits --to. It prefers the
+// keptDraftRecipients converts an existing recipient header into the
+// recipient list for a rebuild when an update omits its flag. It prefers the
 // address-aware parse (display-name commas stay one recipient) but must not
 // reject a draft that predates strict parsing: on any parse failure it falls
 // back to splitCSV's verbatim fragments, so a body-only edit of a
@@ -382,6 +387,25 @@ func keptDraftRecipients(header string) []string {
 		return recipients
 	}
 	return splitCSV(header)
+}
+
+func (c draftComposeInput) needsExistingRecipients() bool {
+	return !c.ReplyAll && (!c.ToProvided || !c.CcProvided || !c.BccProvided)
+}
+
+func (c *draftComposeInput) keepDraftRecipients(payload *gmail.MessagePart) {
+	if c.ReplyAll {
+		return
+	}
+	if !c.ToProvided {
+		c.KeptToRecipients = keptDraftRecipients(headerValue(payload, "To"))
+	}
+	if !c.CcProvided {
+		c.KeptCcRecipients = keptDraftRecipients(headerValue(payload, "Cc"))
+	}
+	if !c.BccProvided {
+		c.KeptBccRecipients = keptDraftRecipients(headerValue(payload, "Bcc"))
+	}
 }
 
 func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, input draftComposeInput) (*gmail.Message, draftThreading, []mailmime.AttachmentMetadata, error) {
@@ -466,6 +490,12 @@ func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, 
 	if len(input.KeptToRecipients) > 0 {
 		toRecipients = input.KeptToRecipients
 	}
+	if len(input.KeptCcRecipients) > 0 {
+		ccRecipients = input.KeptCcRecipients
+	}
+	if len(input.KeptBccRecipients) > 0 {
+		bccRecipients = input.KeptBccRecipients
+	}
 	if input.ReplyAll {
 		recipients, recipientErr := buildReplyRecipients(
 			info,
@@ -481,13 +511,13 @@ func buildDraftMessage(ctx context.Context, svc *gmail.Service, account string, 
 		}
 		// --reply-all auto-populates from the original message, but an explicit
 		// flag (parsed above) overrides the corresponding auto-populated field.
-		if strings.TrimSpace(input.To) == "" {
+		if strings.TrimSpace(input.To) == "" && !input.ToProvided {
 			toRecipients = formatMailboxes(recipients.To)
 		}
-		if strings.TrimSpace(input.Cc) == "" {
+		if strings.TrimSpace(input.Cc) == "" && !input.CcProvided {
 			ccRecipients = formatMailboxes(recipients.Cc)
 		}
-		if strings.TrimSpace(input.Bcc) == "" {
+		if strings.TrimSpace(input.Bcc) == "" && !input.BccProvided {
 			bccRecipients = formatMailboxes(recipients.Bcc)
 		}
 	}
@@ -872,8 +902,8 @@ type GmailDraftsUpdateCmd struct {
 	DraftID          string   `arg:"" name:"draftId" help:"Draft ID"`
 	RawFile          string   `name:"raw-file" help:"Replace the entire draft with an exact RFC822 message file, or '-' for stdin (cannot be combined with compose flags)"`
 	To               *string  `name:"to" help:"Recipients (comma-separated; omit to keep existing)"`
-	Cc               string   `name:"cc" help:"CC recipients (comma-separated)"`
-	Bcc              string   `name:"bcc" help:"BCC recipients (comma-separated)"`
+	Cc               string   `name:"cc" help:"CC recipients (comma-separated; omit to keep existing, empty to clear)"`
+	Bcc              string   `name:"bcc" help:"BCC recipients (comma-separated; omit to keep existing, empty to clear)"`
 	Subject          string   `name:"subject" help:"Subject (required)"`
 	Body             string   `name:"body" help:"Body (plain text; required unless --body-html is set)"`
 	BodyFile         string   `name:"body-file" help:"Body file path (plain text; '-' for stdin)"`
@@ -891,6 +921,8 @@ type GmailDraftsUpdateCmd struct {
 	From                    string `name:"from" help:"Send from this email address (must be a verified send-as alias)"`
 	AutoFromAddressedAlias  bool   `name:"auto-from-addressed-alias" help:"When --from is omitted, reply from the verified send-as alias addressed by the original message" env:"GOG_GMAIL_AUTO_FROM_ADDRESSED_ALIAS"`
 	composeSignatureOptions `embed:""`
+	ccProvided              bool
+	bccProvided             bool
 }
 
 func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error {
@@ -900,18 +932,21 @@ func (c *GmailDraftsUpdateCmd) Run(ctx context.Context, flags *RootFlags) error 
 	return c.runCompose(ctx, flags)
 }
 
+func (c *GmailDraftsUpdateCmd) recipientSelection() (to string, toWasSet, ccWasSet, bccWasSet bool) {
+	if c.To != nil {
+		toWasSet = true
+		to = *c.To
+	}
+	return to, toWasSet, c.ccProvided || c.Cc != "", c.bccProvided || c.Bcc != ""
+}
+
 func (c *GmailDraftsUpdateCmd) runCompose(ctx context.Context, flags *RootFlags) error {
 	u := ui.FromContext(ctx)
 	draftID := strings.TrimSpace(c.DraftID)
 	if draftID == "" {
 		return usage("empty draftId")
 	}
-	to := ""
-	toWasSet := false
-	if c.To != nil {
-		toWasSet = true
-		to = *c.To
-	}
+	to, toWasSet, ccWasSet, bccWasSet := c.recipientSelection()
 
 	body, htmlBody, err := resolveComposeBodyInputs(ctx, c.Body, c.BodyFile, c.BodyHTML, c.BodyHTMLFile)
 	if err != nil {
@@ -942,6 +977,9 @@ func (c *GmailDraftsUpdateCmd) runCompose(ctx context.Context, flags *RootFlags)
 		To:                      to,
 		Cc:                      c.Cc,
 		Bcc:                     c.Bcc,
+		ToProvided:              toWasSet,
+		CcProvided:              ccWasSet,
+		BccProvided:             bccWasSet,
 		Subject:                 c.Subject,
 		Body:                    body,
 		BodyHTML:                htmlBody,
@@ -973,6 +1011,8 @@ func (c *GmailDraftsUpdateCmd) runCompose(ctx context.Context, flags *RootFlags)
 	if dryRunErr := dryRunExit(ctx, flags, "gmail.drafts.update", map[string]any{
 		"draft_id":                  draftID,
 		"to_keep_existing":          !toWasSet && !input.ReplyAll,
+		"cc_keep_existing":          !ccWasSet && !input.ReplyAll,
+		"bcc_keep_existing":         !bccWasSet && !input.ReplyAll,
 		"to":                        toRecipients,
 		"cc":                        ccRecipients,
 		"bcc":                       bccRecipients,
@@ -1004,13 +1044,12 @@ func (c *GmailDraftsUpdateCmd) runCompose(ctx context.Context, flags *RootFlags)
 
 	existingThreadID := ""
 	existingMessageID := ""
-	existingTo := ""
 	existingInReplyTo := ""
 	existingReferences := ""
 	var existingPayload *gmail.MessagePart
 	// Recipients, reply lineage and attachment carry-forward are built from the
 	// stored draft, so those updates cannot proceed without it.
-	requireExistingDraft := (!toWasSet && !c.ReplyAll) || strings.TrimSpace(replyToMessageID) == "" || preserveAttachments
+	requireExistingDraft := input.needsExistingRecipients() || strings.TrimSpace(replyToMessageID) == "" || preserveAttachments
 	// An update carrying no HTML body can silently drop the draft's stored one,
 	// so the warning below needs the existing payload. Without this the fetch is
 	// skipped whenever --to, --reply-to-message-id and --attach are all supplied,
@@ -1031,14 +1070,9 @@ func (c *GmailDraftsUpdateCmd) runCompose(ctx context.Context, flags *RootFlags)
 			existingPayload = existing.Message.Payload
 			existingInReplyTo = strings.TrimSpace(headerValue(existing.Message.Payload, "In-Reply-To"))
 			existingReferences = strings.TrimSpace(headerValue(existing.Message.Payload, "References"))
-			if !toWasSet && !c.ReplyAll {
-				existingTo = strings.TrimSpace(headerValue(existing.Message.Payload, "To"))
-			}
 		}
 	}
-	if !toWasSet && !c.ReplyAll {
-		input.KeptToRecipients = keptDraftRecipients(existingTo)
-	}
+	input.keepDraftRecipients(existingPayload)
 
 	// gmail drafts update rebuilds the whole message, so updating a rich-text
 	// draft with only a plain body silently drops its text/html part — Gmail

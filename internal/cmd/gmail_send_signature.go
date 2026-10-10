@@ -140,10 +140,11 @@ func readComposeSignatureFile(path string) (composeSignature, error) {
 }
 
 func appendComposeSignature(plainBody, htmlBody string, signature composeSignature) (string, string) {
-	if block := signature.plainBlock(); block != "" && strings.TrimSpace(plainBody) != "" {
+	signatureOnly := strings.TrimSpace(plainBody) == "" && strings.TrimSpace(htmlBody) == ""
+	if block := signature.plainBlock(); block != "" && (strings.TrimSpace(plainBody) != "" || signatureOnly) {
 		plainBody = appendBodyBlock(plainBody, block)
 	}
-	if block := signature.htmlBlock(); block != "" && strings.TrimSpace(htmlBody) != "" {
+	if block := signature.htmlBlock(); block != "" && (strings.TrimSpace(htmlBody) != "" || signatureOnly) {
 		htmlBody = appendBodyBlock(htmlBody, block)
 	}
 	return plainBody, htmlBody
